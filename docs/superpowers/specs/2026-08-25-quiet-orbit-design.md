@@ -195,10 +195,11 @@ drafts (
 - **Cookie**：`session` JWT（jose HS256，`SESSION_SECRET`≥32B），HttpOnly + Secure + SameSite=Lax，Path=/，无密钥材料
 - **CSRF**：SameSite=Lax + 服务端校验 `Origin`/`Sec-Fetch-Site` 头
 - **Rate limit**：内存滑动窗口（默认 20 req/min/IP，注册登录更严），单用户够用
-- **输入校验**：所有请求体 zod 校验；服务器**忽略**客户端传入的 id/created_at/updated_at/location 字段（位置由服务器从请求头 Geo 数据以外的真实来源获取——实际方案：客户端只传经纬度/精度数字，经 zod 范围校验；时间戳一律服务器生成）
+- **输入校验**：所有请求体 zod 校验；服务器**忽略并拒绝**客户端传入的 id/created_at/updated_at（时间戳一律服务器生成）；经纬度只接受受限范围数字（lat∈[-90,90]、lon∈[-180,180]、accuracy∈[0,10000]），超限拒绝
 - **长度限制**：正文密文 ≤ 200KB，其余字段按类型限定
 - **CSP**（middleware 注入）：`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`
-  - Tailwind 需要 `style-src 'unsafe-inline'`（开发模式）；生产考虑非内联样式，但为简单保持 'unsafe-inline'（仅 style，无 script 内联；Next 生产 build 默认无内联 script 依赖）
+  - 生产模式注入严格 CSP；开发模式注入宽松版本（允许 `ws:` 连接与 `'unsafe-eval'` 以兼容 HMR），中间件按 `NODE_ENV` 分支
+  - Tailwind 需要 `style-src 'unsafe-inline'`（仅 style，无 script 内联；Next 生产 build 的 script 均自托管）
 - **XSS**：正文一律 React 默认文本渲染 / `textContent`，换行用 `white-space: pre-wrap`，零 dangerouslySetInnerHTML
 - **日志**：任何日志不输出 request body、ciphertext、密钥、Recovery Key；生产关闭 verbose
 
