@@ -10,4 +10,14 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 })
 
-export const env = envSchema.parse(process.env)
+let parsed: z.infer<typeof envSchema>
+try {
+  parsed = envSchema.parse(process.env)
+} catch (e) {
+  if (e instanceof z.ZodError) {
+    const missing = e.issues.map((i) => i.path.join('.')).join(', ')
+    throw new Error(`环境变量缺失或无效: ${missing}。请检查 .env.local（开发）或服务器环境变量（生产）。`)
+  }
+  throw e
+}
+export const env = parsed
