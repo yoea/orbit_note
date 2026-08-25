@@ -28,8 +28,9 @@ export function storeChallenge(type: 'register' | 'login'): { token: string; cha
 
 export function takeChallenge(token: string, type: 'register' | 'login'): string | null {
   const entry = challengeMap.get(token)
-  if (!entry || entry.type !== type || entry.expiresAt < Date.now()) return null
+  if (!entry) return null
   challengeMap.delete(token)
+  if (entry.type !== type || entry.expiresAt < Date.now()) return null
   return entry.challenge
 }
 
