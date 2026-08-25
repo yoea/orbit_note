@@ -1,3 +1,4 @@
+import 'server-only'
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -20,6 +21,9 @@ export const origin = env.WEBAUTHN_ORIGIN
 export const challengeMap = new Map<string, { challenge: string; type: 'register' | 'login'; expiresAt: number }>()
 
 export function storeChallenge(type: 'register' | 'login'): { token: string; challenge: string } {
+  for (const [key, value] of challengeMap) {
+    if (value.expiresAt < Date.now()) challengeMap.delete(key)
+  }
   const challenge = crypto.randomUUID() + crypto.randomUUID()
   const token = crypto.randomUUID()
   challengeMap.set(token, { challenge, type, expiresAt: Date.now() + 60_000 })

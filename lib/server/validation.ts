@@ -23,12 +23,31 @@ export const diaryUpdateSchema = z
     timezone: z.string().max(64).nullable().optional(),
     ...locationFields,
   })
+  .refine((d) => (d.ciphertext === undefined) === (d.iv === undefined), {
+    message: 'ciphertext 与 iv 必须成对更新',
+  })
+  .refine((d) => Object.keys(d).length > 0, { message: '更新内容不能为空' })
 export const draftPutSchema = z.strictObject({ ...encryptedPayload, timezone: z.string().max(64).nullable().optional() })
-export const wrapperSchema = z.strictObject({
-  wrapperType: z.enum(['passkey_prf', 'recovery']),
-  credentialId: z.string().min(1).max(512).optional(), // recovery 不需要
-  encryptedDek: z.string().min(1).max(2048),
-  salt: z.string().min(1).max(256),
-  encryptionVersion: z.number().int().min(1).max(10).default(1),
-  recoveryKeyHash: z.string().length(64).optional(), // 仅 recovery
-})
+export const wrapperSchema = z
+  .strictObject({
+    wrapperType: z.enum(['passkey_prf', 'recovery']),
+    credentialId: z.string().min(1).max(512).optional(), // recovery 不需要
+    encryptedDek: z.string().min(1).max(2048),
+    salt: z.string().min(1).max(256),
+    encryptionVersion: z.number().int().min(1).max(10).default(1),
+    recoveryKeyHash: z.string().length(64).regex(/^[0-9a-f]+$/).optional(), // 仅 recovery
+  })
+  .superRefine((d, ctx) => {
+    if (d.wrapperType === 'passkey_prf' && !d.credentialId) {
+      ctx.addIssue({ code: 'custom', message: 'passkey_prf wrapper 必须包含 credentialId' })
+    }
+    if (d.wrapperType === 'passkey_prf' && d.recoveryKeyHash) {
+      ctx.addIssue({ code: 'custom', message: 'passkey_prf wrapper 不能包含 recoveryKeyHash' })
+    }
+    if (d.wrapperType === 'recovery' && !d.recoveryKeyHash) {
+      ctx.addIssue({ code: 'custom', message: 'recovery wrapper 必须包含 recoveryKeyHash' })
+    }
+    if (d.wrapperType === 'recovery' && d.credentialId) {
+      ctx.addIssue({ code: 'custom', message: 'recovery wrapper 不能包含 credentialId' })
+    }
+  })
