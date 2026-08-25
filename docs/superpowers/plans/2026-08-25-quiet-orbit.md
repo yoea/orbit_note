@@ -448,8 +448,9 @@ export function storeChallenge(type: 'register' | 'login'): { token: string; cha
 
 export function takeChallenge(token: string, type: 'register' | 'login'): string | null {
   const entry = challengeMap.get(token)
-  if (!entry || entry.type !== type || entry.expiresAt < Date.now()) return null
-  challengeMap.delete(token)
+  if (!entry) return null
+  challengeMap.delete(token) // 任何非空条目都删除（one-shot 语义，防重放 + 防滞留）
+  if (entry.type !== type || entry.expiresAt < Date.now()) return null
   return entry.challenge
 }
 
