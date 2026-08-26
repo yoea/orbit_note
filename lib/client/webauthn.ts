@@ -3,11 +3,17 @@ import type {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
 } from '@simplewebauthn/browser'
-import { prfEvalB64 } from './crypto/prf'
+import { fromBase64Url } from './crypto/base64'
 
 export interface RegistrationResult {
   registration: { id?: string; clientExtensionResults?: Record<string, unknown> } & Record<string, unknown>
   prfEnabled: boolean
+}
+
+// PRF 扩展构建：eval.first 必须是 BufferSource（ArrayBuffer/ArrayBufferView）——WebAuthn L3 PRF 规范要求二进制，
+// @simplewebauthn/browser 对 extensions 原样透传（不转换），传字符串会被浏览器拒绝（TypeError）。
+export function buildPrfExtensions(prfEvalFirst: Uint8Array): { prf: { eval: { first: Uint8Array } } } {
+  return { prf: { eval: { first: prfEvalFirst } } }
 }
 
 // 注册 Passkey：注入 PRF 扩展（eval first = S）。clientExtensionResults.prf.enabled 表示 PRF 是否被 authenticator 支持
@@ -21,7 +27,7 @@ export async function registerPasskey(
     ...options,
     extensions: {
       ...((options.extensions as Record<string, unknown>) ?? {}),
-      prf: { eval: { first: prfEvalB64(prfEvalS) } },
+      ...buildPrfExtensions(prfEvalS),
     },
   }
   const registration = await startRegistration({
@@ -35,7 +41,7 @@ export async function registerPasskey(
   }
 }
 
-// 认证 Passkey：带 PRF eval（S 来自服务器 wrapper 的 salt 或本地已知值）
+// 认证 Passkey：带 PRF eval（S 来自服务器 wrapper 的 salt，base64url 字符串——内部转回二进制）
 export async function authenticatePasskey(
   options: Record<string, unknown>,
   prfEvalS: string | null,
@@ -45,7 +51,7 @@ export async function authenticatePasskey(
         ...options,
         extensions: {
           ...((options.extensions as Record<string, unknown>) ?? {}),
-          prf: { eval: { first: prfEvalS } },
+          ...buildPrfExtensions(fromBase64Url(prfEvalS)),
         },
       }
     : options
