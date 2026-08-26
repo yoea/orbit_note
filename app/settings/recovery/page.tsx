@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { fetchSession, fetchWrappers } from '@/lib/client/session'
 import { createWrappedDek, unwrapWithRecoveryKey } from '@/lib/client/crypto/setup'
 import { decodeRecoveryKey, generateRecoveryKey, sha256Hex } from '@/lib/client/crypto/recovery-key'
+import { copyText } from '@/lib/client/clipboard'
 
 type Mode = 'export' | 'regenerate'
 
@@ -17,6 +18,13 @@ export default function RecoverySettingsPage({ searchParams }: { searchParams: P
   const [result, setResult] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+
+  async function handleCopyResult() {
+    if (!result) return
+    const ok = await copyText(result)
+    setCopyState(ok ? 'copied' : 'failed')
+  }
 
   async function verifyAndProceed() {
     setBusy(true); setError(null)
@@ -92,7 +100,9 @@ export default function RecoverySettingsPage({ searchParams }: { searchParams: P
             <p className="mt-2 text-sm text-amber-600 dark:text-amber-400">保存新密钥前不要关闭页面——保存后旧密钥立即失效</p>
           )}
           <code className="mt-2 block break-all rounded-xl bg-neutral-100 px-4 py-3 text-sm dark:bg-neutral-800">{result}</code>
-          <button onClick={() => void navigator.clipboard?.writeText(result).catch(() => {})} className="mt-2 text-sm text-neutral-500 underline">复制</button>
+          <button onClick={() => void handleCopyResult()} className="mt-2 text-sm text-neutral-500 underline">
+            {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败，请手动选择复制' : '复制'}
+          </button>
         </div>
       )}
     </main>

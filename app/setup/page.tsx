@@ -8,6 +8,7 @@ import { createWrappedDek, derivePrfKek, wrapWithKek } from '@/lib/client/crypto
 import { generateRecoveryKey, decodeRecoveryKey, sha256Hex } from '@/lib/client/crypto/recovery-key'
 import { prfEvalB64 } from '@/lib/client/crypto/prf'
 import { fetchSession, setDek } from '@/lib/client/session'
+import { copyText } from '@/lib/client/clipboard'
 
 export default function SetupPage() {
   const router = useRouter()
@@ -16,6 +17,7 @@ export default function SetupPage() {
   const [error, setError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState(false)
   const [recoveryKey, setRecoveryKey] = useState('')
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   useEffect(() => {
     void (async () => {
@@ -109,9 +111,14 @@ export default function SetupPage() {
     }
   }
 
+  async function handleCopy() {
+    const ok = await copyText(recoveryKey)
+    setCopyState(ok ? 'copied' : 'failed')
+  }
+
   function finish() {
     if (!recoveryKey) return
-    void navigator.clipboard?.writeText(recoveryKey).catch(() => {})
+    void copyText(recoveryKey) // 尽力复制，失败不阻塞进入日记
     router.replace('/')
   }
 
@@ -143,7 +150,9 @@ export default function SetupPage() {
           <h1 className="text-xl font-semibold">保存你的恢复密钥</h1>
           <p className="text-center text-sm text-neutral-500">它只显示一次，请保存到安全密码管理器。丢失后无法恢复日记。</p>
           <code className="break-all rounded-xl bg-neutral-100 px-4 py-3 text-sm dark:bg-neutral-800">{recoveryKey}</code>
-          <button onClick={() => void navigator.clipboard?.writeText(recoveryKey).catch(() => {})} className="text-sm text-neutral-500 underline">复制恢复密钥</button>
+          <button onClick={() => void handleCopy()} className="text-sm text-neutral-500 underline">
+            {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败，请手动选择复制' : '复制恢复密钥'}
+          </button>
           <button onClick={finish} className="w-full max-w-xs rounded-2xl bg-neutral-900 px-6 py-4 font-medium text-white">我已保存，进入日记</button>
         </>
       )}
