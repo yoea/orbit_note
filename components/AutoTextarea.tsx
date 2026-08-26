@@ -50,7 +50,7 @@ export default function AutoTextarea({ value, onChange, placeholder, autoFocus, 
       placeholder={placeholder}
       autoFocus={autoFocus}
       disabled={disabled}
-      className="mt-3 w-full resize-none overflow-y-auto rounded-2xl bg-neutral-50 px-3 py-2 text-lg leading-relaxed outline-none placeholder:text-neutral-300 disabled:opacity-60 dark:bg-neutral-900/50 dark:placeholder:text-neutral-600"
+      className="mt-3 w-full resize-none overflow-y-auto bg-transparent text-lg leading-relaxed outline-none placeholder:text-neutral-300 disabled:opacity-60 dark:placeholder:text-neutral-600"
     />
   )
 }

@@ -218,11 +218,11 @@ export default function DiaryEditor({ onOpenHistory, onOpenSettings }: {
         disabled={status === 'saving'}
       />
       <footer className="mt-auto border-t border-neutral-100 py-4 pb-safe dark:border-neutral-800">
-        <p className="mb-3 text-center text-sm text-neutral-400">
+        <p className="mb-3 text-center text-xs text-neutral-400">
           {status === 'saving' && '正在保存…'}
           {status === 'saved' && `已保存 · ${savedTime}`}
           {status === 'error' && '保存失败，请重试'}
-          {status === 'idle' && '写下此刻，或稍后回来继续'}
+          {status === 'idle' && `共 ${text.trim().length} 字`}
         </p>
         <button
           onClick={() => void save()}
