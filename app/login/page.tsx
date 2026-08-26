@@ -78,7 +78,7 @@ export default function LoginPage() {
         </button>
       ) : (
         <form onSubmit={(e) => void handleRecoverySubmit(e)} className="flex w-full max-w-xs flex-col gap-3">
-          <p className="text-sm text-neutral-500">此浏览器不支持 PRF，请输入恢复密钥解锁</p>
+          <p className="text-sm text-neutral-500">通行密钥已验证 ✓，请输入恢复密钥完成解锁</p>
           <input
             value={recoveryKey}
             onChange={(e) => setRecoveryKey(e.target.value)}

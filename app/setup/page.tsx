@@ -52,8 +52,11 @@ export default function SetupPage() {
       })
       if (!regResp.ok) throw new Error('注册失败')
 
-      // 4. 若 PRF 可用：立即认证同一 passkey 获取 PRF 输出 → KEK → 包裹 DEK → 保存 wrapper_p
-      if (prfEnabled) {
+      // 4. 无条件尝试认证取 PRF 输出（Windows Hello quirk：create 时 prf.enabled 可能为 false，
+      //    但 get 时 authenticator 仍可能返回 PRF 值——需要 hmac-secret 能力，Windows 11 25H2+
+      //    KB5077181 提供）。拿到结果 → 派生 KEK → 包裹 DEK → 保存 wrapper_p；
+      //    拿不到（或用户取消弹窗）→ 静默降级为仅 Recovery 解锁，不中断初始化。
+      try {
         const loginRes = await fetch('/api/auth/login/options')
         const loginOpts = await loginRes.json()
         const { assertion, prfResult } = await authenticatePasskey(loginOpts.options, prfEvalB64(prfEval))
@@ -62,8 +65,7 @@ export default function SetupPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token: loginOpts.token, assertion }),
         })
-        if (!loginResp.ok) throw new Error('Passkey 验证失败')
-        if (prfResult) {
+        if (loginResp.ok && prfResult) {
           const kek = await derivePrfKek(prfResult, prfEvalB64(prfEval))
           const { encryptedDek } = await wrapWithKek(dek, kek)
           const wrapP = await fetch('/api/keys/wrappers', {
@@ -79,9 +81,10 @@ export default function SetupPage() {
           })
           if (!wrapP.ok) throw new Error('保存 Passkey 包装失败')
         }
-        // 降级路径：注册时 PRF 声明可用但重认证未返回 PRF 输出（authenticator 行为差异）。
-        // 不中断初始化——系统仍可用（Recovery Key 解锁），wrapper_p 留待设置页补录（Task 13，
-        // 依赖 login/options 的 S 不变量：新 Passkey 必须复用同一 S）
+        // 降级路径（PRF 无结果/认证失败）：系统仍可用（Recovery Key 解锁）。
+        // 已注册的 passkey 仍可正常完成 WebAuthn 认证（服务端会话），只是无法派生 KEK。
+      } catch {
+        // 用户取消认证弹窗或网络错误：降级，不阻塞初始化
       }
 
       // 5. 生成 Recovery Key 与 wrapper_r（含服务器校验哈希），保存
