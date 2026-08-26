@@ -2,24 +2,17 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { credentials, keyWrappers } from '@/lib/server/db/schema'
 import { eq } from 'drizzle-orm'
-import { verifySessionToken } from '@/lib/server/session'
+import { isAuthed } from '@/lib/server/auth'
 import { wrapperSchema } from '@/lib/server/validation'
 
-// 注意：此 API 在 Task 7 会改为复用 lib/server/auth 的 isAuthed；本任务先内联
-async function authed(req: Request): Promise<boolean> {
-  const cookie = req.headers.get('cookie') ?? ''
-  const token = cookie.split(';').map((s) => s.trim()).find((s) => s.startsWith('qo_session='))?.split('=')[1]
-  return token ? verifySessionToken(token) : false
-}
-
 export async function GET(req: Request) {
-  if (!(await authed(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!(await isAuthed(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const wrappers = await db.select().from(keyWrappers).orderBy(keyWrappers.createdAt)
   return NextResponse.json({ wrappers })
 }
 
 export async function POST(req: Request) {
-  if (!(await authed(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!(await isAuthed(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const body = wrapperSchema.safeParse(await req.json().catch(() => null))
   if (!body.success) return NextResponse.json({ error: 'bad_request', details: body.error.issues }, { status: 400 })
   const { wrapperType, credentialId, encryptedDek, salt, encryptionVersion, recoveryKeyHash } = body.data
@@ -28,13 +21,24 @@ export async function POST(req: Request) {
     const [cred] = await db.select().from(credentials).where(eq(credentials.credentialId, credentialId!))
     if (!cred) return NextResponse.json({ error: 'unknown_credential' }, { status: 400 })
   }
-  await db.insert(keyWrappers).values({
-    wrapperType,
-    credentialId: wrapperType === 'passkey_prf' ? credentialId! : null,
+  // 幂等 upsert：按类型唯一键查重，存在则更新、不存在则插入
+  const existing = wrapperType === 'passkey_prf'
+    ? await db.select().from(keyWrappers).where(eq(keyWrappers.credentialId, credentialId!))
+    : await db.select().from(keyWrappers).where(eq(keyWrappers.wrapperType, 'recovery'))
+  const content = {
     encryptedDek,
     salt,
     encryptionVersion,
     recoveryKeyHash: recoveryKeyHash ?? null,
-  })
+  }
+  if (existing.length > 0) {
+    await db.update(keyWrappers).set(content).where(eq(keyWrappers.id, existing[0].id))
+  } else {
+    await db.insert(keyWrappers).values({
+      wrapperType,
+      credentialId: wrapperType === 'passkey_prf' ? credentialId! : null,
+      ...content,
+    })
+  }
   return NextResponse.json({ ok: true }, { status: 201 })
 }

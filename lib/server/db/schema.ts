@@ -1,6 +1,7 @@
 import {
-  bigint, doublePrecision, integer, jsonb, pgTable, text, timestamp, uuid,
+  bigint, check, doublePrecision, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 
 export const credentials = pgTable('credentials', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -23,7 +24,13 @@ export const keyWrappers = pgTable('key_wrappers', {
   // 仅 recovery 行：SHA-256(recovery key) 十六进制，用于灾难恢复登录校验（Task 8 使用）
   recoveryKeyHash: text('recovery_key_hash'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  check('key_wrappers_wrapper_type_check', sql`${t.wrapperType} in ('passkey_prf', 'recovery')`),
+  // 每个 credential 最多一个 PRF wrapper
+  uniqueIndex('key_wrappers_prf_unique').on(t.wrapperType, t.credentialId).where(sql`${t.wrapperType} = 'passkey_prf'`),
+  // recovery wrapper 全局唯一（单行）
+  uniqueIndex('key_wrappers_recovery_unique').on(t.wrapperType).where(sql`${t.wrapperType} = 'recovery'`),
+])
 
 export const diaryEntries = pgTable('diary_entries', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -36,7 +43,10 @@ export const diaryEntries = pgTable('diary_entries', {
   timezone: text('timezone'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-})
+}, (t) => [
+  // 列表 API 按 created_at desc 排序
+  index('diary_entries_created_at_idx').on(t.createdAt),
+])
 
 // 单行草稿（单用户）
 export const drafts = pgTable('drafts', {
