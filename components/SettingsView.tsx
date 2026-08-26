@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { clearDek, fetchSession } from '@/lib/client/session'
 import { authenticatePasskey } from '@/lib/client/webauthn'
 import { idbClearAll } from '@/lib/client/idb'
@@ -35,6 +36,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
   const [info, setInfo] = useState<{ credentialCount: number; prfWrappers: number } | null>(null)
   const [locationEnabled, setLocationEnabled] = useState(true)
   const [wiping, setWiping] = useState(false)
+  const [wipeConfirmStep, setWipeConfirmStep] = useState<0 | 1 | 2>(0) // 0=无确认, 1=第一次, 2=第二次
 
   useEffect(() => {
     void fetchSession().then((s) => setInfo({ credentialCount: s.credentialCount, prfWrappers: s.prfWrappers })).catch(() => setInfo(null))
@@ -59,11 +61,9 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
   }
 
   async function wipe() {
-    if (!window.confirm('确定删除所有数据吗？此操作不可恢复！\n\n请先确认已保存你的恢复密钥。')) return
-    if (!window.confirm('再次确认：所有日记、密钥包装、Passkey 凭证都将被永久删除。\n\n点击确定后将通过 Face ID 验证身份。')) return
     setWiping(true)
     try {
-      // 二次确认：Face ID 生物识别验证（认证成功才执行删除）
+      // 二次确认（ConfirmDialog 已通过）：Face ID 生物识别验证（认证成功才执行删除）
       const ok = await confirmWithFaceId()
       if (!ok) {
         window.alert('身份验证未完成，未执行删除')
@@ -114,7 +114,7 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
         </li>
         <li className="py-4"><Link href="/settings/recovery?mode=regenerate" className="text-neutral-800 dark:text-neutral-200">重新生成恢复密钥</Link></li>
         <li className="py-4"><button onClick={() => void logout()} className="text-neutral-800 dark:text-neutral-200">退出登录</button></li>
-        <li className="py-4"><button onClick={() => void wipe()} disabled={wiping} className="text-red-500 disabled:opacity-50">{wiping ? '验证中…' : '删除所有数据'}</button></li>
+        <li className="py-4"><button onClick={() => setWipeConfirmStep(1)} disabled={wiping} className="text-red-500 disabled:opacity-50">{wiping ? '验证中…' : '删除所有数据'}</button></li>
         <li className="py-4">
           <p className="text-sm font-medium text-neutral-400">关于</p>
           <p className="mt-1 text-xs text-neutral-400">版本：{process.env.NEXT_PUBLIC_VERSION ?? 'dev'}</p>
@@ -123,6 +123,28 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
           </p>
         </li>
       </ul>
+      {wipeConfirmStep === 1 && (
+        <ConfirmDialog
+          title="确定删除所有数据吗？"
+          message="此操作不可恢复！请先确认已保存你的恢复密钥。"
+          confirmText="删除"
+          cancelText="取消"
+          destructive
+          onConfirm={() => setWipeConfirmStep(2)}
+          onCancel={() => setWipeConfirmStep(0)}
+        />
+      )}
+      {wipeConfirmStep === 2 && (
+        <ConfirmDialog
+          title="再次确认"
+          message="所有日记、密钥包装、Passkey 凭证都将被永久删除。点击删除后将通过 Face ID 验证身份。"
+          confirmText="删除"
+          cancelText="取消"
+          destructive
+          onConfirm={() => { setWipeConfirmStep(0); void wipe() }}
+          onCancel={() => setWipeConfirmStep(0)}
+        />
+      )}
     </main>
   )
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { copyText } from '@/lib/client/clipboard'
@@ -95,8 +96,9 @@ export default function EntryView({ id, onBack }: { id: string; onBack: () => vo
     }
   }, [entry, plain, id, removeLocation])
 
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+
   const remove = useCallback(async () => {
-    if (!window.confirm('确定删除这篇日记吗？删除后无法恢复。')) return
     try {
       const res = await fetch(`/api/diary/${id}`, { method: 'DELETE' })
       if (res.status === 401) { router.replace('/login'); return }
@@ -194,11 +196,22 @@ export default function EntryView({ id, onBack }: { id: string; onBack: () => vo
       {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
       {!editing && (
         <button
-          onClick={() => void remove()}
+          onClick={() => setConfirmingDelete(true)}
           className="mt-10 w-full rounded-2xl border border-red-200 py-3 text-sm text-red-500 dark:border-red-900"
         >
           删除日记
         </button>
+      )}
+      {confirmingDelete && (
+        <ConfirmDialog
+          title="确定删除这篇日记吗？"
+          message="删除后无法恢复。"
+          confirmText="删除"
+          cancelText="取消"
+          destructive
+          onConfirm={() => { setConfirmingDelete(false); void remove() }}
+          onCancel={() => setConfirmingDelete(false)}
+        />
       )}
     </main>
   )
