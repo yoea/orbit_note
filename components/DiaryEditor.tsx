@@ -189,7 +189,8 @@ export default function DiaryEditor({ onOpenHistory, onOpenSettings }: {
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 safe-pt safe-pb">
+    // 固定视口高度 + 禁止滚动：header/输入区/footer 全部在视口内，输入区 flex 弹性分配剩余空间
+    <div className="mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden px-5 safe-pt safe-pb">
       <header className="py-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Orbit</h1>
