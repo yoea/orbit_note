@@ -3,7 +3,7 @@ import type {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
 } from '@simplewebauthn/browser'
-import { fromBase64Url } from './crypto/base64'
+import { fromBase64Url, toBase64Url } from './crypto/base64'
 
 export interface RegistrationResult {
   registration: { id?: string; clientExtensionResults?: Record<string, unknown> } & Record<string, unknown>
@@ -41,6 +41,18 @@ export async function registerPasskey(
   }
 }
 
+// PRF 输出规范化：规范要求 base64url 字符串，但部分 iOS 版本返回二进制（Uint8Array/ArrayBuffer）。
+// 统一转为 base64url 字符串，避免下游 fromBase64Url 收到非字符串抛 TypeError。
+export function normalizePrfResult(first: unknown): string | null {
+  if (first == null) return null
+  if (typeof first === 'string') return first
+  if (first instanceof Uint8Array) return toBase64Url(first)
+  if (first instanceof ArrayBuffer) return toBase64Url(new Uint8Array(first))
+  // 类数组兜底（如平台返回普通数组）
+  if (Array.isArray(first)) return toBase64Url(Uint8Array.from(first as number[]))
+  return null
+}
+
 // 认证 Passkey：带 PRF eval（S 来自服务器 wrapper 的 salt，base64url 字符串——内部转回二进制）
 export async function authenticatePasskey(
   options: Record<string, unknown>,
@@ -59,6 +71,6 @@ export async function authenticatePasskey(
     optionsJSON: optionsJSON as unknown as PublicKeyCredentialRequestOptionsJSON,
   })
   const ext = assertion.clientExtensionResults as unknown as Record<string, unknown>
-  const prf = ext.prf as { results?: { first?: string } } | undefined
-  return { assertion: assertion as unknown as Record<string, unknown>, prfResult: prf?.results?.first ?? null }
+  const prf = ext.prf as { results?: { first?: unknown } } | undefined
+  return { assertion: assertion as unknown as Record<string, unknown>, prfResult: normalizePrfResult(prf?.results?.first) }
 }
