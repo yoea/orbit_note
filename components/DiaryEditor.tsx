@@ -49,20 +49,7 @@ export default function DiaryEditor() {
     } catch { /* 草稿保存失败不阻塞输入 */ }
   }, [])
 
-  // 键盘遮挡防护：visualViewport resize 时只调整输入框高度，不主动 scrollIntoView——
-  // iOS Safari 键盘弹出时会自动滚动活动元素进入视野，scrollIntoView 反而把页面顶到最顶部（体验割裂）。
-  useEffect(() => {
-    const vv = window.visualViewport
-    if (!vv) return
-    const onResize = () => {
-      const el = document.activeElement
-      if (el instanceof HTMLTextAreaElement) {
-        el.style.maxHeight = `${vv.height - 120}px`
-      }
-    }
-    vv.addEventListener('resize', onResize)
-    return () => vv.removeEventListener('resize', onResize)
-  }, [])
+  // 键盘遮挡与高度适配已由 AutoTextarea 统一处理（visualViewport resize → fitHeight）
 
   // 卸载/pagehide 冲刷未决草稿（避免丢末段输入，iOS Safari pagehide 更可靠）；online 恢复时补推
   useEffect(() => {
