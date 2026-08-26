@@ -84,9 +84,11 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-8 px-6 safe-pb">
-      {/* 品牌 LOGO */}
-      <OrbitLogo size="lg" />
+    <main className="flex min-h-0 flex-1 flex-col px-6 safe-pb">
+      {/* m-auto：LOGO + 按钮整体在容器中完全垂直居中（比 justify-center 更稳健） */}
+      <div className="m-auto flex w-full max-w-xs flex-col items-center gap-8">
+        {/* 品牌 LOGO */}
+        <OrbitLogo size="lg" />
       {mode === 'passkey' ? (
         <div className="w-full max-w-xs">
           <button
@@ -121,6 +123,7 @@ export default function LoginPage() {
       {mode === 'recovery' && (
         <button onClick={() => setMode('passkey')} className="text-sm text-neutral-400 underline">返回 Face ID</button>
       )}
+      </div>
     </main>
   )
 }
