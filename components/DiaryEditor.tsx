@@ -232,9 +232,9 @@ export default function DiaryEditor({ onOpenHistory, onOpenSettings }: {
         >
           {status === 'saving' ? '保存中…' : '保存'}
         </button>
-        {/* 底部缓冲：版本号低调显示，PWA 全屏模式下保存按钮不至于贴底 */}
+        {/* 底部缓冲：版本号低调显示（NEXT_PUBLIC_VERSION 已含 v 前缀），PWA 全屏模式下保存按钮不至于贴底 */}
         <p className="mt-4 text-center text-[10px] text-neutral-300 dark:text-neutral-600">
-          Orbit v{process.env.NEXT_PUBLIC_VERSION ?? 'dev'}
+          Orbit {process.env.NEXT_PUBLIC_VERSION ?? 'dev'}
         </p>
       </footer>
     </div>
