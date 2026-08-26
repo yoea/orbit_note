@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { fetchSession, getDek } from '@/lib/client/session'
+import { getDek } from '@/lib/client/session'
+import { useRequireUnlock } from '@/lib/client/use-require-unlock'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 
 interface Entry {
@@ -28,12 +29,12 @@ export default function EntryPage() {
   const [error, setError] = useState<string | null>(null)
   const [decryptFailed, setDecryptFailed] = useState(false)
   const [showCoords, setShowCoords] = useState(false)
+  const unlock = useRequireUnlock()
 
   useEffect(() => {
+    if (unlock !== 'ready') return
     void (async () => {
       try {
-        const s = await fetchSession()
-        if (!s.authenticated || !getDek()) { router.replace(`/login?from=/entry/${id}`); return }
         const res = await fetch(`/api/diary/${id}`)
         if (res.status === 404) { router.replace('/history'); return }
         if (!res.ok) throw new Error('加载失败')
@@ -50,7 +51,7 @@ export default function EntryPage() {
         setError('连接失败，请检查网络后重试')
       }
     })()
-  }, [id, router])
+  }, [id, router, unlock])
 
   const saveEdit = useCallback(async () => {
     if (!entry || !plain.trim()) return

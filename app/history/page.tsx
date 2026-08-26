@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { fetchSession, getDek } from '@/lib/client/session'
+import { getDek } from '@/lib/client/session'
+import { useRequireUnlock } from '@/lib/client/use-require-unlock'
 import { decryptText } from '@/lib/client/crypto/encryption'
 
 interface Entry {
@@ -21,16 +22,17 @@ interface Group {
 
 export default function HistoryPage() {
   const router = useRouter()
+  const unlock = useRequireUnlock()
   const [groups, setGroups] = useState<Group[]>([])
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (unlock !== 'ready') return
     void (async () => {
       try {
-        const s = await fetchSession()
-        if (!s.authenticated || !getDek()) { router.replace('/login?from=/history'); return }
         const dek = getDek()!
+        if (!dek) { router.replace('/login?from=/history'); return }
         const res = await fetch('/api/diary?limit=200')
         if (!res.ok) throw new Error('加载失败')
         const { entries } = await res.json() as { entries: Entry[] }
@@ -64,7 +66,7 @@ export default function HistoryPage() {
         setError('连接失败，请检查网络后重试')
       }
     })()
-  }, [router])
+  }, [router, unlock])
 
   if (error) {
     return (

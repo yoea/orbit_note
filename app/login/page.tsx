@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PRF_UNAVAILABLE, fetchSession, getDek, loginWithPasskey, unlockWithRecoveryKey } from '@/lib/client/session'
 
@@ -16,29 +16,15 @@ export default function LoginPage() {
     if (typeof window === 'undefined') return null
     return new URLSearchParams(window.location.search).get('reason')
   })
-  // 自动解锁尝试标记：session 有效但 DEK 为空时（刷新后），自动触发一次 Face ID 认证，
-  // 避免"刷新 → 登录页 → 再点一次"的重复操作（WebAuthn get 无需用户手势，iOS 弹 Face ID 确认一次即可）。
-  // 标记存 sessionStorage：页面重挂载（导航循环/刷新）也不重置，防止"解锁→重载→又自动解锁"死循环。
-  const autoUnlockTriedRef = useRef(false)
-
-  useEffect(() => {
-    try { autoUnlockTriedRef.current = sessionStorage.getItem('qo-auto-unlock-tried') === '1' } catch { /* ignore */ }
-  }, [])
-
   useEffect(() => {
     void (async () => {
       try {
         const s = await fetchSession()
         if (!s.initialized) { router.replace('/setup'); return }
-        // 已认证且 DEK 在内存才进首页；否则停留本页重新解锁（DEK 刷新即清空，规格二十六节）
+        // 已认证且 DEK 在内存才进首页；否则停留本页重新解锁（DEK 刷新即清空，规格二十六节）。
+        // 已认证但 DEK 为空：由目标页守卫原地自动解锁（useRequireUnlock，无跳转不丢内存态），
+        // 本页保持手动入口（未认证/PRF 降级恢复密钥时使用）。
         if (s.authenticated && getDek()) { router.replace('/'); return }
-        // 已认证但 DEK 为空（刷新后）：自动触发一次 Face ID 解锁（PRF 可用时直接进入；
-        // 失败/取消则停留在 Face ID 按钮，用户可手动重试或切恢复密钥）
-        if (s.authenticated && !getDek() && !autoUnlockTriedRef.current) {
-          autoUnlockTriedRef.current = true
-          try { sessionStorage.setItem('qo-auto-unlock-tried', '1') } catch { /* ignore */ }
-          setTimeout(() => void handlePasskey(), 300) // 延迟到首帧渲染后，避免 effect 内同步 setState
-        }
       } catch {
         // 网络/服务错误：绝不走初始化分支，停留在本页提示
         setLoadError(true)

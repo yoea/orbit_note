@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { clearDek, fetchSession } from '@/lib/client/session'
 import { authenticatePasskey } from '@/lib/client/webauthn'
+import { useRequireUnlock } from '@/lib/client/use-require-unlock'
 import { idbClearAll } from '@/lib/client/idb'
 
 // 二次确认：通过 WebAuthn 认证（iOS 原生 Face ID 弹窗）确认用户在场。
@@ -31,6 +32,8 @@ const LOCATION_KEY = 'qo-location-enabled'
 
 export default function SettingsPage() {
   const router = useRouter()
+  // 刷新后原地自动解锁（否则"注册新 Passkey"等操作会因 DEK 为空跳登录）
+  useRequireUnlock()
   const [info, setInfo] = useState<{ credentialCount: number; prfWrappers: number } | null>(null)
   const [locationEnabled, setLocationEnabled] = useState(true)
 
