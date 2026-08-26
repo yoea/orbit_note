@@ -101,7 +101,7 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center gap-6 px-6 safe-pb">
-      <h1 className="text-2xl font-semibold text-neutral-800 dark:text-neutral-100">我的日记</h1>
+      <h1 className="text-2xl font-semibold text-neutral-800 dark:text-neutral-100">Orbit</h1>
       {mode === 'passkey' ? (
         <button
           onClick={() => void handlePasskey()}

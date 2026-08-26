@@ -4,9 +4,9 @@ import SecureContextCheck from "@/components/SecureContextCheck";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "我的日记",
-  description: "端到端加密的私人日记",
-  appleWebApp: { capable: true, title: "我的日记", statusBarStyle: "default" },
+  title: "Orbit",
+  description: "Orbit",
+  appleWebApp: { capable: true, title: "Orbit", statusBarStyle: "default" },
   manifest: "/manifest.webmanifest",
   icons: { apple: [{ url: "/icons/icon-180.png", sizes: "180x180" }] },
 };

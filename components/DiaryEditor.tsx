@@ -204,7 +204,7 @@ export default function DiaryEditor() {
   return (
     <div className="flex min-h-dvh flex-col px-5 safe-pt safe-pb">
       <header className="flex items-center justify-between py-3">
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">我的日记</h1>
+        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Orbit</h1>
         <nav className="flex items-center gap-4">
           {/* 客户端导航（Link）：不重载页面，内存 DEK 保留——已解锁状态下直接进入，无需重新 Face ID */}
           <Link href="/history" className="text-sm text-neutral-400">历史</Link>

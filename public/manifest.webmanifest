@@ -1,6 +1,6 @@
 {
-  "name": "我的日记",
-  "short_name": "日记",
+  "name": "Orbit",
+  "short_name": "Orbit",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#171717",
