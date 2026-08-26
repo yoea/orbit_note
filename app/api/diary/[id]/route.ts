@@ -6,7 +6,7 @@ import { requireAuth } from '@/lib/server/auth'
 import { diaryUpdateSchema } from '@/lib/server/validation'
 
 function parseId(param: string): string | null {
-  return /^[0-9a-fA-F-]{36}$/.test(param) ? param : null
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(param) ? param : null
 }
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {

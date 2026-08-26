@@ -9,7 +9,7 @@ import { rateLimit } from '@/lib/server/ratelimit'
 export async function GET(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const url = new URL(req.url)
-  const limit = Math.min(Number(url.searchParams.get('limit') ?? 100) || 100, 200)
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 100) || 100, 1), 200)
   const entries = await db.select().from(diaryEntries).orderBy(desc(diaryEntries.createdAt)).limit(limit)
   return NextResponse.json({ entries })
 }
