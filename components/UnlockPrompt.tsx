@@ -4,8 +4,8 @@ import { useState } from 'react'
 import OrbitLogo from './OrbitLogo'
 
 // 手动解锁入口（留在当前页，用户手势下 Face ID 正常）；支持错误信息展示。
-// 点击后延迟 300ms 再发起认证——iOS PWA 冷启动后立即调用 WebAuthn 偶发失败，
-// 短暂延迟让系统稳定，减少"首次识别无响应"。
+// 点击后**立即**调用认证（无任何延迟）——保持 WebAuthn 的 user activation 上下文：
+// iOS 26 弹窗对"延迟/异步深处"的 get 调用，自动 Face ID 会被视为无效尝试（需用户再点系统弹窗）。
 export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<string | null> }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -14,8 +14,7 @@ export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<str
     if (busy) return
     setBusy(true); setError(null)
     try {
-      await new Promise((r) => setTimeout(r, 300))
-      const err = await onUnlock()
+      const err = await onUnlock() // 立即调用，保持用户激活上下文
       if (err) setError(err)
     } catch {
       setError('解锁失败，请重试')

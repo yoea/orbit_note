@@ -121,7 +121,8 @@ export async function loginWithPasskey(): Promise<LoginResult> {
     if (e instanceof Error && e.name === 'NotAllowedError') {
       return { ok: false, error: '已取消认证', via: null }
     }
-    return { ok: false, error: '解锁失败', via: null }
+    // 其他错误透传具体信息（诊断：iOS 弹窗"无效识别"会抛 NotSupportedError/SecurityError 等）
+    return { ok: false, error: e instanceof Error ? `认证失败：${e.message}` : '解锁失败', via: null }
   }
 }
 
