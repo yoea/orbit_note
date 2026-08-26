@@ -4,7 +4,27 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { clearDek, fetchSession } from '@/lib/client/session'
+import { authenticatePasskey } from '@/lib/client/webauthn'
 import { idbClearAll } from '@/lib/client/idb'
+
+// 二次确认：通过 WebAuthn 认证（iOS 原生 Face ID 弹窗）确认用户在场。
+// 认证成功（服务端验证 assertion）才视为确认——防止误触/他人操作删除。
+async function confirmWithFaceId(): Promise<boolean> {
+  try {
+    const optsRes = await fetch('/api/auth/login/options')
+    if (!optsRes.ok) return false
+    const { token, options } = await optsRes.json()
+    const { assertion } = await authenticatePasskey(options, null) // 仅认证，不需要 PRF
+    const loginRes = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, assertion }),
+    })
+    return loginRes.ok
+  } catch {
+    return false // 用户取消/认证失败
+  }
+}
 
 // 定位开关（与 DiaryEditor 的 isLocationEnabled 共用 localStorage key）
 const LOCATION_KEY = 'qo-location-enabled'
@@ -36,10 +56,19 @@ export default function SettingsPage() {
     router.replace('/login')
   }
 
+  const [wiping, setWiping] = useState(false)
+
   async function wipe() {
     if (!window.confirm('确定删除所有数据吗？此操作不可恢复！\n\n请先确认已保存你的恢复密钥。')) return
-    if (!window.confirm('再次确认：所有日记、密钥包装、Passkey 凭证都将被永久删除。')) return
+    if (!window.confirm('再次确认：所有日记、密钥包装、Passkey 凭证都将被永久删除。\n\n点击确定后将通过 Face ID 验证身份。')) return
+    setWiping(true)
     try {
+      // 二次确认：Face ID 生物识别验证（认证成功才执行删除）
+      const ok = await confirmWithFaceId()
+      if (!ok) {
+        window.alert('身份验证未完成，未执行删除')
+        return
+      }
       const res = await fetch('/api/admin/wipe', { method: 'POST' })
       if (!res.ok) throw new Error()
       await idbClearAll()
@@ -47,6 +76,8 @@ export default function SettingsPage() {
       router.replace('/setup')
     } catch {
       window.alert('删除失败，请重试')
+    } finally {
+      setWiping(false)
     }
   }
 
@@ -80,7 +111,7 @@ export default function SettingsPage() {
         </li>
         <li className="py-4"><Link href="/settings/recovery?mode=regenerate" className="text-neutral-800 dark:text-neutral-200">重新生成恢复密钥</Link></li>
         <li className="py-4"><button onClick={() => void logout()} className="text-neutral-800 dark:text-neutral-200">退出登录</button></li>
-        <li className="py-4"><button onClick={() => void wipe()} className="text-red-500">删除所有数据</button></li>
+        <li className="py-4"><button onClick={() => void wipe()} disabled={wiping} className="text-red-500 disabled:opacity-50">{wiping ? '验证中…' : '删除所有数据'}</button></li>
         <li className="py-4 text-sm text-neutral-400">关于：端到端加密私人日记 · v0.1</li>
       </ul>
     </main>
