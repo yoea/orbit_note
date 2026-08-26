@@ -19,6 +19,9 @@ export default function LoginPage() {
         if (!s.initialized) { router.replace('/setup'); return }
         // 已认证且 DEK 在内存才进首页；否则停留本页重新解锁（DEK 刷新即清空，规格二十六节）
         if (s.authenticated && getDek()) { router.replace('/'); return }
+        // 已认证但 DEK 为空（passkey 验证成功、PRF 不可用、未完成加密解锁）：
+        // 直接进入恢复密钥模式，避免重复 Face ID 认证
+        if (s.authenticated && !getDek()) { setMode('recovery'); return }
       } catch {
         // 网络/服务错误：绝不走初始化分支，停留在本页提示
         setLoadError(true)
