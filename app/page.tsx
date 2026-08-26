@@ -15,8 +15,8 @@ export default function HomePage() {
       try {
         const s = await fetchSession()
         if (!s.initialized) { router.replace('/setup'); return }
-        if (!s.authenticated) { router.replace('/login'); return }
-        if (!getDek()) { router.replace('/login'); return }
+        if (!s.authenticated) { router.replace('/login?reason=no-auth'); return }
+        if (!getDek()) { router.replace('/login?reason=no-dek'); return }
         setReady(true)
       } catch {
         // 网络/服务错误：绝不走初始化分支，停留在本页提示

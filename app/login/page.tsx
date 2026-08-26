@@ -11,6 +11,11 @@ export default function LoginPage() {
   const [loadError, setLoadError] = useState(false)
   const [mode, setMode] = useState<'passkey' | 'recovery'>('passkey')
   const [recoveryKey, setRecoveryKey] = useState('')
+  const [reason, setReason] = useState<string | null>(() => {
+    // 首页守卫踢回时携带原因（诊断）
+    if (typeof window === 'undefined') return null
+    return new URLSearchParams(window.location.search).get('reason')
+  })
 
   useEffect(() => {
     void (async () => {
@@ -102,6 +107,8 @@ export default function LoginPage() {
         </form>
       )}
       {error && <p className="text-sm text-red-500">{error}</p>}
+      {reason === 'no-dek' && <p className="text-sm text-amber-600 dark:text-amber-400">解锁未完成：密钥未载入内存（诊断 no-dek）</p>}
+      {reason === 'no-auth' && <p className="text-sm text-amber-600 dark:text-amber-400">会话未建立（诊断 no-auth）</p>}
       {mode === 'recovery' && (
         <button onClick={() => setMode('passkey')} className="text-sm text-neutral-400 underline">返回 Face ID</button>
       )}
