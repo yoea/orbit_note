@@ -29,7 +29,7 @@ CREATE DATABASE quiet_orbit OWNER quiet_orbit;
 sudo mkdir -p /opt/quiet-orbit && sudo chown $USER /opt/quiet-orbit
 cd /opt/quiet-orbit
 git clone <你的仓库> .
-npm ci --omit=dev        # 生产依赖
+npm ci                     # 完整安装（migrate/build 需要 devDependencies，见第 5 步说明）
 ```
 
 ## 4. 环境变量
@@ -56,12 +56,16 @@ DATABASE_URL=... npx drizzle-kit migrate   # 或 npm run db:migrate（需 DATABA
 npm run build
 ```
 
+> migrate 与 build 需要 devDependencies（drizzle-kit/typescript/tailwind），因此先完整安装；运行阶段可 `npm prune --omit=dev` 精简 node_modules。
+
 ## 6. 进程管理（systemd）
 
 `sudo cp docs/deploy/quiet-orbit.service.example /etc/systemd/system/quiet-orbit.service`
 编辑文件确认路径/用户后：
 
 ```bash
+# 若 systemd 服务使用 www-data 用户，需给运行目录写权限：
+sudo chown -R www-data:www-data /opt/quiet-orbit/.next /opt/quiet-orbit/.cache
 sudo systemctl daemon-reload
 sudo systemctl enable --now quiet-orbit
 sudo systemctl status quiet-orbit
@@ -107,9 +111,10 @@ gunzip -c /var/backups/quiet_orbit_2026-08-26.sql.gz | psql -U quiet_orbit quiet
 ```bash
 cd /opt/quiet-orbit
 git pull
-npm ci --omit=dev
+npm ci                     # 完整安装（migrate/build 需要 devDependencies）
 DATABASE_URL=... npx drizzle-kit migrate   # 有 schema 变更时
 npm run build
+npm prune --omit=dev       # 可选：运行阶段精简 devDependencies
 sudo systemctl restart quiet-orbit
 ```
 

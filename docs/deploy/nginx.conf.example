@@ -15,7 +15,10 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
+    # http2 指令为 Nginx 1.25.1+ 写法；Ubuntu 22.04 旧版若报 unknown directive，
+    # 回退为：listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     server_name diary.example.com;
 
     # SSL 证书（certbot 生成后自动配置；也可手动指定）
