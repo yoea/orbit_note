@@ -29,7 +29,7 @@ export default function HistoryPage() {
     void (async () => {
       try {
         const s = await fetchSession()
-        if (!s.authenticated || !getDek()) { router.replace('/login'); return }
+        if (!s.authenticated || !getDek()) { router.replace('/login?from=/history'); return }
         const dek = getDek()!
         const res = await fetch('/api/diary?limit=200')
         if (!res.ok) throw new Error('加载失败')

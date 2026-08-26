@@ -48,7 +48,12 @@ export default function LoginPage() {
     setBusy(true); setError(null)
     try {
       const result = await unlockWithRecoveryKey(recoveryKey.trim())
-      if (result.ok) { router.replace('/'); return }
+      if (result.ok) {
+        // 回到来源页面（守卫跳转时携带 ?from=），默认首页
+        const from = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('from') : null
+        router.replace(from && from.startsWith('/') ? from : '/')
+        return
+      }
       setError(result.error ?? '登录失败')
     } catch {
       setError('登录失败')

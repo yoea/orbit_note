@@ -33,7 +33,7 @@ export default function EntryPage() {
     void (async () => {
       try {
         const s = await fetchSession()
-        if (!s.authenticated || !getDek()) { router.replace('/login'); return }
+        if (!s.authenticated || !getDek()) { router.replace(`/login?from=/entry/${id}`); return }
         const res = await fetch(`/api/diary/${id}`)
         if (res.status === 404) { router.replace('/history'); return }
         if (!res.ok) throw new Error('加载失败')
