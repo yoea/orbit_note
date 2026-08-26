@@ -40,7 +40,7 @@
 ## 7. localStorage 是否保存明文日记？—— 通过
 
 - 检查方法：grep `localStorage/sessionStorage` 全部用法。
-- 结论：零使用。离线草稿存于 IndexedDB（`lib/client/idb.ts`），且只存加密后的 ciphertext/iv（客户端加密后才写入）。密钥标记（unlocked 标记等）不涉及正文。
+- 结论：localStorage 零使用；sessionStorage 仅存 UI 标记（`components/DiaryEditor.tsx` 的 `'qo-location-notice-shown'`——位置提示是否已显示），无日记内容。离线草稿存于 IndexedDB（`lib/client/idb.ts`），且只存加密后的 ciphertext/iv（客户端加密后才写入）。
 
 ## 8. Cookie 是否保存敏感密钥？—— 通过
 
@@ -72,7 +72,7 @@
 ## 13. 服务器日志是否泄露 request body？—— 通过
 
 - 检查方法：grep 全项目 `console.log/error/warn/debug`。
-- 结论：`app/`、`lib/`、`components/`、`scripts/` 中零 console 输出（无匹配行）。API 路由从不打印请求体/密文/密钥。`lib/server/db/index.ts` 的 postgres 客户端未配置 debug（默认不打印查询）。
+- 结论：`app/`、`lib/`、`components/` 零 console 输出；`scripts/generate-icons.js` 仅有文件名日志（`icon-${size}.png generated`），无请求体/密钥。API 路由从不打印请求体/密文/密钥。`lib/server/db/index.ts` 的 postgres 客户端未配置 debug（默认不打印查询）。
 
 ## 14. 第三方脚本是否能够读取日记？—— 通过
 
