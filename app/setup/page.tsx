@@ -18,6 +18,7 @@ export default function SetupPage() {
   const [loadError, setLoadError] = useState(false)
   const [recoveryKey, setRecoveryKey] = useState('')
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [prfBindError, setPrfBindError] = useState<string | null>(null)
 
   useEffect(() => {
     void (async () => {
@@ -55,7 +56,7 @@ export default function SetupPage() {
       // 4. 无条件尝试认证取 PRF 输出（Windows Hello quirk：create 时 prf.enabled 可能为 false，
       //    但 get 时 authenticator 仍可能返回 PRF 值——需要 hmac-secret 能力，Windows 11 25H2+
       //    KB5077181 提供）。拿到结果 → 派生 KEK → 包裹 DEK → 保存 wrapper_p；
-      //    拿不到（或用户取消弹窗）→ 静默降级为仅 Recovery 解锁，不中断初始化。
+      //    拿不到（或用户取消弹窗）→ 降级为仅 Recovery 解锁，不中断初始化，但把原因显示给用户。
       try {
         const loginRes = await fetch('/api/auth/login/options')
         const loginOpts = await loginRes.json()
@@ -65,7 +66,11 @@ export default function SetupPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token: loginOpts.token, assertion }),
         })
-        if (loginResp.ok && prfResult) {
+        if (!loginResp.ok) {
+          setPrfBindError('通行密钥验证未通过（服务器拒绝）')
+        } else if (!prfResult) {
+          setPrfBindError('此设备不支持 PRF 密钥派生（硬件/浏览器限制），解锁需使用恢复密钥')
+        } else {
           const kek = await derivePrfKek(prfResult, prfEvalB64(prfEval))
           const { encryptedDek } = await wrapWithKek(dek, kek)
           const wrapP = await fetch('/api/keys/wrappers', {
@@ -81,10 +86,11 @@ export default function SetupPage() {
           })
           if (!wrapP.ok) throw new Error('保存 Passkey 包装失败')
         }
-        // 降级路径（PRF 无结果/认证失败）：系统仍可用（Recovery Key 解锁）。
-        // 已注册的 passkey 仍可正常完成 WebAuthn 认证（服务端会话），只是无法派生 KEK。
-      } catch {
-        // 用户取消认证弹窗或网络错误：降级，不阻塞初始化
+      } catch (e) {
+        // 用户取消认证弹窗（NotAllowedError）最常见；其余错误也降级但告知用户
+        setPrfBindError(e instanceof Error && e.name === 'NotAllowedError'
+          ? '已跳过通行密钥解锁绑定（可稍后在设置中补录）'
+          : `通行密钥绑定失败：${e instanceof Error ? e.message : String(e)}`)
       }
 
       // 5. 生成 Recovery Key 与 wrapper_r（含服务器校验哈希），保存
@@ -152,6 +158,9 @@ export default function SetupPage() {
         <>
           <h1 className="text-xl font-semibold">保存你的恢复密钥</h1>
           <p className="text-center text-sm text-neutral-500">它只显示一次，请保存到安全密码管理器。丢失后无法恢复日记。</p>
+          {prfBindError && (
+            <p className="text-center text-xs text-amber-600 dark:text-amber-400">{prfBindError}</p>
+          )}
           <code className="break-all rounded-xl bg-neutral-100 px-4 py-3 text-sm dark:bg-neutral-800">{recoveryKey}</code>
           <button onClick={() => void handleCopy()} className="text-sm text-neutral-500 underline">
             {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败，请手动选择复制' : '复制恢复密钥'}
