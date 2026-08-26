@@ -18,7 +18,12 @@ export default function LoginPage() {
   })
   // 自动解锁尝试标记：session 有效但 DEK 为空时（刷新后），自动触发一次 Face ID 认证，
   // 避免"刷新 → 登录页 → 再点一次"的重复操作（WebAuthn get 无需用户手势，iOS 弹 Face ID 确认一次即可）。
+  // 标记存 sessionStorage：页面重挂载（导航循环/刷新）也不重置，防止"解锁→重载→又自动解锁"死循环。
   const autoUnlockTriedRef = useRef(false)
+
+  useEffect(() => {
+    try { autoUnlockTriedRef.current = sessionStorage.getItem('qo-auto-unlock-tried') === '1' } catch { /* ignore */ }
+  }, [])
 
   useEffect(() => {
     void (async () => {
@@ -31,6 +36,7 @@ export default function LoginPage() {
         // 失败/取消则停留在 Face ID 按钮，用户可手动重试或切恢复密钥）
         if (s.authenticated && !getDek() && !autoUnlockTriedRef.current) {
           autoUnlockTriedRef.current = true
+          try { sessionStorage.setItem('qo-auto-unlock-tried', '1') } catch { /* ignore */ }
           setTimeout(() => void handlePasskey(), 300) // 延迟到首帧渲染后，避免 effect 内同步 setState
         }
       } catch {
@@ -50,7 +56,12 @@ export default function LoginPage() {
     setBusy(true); setError(null)
     try {
       const result = await loginWithPasskey()
-      if (result.ok) { goToFrom(); return }
+      if (result.ok) {
+        // 防御：DEK 未真正载入内存时禁止跳转（否则目标页守卫会踢回形成循环）
+        if (!getDek()) { setError('解锁未完成，请重试'); return }
+        goToFrom()
+        return
+      }
       if (result.error === PRF_UNAVAILABLE) { setMode('recovery'); return }
       setError(result.error ?? '登录失败')
     } catch {
