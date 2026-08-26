@@ -181,10 +181,10 @@ export default function EntryView({ id, onBack }: { id: string; onBack: () => vo
           </button>
         </>
       ) : (
-        // 正文：小一号字体（text-base）+ 段落间距（按空行分段，段间 mb-3）
+        // 正文：小一号字体（text-base）+ 每行分段加段间距（单换行也有明显间距；空行自然形成更大间隔）
         <div className="mt-4 text-base leading-relaxed text-neutral-800 dark:text-neutral-200">
-          {plain.split(/\n\s*\n/).map((para, i) => (
-            <p key={i} className="mb-3 whitespace-pre-wrap last:mb-0">{para}</p>
+          {plain.split('\n').map((line, i) => (
+            <p key={i} className="mb-2 whitespace-pre-wrap last:mb-0">{line}</p>
           ))}
         </div>
       )}
