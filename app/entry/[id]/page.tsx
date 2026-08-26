@@ -9,7 +9,7 @@ export default function EntryPage() {
   const { id } = useParams<{ id: string }>()
   const { state, retryUnlock } = useRequireUnlock()
 
-  if (state === 'need-unlock') return <UnlockPrompt onUnlock={() => void retryUnlock()} />
+  if (state === 'need-unlock') return <UnlockPrompt onUnlock={retryUnlock} />
   if (state !== 'ready') return <main className="min-h-dvh px-5 safe-pt" />
   return <EntryView id={id} />
 }

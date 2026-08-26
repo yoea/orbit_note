@@ -18,7 +18,7 @@ export default function HomePage() {
     )
   }
 
-  if (state === 'need-unlock') return <UnlockPrompt onUnlock={() => void retryUnlock()} />
+  if (state === 'need-unlock') return <UnlockPrompt onUnlock={retryUnlock} />
   if (state !== 'ready') return null
   return <DiaryEditor />
 }

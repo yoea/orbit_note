@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PRF_UNAVAILABLE, fetchSession, getDek, initDek, loginWithPasskey } from './session'
 
@@ -12,9 +12,12 @@ export type UnlockState = 'loading' | 'ready' | 'need-unlock' | 'error'
 //    不做无手势自动 WebAuthn 调用——iOS PWA 冷启动时会被拦截（弹了 Face ID 也失败，
 //    造成"识别了却没登录"的困惑）；用户点击一次（有手势）即成功。
 // 3. 未认证 → /login；PRF 不可用（解锁时返回）→ /login（恢复密钥模式）
-export function useRequireUnlock(): { state: UnlockState; retryUnlock: () => Promise<void> } {
+export function useRequireUnlock(): { state: UnlockState; retryUnlock: () => Promise<string | null> } {
   const router = useRouter()
   const [state, setState] = useState<UnlockState>('loading')
+  // 自动重试标记：iOS PWA 冷启动后首次 WebAuthn 认证偶发失败（弹窗识别后无响应），
+  // 失败时自动重试一次（页面实例级），仍失败则返回错误信息供界面显示
+  const retriedRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -35,12 +38,18 @@ export function useRequireUnlock(): { state: UnlockState; retryUnlock: () => Pro
     return () => { cancelled = true }
   }, [router])
 
-  // 手动解锁（用户手势下 WebAuthn 正常）：成功 → ready；PRF 不可用 → 登录页（恢复密钥）
-  const retryUnlock = useCallback(async (): Promise<void> => {
+  // 手动解锁（用户手势下 WebAuthn 正常）：成功 → ready；PRF 不可用 → 登录页（恢复密钥）；
+  // 失败 → 自动重试一次（iOS PWA 首次 get 偶发失败），仍失败返回错误信息
+  const retryUnlock = useCallback(async (): Promise<string | null> => {
     const result = await loginWithPasskey()
-    if (result.ok && getDek()) { setState('ready'); return }
-    if (result.error === PRF_UNAVAILABLE) { router.replace('/login'); return }
-    setState('need-unlock') // 保持本页，可再试
+    if (result.ok && getDek()) { setState('ready'); return null }
+    if (result.error === PRF_UNAVAILABLE) { router.replace('/login'); return null }
+    if (!retriedRef.current) {
+      retriedRef.current = true
+      setTimeout(() => { void retryUnlock() }, 400)
+      return null
+    }
+    return result.error ?? '解锁失败，请重试'
   }, [router])
 
   return { state, retryUnlock }

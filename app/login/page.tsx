@@ -83,16 +83,26 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-6 px-6 safe-pb">
-      <h1 className="text-2xl font-semibold text-neutral-800 dark:text-neutral-100">Orbit</h1>
+    <main className="flex min-h-dvh flex-col items-center justify-center gap-8 px-6 safe-pb">
+      {/* 应用图标 */}
+      <div className="flex h-20 w-20 items-center justify-center rounded-[22px] bg-neutral-900 text-3xl font-bold text-white shadow-lg dark:bg-neutral-100 dark:text-neutral-900">
+        O
+      </div>
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold text-neutral-800 dark:text-neutral-100">Orbit</h1>
+        <p className="mt-2 text-sm text-neutral-400">安全 · 私密 · 只属于你</p>
+      </div>
       {mode === 'passkey' ? (
-        <button
-          onClick={() => void handlePasskey()}
-          disabled={busy}
-          className="w-full max-w-xs rounded-2xl bg-neutral-900 px-6 py-4 text-base font-medium text-white active:scale-[0.98] disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
-        >
-          {busy ? '正在验证…' : '使用 Face ID 解锁'}
-        </button>
+        <div className="w-full max-w-xs">
+          <button
+            onClick={() => void handlePasskey()}
+            disabled={busy}
+            className="w-full rounded-2xl bg-neutral-900 px-6 py-4 text-base font-medium text-white active:scale-[0.98] disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+          >
+            {busy ? '正在验证…' : '使用通行密钥登录'}
+          </button>
+          <p className="mt-3 text-center text-xs text-neutral-400">通过 Face ID 或 Windows Hello 快速安全登录</p>
+        </div>
       ) : (
         <form onSubmit={(e) => void handleRecoverySubmit(e)} className="flex w-full max-w-xs flex-col gap-3">
           <p className="text-sm text-neutral-500">通行密钥已验证 ✓，请输入恢复密钥完成解锁</p>
