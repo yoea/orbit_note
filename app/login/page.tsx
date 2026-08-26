@@ -2,38 +2,67 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { fetchSession, getDek, loginWithPasskey, unlockWithRecoveryKey } from '@/lib/client/session'
+import { PRF_UNAVAILABLE, fetchSession, getDek, loginWithPasskey, unlockWithRecoveryKey } from '@/lib/client/session'
 
 export default function LoginPage() {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState(false)
   const [mode, setMode] = useState<'passkey' | 'recovery'>('passkey')
   const [recoveryKey, setRecoveryKey] = useState('')
 
   useEffect(() => {
     void (async () => {
-      const s = await fetchSession()
-      if (!s.initialized) { router.replace('/setup'); return }
-      // 已认证且 DEK 在内存才进首页；否则停留本页重新解锁（DEK 刷新即清空，规格二十六节）
-      if (s.authenticated && getDek()) { router.replace('/'); return }
+      try {
+        const s = await fetchSession()
+        if (!s.initialized) { router.replace('/setup'); return }
+        // 已认证且 DEK 在内存才进首页；否则停留本页重新解锁（DEK 刷新即清空，规格二十六节）
+        if (s.authenticated && getDek()) { router.replace('/'); return }
+      } catch {
+        // 网络/服务错误：绝不走初始化分支，停留在本页提示
+        setLoadError(true)
+      }
     })()
   }, [router])
 
   async function handlePasskey() {
     setBusy(true); setError(null)
-    const result = await loginWithPasskey()
-    if (result.ok) { router.replace('/'); return }
-    if (result.error === 'prf_unavailable') { setMode('recovery'); setBusy(false); return }
-    setError(result.error ?? '登录失败'); setBusy(false)
+    try {
+      const result = await loginWithPasskey()
+      if (result.ok) { router.replace('/'); return }
+      if (result.error === PRF_UNAVAILABLE) { setMode('recovery'); return }
+      setError(result.error ?? '登录失败')
+    } catch {
+      setError('登录失败')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function handleRecoverySubmit(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true); setError(null)
-    const result = await unlockWithRecoveryKey(recoveryKey.trim())
-    if (result.ok) { router.replace('/'); return }
-    setError(result.error ?? '登录失败'); setBusy(false)
+    try {
+      const result = await unlockWithRecoveryKey(recoveryKey.trim())
+      if (result.ok) { router.replace('/'); return }
+      setError(result.error ?? '登录失败')
+    } catch {
+      setError('登录失败')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (loadError) {
+    return (
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 safe-pb">
+        <p className="text-sm text-neutral-500">连接失败，请检查网络后重试</p>
+        <button onClick={() => window.location.reload()} className="rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900">
+          重试
+        </button>
+      </main>
+    )
   }
 
   return (

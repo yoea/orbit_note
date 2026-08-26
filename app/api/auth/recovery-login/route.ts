@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createHash } from 'node:crypto'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { db } from '@/lib/server/db'
 import { keyWrappers } from '@/lib/server/db/schema'
 import { and, eq, isNotNull } from 'drizzle-orm'
@@ -20,7 +20,13 @@ export async function POST(req: Request) {
     .from(keyWrappers)
     .where(and(eq(keyWrappers.wrapperType, 'recovery'), isNotNull(keyWrappers.recoveryKeyHash)))
     .limit(1)
-  if (!rec || rec.recoveryKeyHash !== hash) {
+  if (!rec || !rec.recoveryKeyHash) {
+    return NextResponse.json({ error: 'invalid_recovery_key' }, { status: 401 })
+  }
+  // 常数时间比较，防时序侧信道（两值均为 64 hex 字符 = 32 字节，先比长度兜底）
+  const stored = Buffer.from(rec.recoveryKeyHash, 'hex')
+  const provided = Buffer.from(hash, 'hex')
+  if (stored.length !== provided.length || !timingSafeEqual(stored, provided)) {
     return NextResponse.json({ error: 'invalid_recovery_key' }, { status: 401 })
   }
   const session = await createSession()

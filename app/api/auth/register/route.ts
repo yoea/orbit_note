@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { RegistrationResponseJSON } from '@simplewebauthn/server'
 import { db } from '@/lib/server/db'
 import { credentials } from '@/lib/server/db/schema'
-import { createSession } from '@/lib/server/session'
+import { createSession, SESSION_COOKIE } from '@/lib/server/session'
 import { takeChallenge, verifyRegistration } from '@/lib/server/webauthn'
 import { rateLimit } from '@/lib/server/ratelimit'
 
@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   if (!body?.token || !body.registration) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
 
   const existing = await db.select().from(credentials).limit(1)
-  if (existing.length > 0 && !(req.headers.get('cookie')?.includes('qo_session=') ?? false)) {
+  if (existing.length > 0 && !(req.headers.get('cookie')?.includes(`${SESSION_COOKIE}=`) ?? false)) {
     return NextResponse.json({ error: 'already_initialized' }, { status: 403 })
   }
 
@@ -40,6 +40,6 @@ export async function POST(req: Request) {
 
   const session = await createSession()
   const res = NextResponse.json({ ok: true })
-  res.cookies.set('qo_session', session, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 30 })
+  res.cookies.set(SESSION_COOKIE, session, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 30 })
   return res
 }

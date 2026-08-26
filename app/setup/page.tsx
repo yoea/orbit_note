@@ -7,19 +7,25 @@ import { generateDek } from '@/lib/client/crypto/encryption'
 import { createWrappedDek, derivePrfKek, wrapWithKek } from '@/lib/client/crypto/setup'
 import { generateRecoveryKey, decodeRecoveryKey, sha256Hex } from '@/lib/client/crypto/recovery-key'
 import { prfEvalB64 } from '@/lib/client/crypto/prf'
-import { fetchSession } from '@/lib/client/session'
+import { fetchSession, setDek } from '@/lib/client/session'
 
 export default function SetupPage() {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [step, setStep] = useState<'intro' | 'recovery'>('intro')
   const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState(false)
   const [recoveryKey, setRecoveryKey] = useState('')
 
   useEffect(() => {
     void (async () => {
-      const s = await fetchSession()
-      if (s.initialized) router.replace('/login')
+      try {
+        const s = await fetchSession()
+        if (s.initialized) router.replace('/login')
+      } catch {
+        // 网络/服务错误：绝不走初始化分支，停留在本页提示
+        setLoadError(true)
+      }
     })()
   }, [router])
 
@@ -55,21 +61,25 @@ export default function SetupPage() {
           body: JSON.stringify({ token: loginOpts.token, assertion }),
         })
         if (!loginResp.ok) throw new Error('Passkey 验证失败')
-        if (!prfResult) throw new Error('PRF 未返回结果')
-        const kek = await derivePrfKek(prfResult, prfEvalB64(prfEval))
-        const { encryptedDek } = await wrapWithKek(dek, kek)
-        const wrapP = await fetch('/api/keys/wrappers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            wrapperType: 'passkey_prf',
-            credentialId: registration.id ?? '',
-            encryptedDek,
-            salt: prfEvalB64(prfEval),
-            encryptionVersion: 1,
-          }),
-        })
-        if (!wrapP.ok) throw new Error('保存 Passkey 包装失败')
+        if (prfResult) {
+          const kek = await derivePrfKek(prfResult, prfEvalB64(prfEval))
+          const { encryptedDek } = await wrapWithKek(dek, kek)
+          const wrapP = await fetch('/api/keys/wrappers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              wrapperType: 'passkey_prf',
+              credentialId: registration.id ?? '',
+              encryptedDek,
+              salt: prfEvalB64(prfEval),
+              encryptionVersion: 1,
+            }),
+          })
+          if (!wrapP.ok) throw new Error('保存 Passkey 包装失败')
+        }
+        // 降级路径：注册时 PRF 声明可用但重认证未返回 PRF 输出（authenticator 行为差异）。
+        // 不中断初始化——系统仍可用（Recovery Key 解锁），wrapper_p 留待设置页补录（Task 13，
+        // 依赖 login/options 的 S 不变量：新 Passkey 必须复用同一 S）
       }
 
       // 5. 生成 Recovery Key 与 wrapper_r（含服务器校验哈希），保存
@@ -88,6 +98,8 @@ export default function SetupPage() {
       })
       if (!wrapR.ok) throw new Error('保存恢复包装失败')
 
+      // 6. 把 DEK 交给 session 模块：用户进入首页无需再次解锁（刷新后仍须 Face ID 重新解锁）
+      setDek(dek)
       setRecoveryKey(recoveryKey)
       setStep('recovery')
     } catch (e) {
@@ -101,6 +113,17 @@ export default function SetupPage() {
     if (!recoveryKey) return
     void navigator.clipboard?.writeText(recoveryKey).catch(() => {})
     router.replace('/')
+  }
+
+  if (loadError) {
+    return (
+      <main className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 safe-pb">
+        <p className="text-sm text-neutral-500">连接失败，请检查网络后重试</p>
+        <button onClick={() => window.location.reload()} className="rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900">
+          重试
+        </button>
+      </main>
+    )
   }
 
   return (

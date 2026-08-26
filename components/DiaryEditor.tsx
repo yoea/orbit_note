@@ -15,6 +15,7 @@ export default function DiaryEditor() {
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [savedTime, setSavedTime] = useState('')
   const textRef = useRef('')
+  const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // 键盘遮挡防护：visualViewport resize 时把活动元素滚入视野
   useEffect(() => {
@@ -29,6 +30,13 @@ export default function DiaryEditor() {
     }
     vv.addEventListener('resize', onResize)
     return () => vv.removeEventListener('resize', onResize)
+  }, [])
+
+  // 卸载时清理状态复位定时器，避免卸载后 setState
+  useEffect(() => {
+    return () => {
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+    }
   }, [])
 
   async function save() {
@@ -57,7 +65,8 @@ export default function DiaryEditor() {
       setSavedTime(now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }))
       setStatus('saved')
       setText(''); textRef.current = ''
-      setTimeout(() => setStatus('idle'), 3000)
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+      statusTimeoutRef.current = setTimeout(() => setStatus('idle'), 3000)
     } catch {
       setStatus('error')
     }
@@ -74,6 +83,7 @@ export default function DiaryEditor() {
         onChange={(v) => { setText(v); textRef.current = v; onDraftChange(v) }}
         placeholder="写下此刻……"
         autoFocus
+        disabled={status === 'saving'}
       />
       <footer className="flex items-center justify-between py-4 pb-safe">
         <p className="text-sm text-neutral-400">

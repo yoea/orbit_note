@@ -3,7 +3,7 @@ import type { AuthenticationResponseJSON, AuthenticatorTransportFuture } from '@
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/server/db'
 import { credentials } from '@/lib/server/db/schema'
-import { createSession } from '@/lib/server/session'
+import { createSession, SESSION_COOKIE } from '@/lib/server/session'
 import { takeChallenge, verifyLogin } from '@/lib/server/webauthn'
 import { rateLimit } from '@/lib/server/ratelimit'
 
@@ -43,6 +43,6 @@ export async function POST(req: Request) {
 
   const session = await createSession()
   const res = NextResponse.json({ ok: true })
-  res.cookies.set('qo_session', session, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 30 })
+  res.cookies.set(SESSION_COOKIE, session, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 30 })
   return res
 }

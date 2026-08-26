@@ -17,6 +17,9 @@ export async function GET() {
   const { token, challenge } = storeChallenge('login')
   const options = await generateLoginOptions(allowCredentials)
   // PRF eval 输入 S：从任意 passkey_prf wrapper 的 salt 读取（S 对所有 passkey 一致，不属于敏感材料）
+  // 固化不变量：所有 passkey 必须共用同一个 PRF eval 输入 S（即第一个 wrapper 的 salt）。
+  // 后续注册新 Passkey（Task 13 设置页）必须复用该 S，不得生成新的——否则新 wrapper_p 的 KEK
+  // 与登录时基于 S 派生的 PRF 输出无法匹配。
   const [anyPrf] = await db.select().from(keyWrappers).where(eq(keyWrappers.wrapperType, 'passkey_prf')).limit(1)
   return NextResponse.json({ token, options: { ...options, challenge }, prfEval: anyPrf?.salt ?? null })
 }
