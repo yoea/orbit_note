@@ -448,8 +448,9 @@ export function storeChallenge(type: 'register' | 'login'): { token: string; cha
 
 export function takeChallenge(token: string, type: 'register' | 'login'): string | null {
   const entry = challengeMap.get(token)
-  if (!entry || entry.type !== type || entry.expiresAt < Date.now()) return null
-  challengeMap.delete(token)
+  if (!entry) return null
+  challengeMap.delete(token) // 任何非空条目都删除（one-shot 语义，防重放 + 防滞留）
+  if (entry.type !== type || entry.expiresAt < Date.now()) return null
   return entry.challenge
 }
 
@@ -1559,17 +1560,7 @@ export async function POST(req: Request) {
 }
 ```
 
-更新 schema（Task 2 中 keyWrappers 表追加列）:
-
-```ts
-recoveryKeyHash: text('recovery_key_hash'), // 仅 recovery 行：SHA-256(recovery key)，用于灾难恢复登录校验
-```
-
-生成新 migration:
-
-```bash
-npm run db:generate && npm run db:migrate
-```
+~~更新 schema（Task 2 中 keyWrappers 表追加列）~~ **已提前完成**：`recoveryKeyHash` 列已在 Task 2 的初始 schema（0000 migration）中实现，无需在此追加列或生成新 migration。若 Task 8 执行 `npm run db:generate` 得到空结果属正常（schema 无变化）。
 
 `lib/client/session.ts` 增加:
 

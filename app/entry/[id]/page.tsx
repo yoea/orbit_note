@@ -1,0 +1,176 @@
+'use client'
+
+import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useParams, useRouter } from 'next/navigation'
+import UnlockPrompt from '@/components/UnlockPrompt'
+import { getDek } from '@/lib/client/session'
+import { useRequireUnlock } from '@/lib/client/use-require-unlock'
+import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
+
+interface Entry {
+  id: string
+  ciphertext: string
+  iv: string
+  createdAt: string
+  updatedAt: string
+  latitude: number | null
+  longitude: number | null
+  locationAccuracy: number | null
+  timezone: string | null
+}
+
+export default function EntryPage() {
+  const { id } = useParams<{ id: string }>()
+  const router = useRouter()
+  const [entry, setEntry] = useState<Entry | null>(null)
+  const [plain, setPlain] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [decryptFailed, setDecryptFailed] = useState(false)
+  const [showCoords, setShowCoords] = useState(false)
+  const { state: unlock, retryUnlock } = useRequireUnlock()
+
+  useEffect(() => {
+    if (unlock !== 'ready') return
+    void (async () => {
+      try {
+        const res = await fetch(`/api/diary/${id}`)
+        if (res.status === 404) { router.replace('/history'); return }
+        if (!res.ok) throw new Error('加载失败')
+        const { entry } = await res.json() as { entry: Entry }
+        setEntry(entry)
+        try {
+          setPlain(await decryptText(getDek()!, entry.ciphertext, entry.iv))
+          setDecryptFailed(false)
+        } catch {
+          setPlain('(解密失败，数据可能已损坏)')
+          setDecryptFailed(true)
+        }
+      } catch {
+        setError('连接失败，请检查网络后重试')
+      }
+    })()
+  }, [id, router, unlock])
+
+  const saveEdit = useCallback(async () => {
+    if (!entry || !plain.trim()) return
+    setBusy(true)
+    try {
+      const dek = getDek()!
+      const { ciphertext, iv } = await encryptText(dek, plain)
+      const res = await fetch(`/api/diary/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ciphertext, iv }),
+      })
+      if (!res.ok) throw new Error('保存失败')
+      const data = await res.json()
+      setEntry((prev) => prev ? { ...prev, ...data.entry } : prev)
+      setError(null)
+      setEditing(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存失败')
+    } finally {
+      setBusy(false)
+    }
+  }, [entry, plain, id])
+
+  const remove = useCallback(async () => {
+    if (!window.confirm('确定删除这篇日记吗？删除后无法恢复。')) return
+    try {
+      const res = await fetch(`/api/diary/${id}`, { method: 'DELETE' })
+      if (res.status === 401) { router.replace('/login'); return }
+      if (res.ok) {
+        // IDB 只存草稿（无条目缓存），删除无需清本地
+        router.replace('/history')
+        return
+      }
+      setError('删除失败，请重试')
+    } catch {
+      setError('删除失败，请重试')
+    }
+  }, [id, router])
+
+  if (error && !entry) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center px-5 safe-pt safe-pb">
+        <div className="text-center">
+          <p className="text-sm text-neutral-500">{error}</p>
+          <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white">重试</button>
+        </div>
+      </main>
+    )
+  }
+
+  if (unlock === 'need-unlock') return <UnlockPrompt onUnlock={() => void retryUnlock()} />
+  if (!entry) return <main className="min-h-dvh px-5 safe-pt" />
+
+  const created = new Date(entry.createdAt)
+  return (
+    <main className="min-h-dvh px-5 safe-pt safe-pb">
+      <header className="flex items-center justify-between py-3">
+        {/* iOS 原生风格返回：chevron 箭头 + history.back */}
+        <button onClick={() => router.back()} aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+          ‹
+        </button>
+        <h1 className="text-lg font-semibold">日记</h1>
+        <button onClick={() => setEditing(!editing)} disabled={decryptFailed} className="text-sm text-neutral-400 disabled:opacity-50">
+          {editing ? '取消' : '编辑'}
+        </button>
+      </header>
+      <p className="text-sm tabular-nums text-neutral-400">
+        {created.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}{' '}
+        {created.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+      </p>
+      {entry.latitude != null && entry.longitude != null && (
+        <div className="mt-1">
+          <button
+            onClick={() => setShowCoords((v) => !v)}
+            className="text-xs text-neutral-400 underline"
+          >
+            {showCoords ? '收起位置' : '记录了当前位置 · 点击查看坐标'}
+          </button>
+          {showCoords && (
+            <p className="mt-1 text-xs tabular-nums text-neutral-400">
+              {entry.latitude.toFixed(6)}, {entry.longitude.toFixed(6)}
+              {entry.locationAccuracy != null && ` · 精度 ±${Math.round(entry.locationAccuracy)} 米`}
+            </p>
+          )}
+        </div>
+      )}
+      {editing ? (
+        <>
+          <textarea
+            value={plain}
+            onChange={(e) => setPlain(e.target.value)}
+            disabled={busy}
+            className="mt-3 min-h-[50dvh] w-full resize-none bg-transparent text-lg leading-relaxed outline-none disabled:opacity-60"
+          />
+          <button
+            onClick={() => void saveEdit()}
+            disabled={busy || !plain.trim()}
+            className="mt-4 w-full rounded-2xl bg-neutral-900 py-4 font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+          >
+            {busy ? '保存中…' : '保存修改'}
+          </button>
+        </>
+      ) : (
+        <p className="mt-4 whitespace-pre-wrap text-lg leading-relaxed text-neutral-800 dark:text-neutral-200">{plain}</p>
+      )}
+      {decryptFailed && (
+        <p className="mt-3 text-sm text-red-500">原内容无法解密，无法编辑，否则将覆盖原数据</p>
+      )}
+      {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+      {!editing && (
+        <button
+          onClick={() => void remove()}
+          className="mt-10 w-full rounded-2xl border border-red-200 py-3 text-sm text-red-500 dark:border-red-900"
+        >
+          删除日记
+        </button>
+      )}
+    </main>
+  )
+}

@@ -1,0 +1,4 @@
+CREATE INDEX "diary_entries_created_at_idx" ON "diary_entries" USING btree ("created_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "key_wrappers_prf_unique" ON "key_wrappers" USING btree ("wrapper_type","credential_id") WHERE "key_wrappers"."wrapper_type" = 'passkey_prf';--> statement-breakpoint
+CREATE UNIQUE INDEX "key_wrappers_recovery_unique" ON "key_wrappers" USING btree ("wrapper_type") WHERE "key_wrappers"."wrapper_type" = 'recovery';--> statement-breakpoint
+ALTER TABLE "key_wrappers" ADD CONSTRAINT "key_wrappers_wrapper_type_check" CHECK ("key_wrappers"."wrapper_type" in ('passkey_prf', 'recovery'));
