@@ -53,12 +53,12 @@ function draw(size) {
     const rectY = Math.max(Math.abs(py - 0.5) * size - (size / 2 - radius), 0)
     const inRect = rectX * rectX + rectY * rectY <= radius * radius || (Math.abs(px - 0.5) < 0.5 - radius / size && Math.abs(py - 0.5) < 0.5 - radius / size)
     if (!inRect) return [0, 0, 0, 0]
+    // 橙色圆点（"此刻"）——必须先于书页判定（圆点落在书页区域内）
+    const dotDist = Math.hypot(px - 0.5, py - 0.46)
+    if (dotDist < 0.05) return [249, 115, 22, 255]
     // 书页：中间白色区域
     const isPage = px > 0.34 && px < 0.66 && py > 0.3 && py < 0.7
     if (isPage) return [255, 255, 255, 255]
-    // 橙色圆点（"此刻"）
-    const dotDist = Math.hypot(px - 0.5, py - 0.46)
-    if (dotDist < 0.05) return [249, 115, 22, 255]
     return [23, 23, 23, 255]
   }
 }
