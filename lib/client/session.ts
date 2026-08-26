@@ -20,17 +20,21 @@ export interface LoginResult {
   via: 'prf' | 'recovery' | null
 }
 
-// 解锁后的 DEK 仅存内存（模块级变量），刷新即清空 —— 规格二十六节
-let dek: CryptoKey | null = null
+// 解锁后的 DEK 仅存内存，刷新即清空 —— 规格二十六节。
+// 存储于 globalThis 而非模块级变量：Next.js（Turbopack）代码分割会把本模块重复打包进
+// 各路由 chunk（已实证 prf_unavailable 出现在 8 个 chunk），模块级变量在客户端导航后
+// 各 chunk 实例独立——首页解锁的 DEK 历史页读不到，导致每页都重新弹 Face ID。
+// globalThis 在同一页面上下文的所有 chunk 间共享；页面重载/多标签页行为与模块变量等价。
+const DEK_KEY = '__orbit_dek__'
 
 export function getDek(): CryptoKey | null {
-  return dek
+  return (globalThis as Record<string, unknown>)[DEK_KEY] as CryptoKey | null ?? null
 }
 export function setDek(key: CryptoKey): void {
-  dek = key
+  ;(globalThis as Record<string, unknown>)[DEK_KEY] = key
 }
 export function clearDek(): void {
-  dek = null
+  ;(globalThis as Record<string, unknown>)[DEK_KEY] = null
 }
 
 export async function fetchSession(): Promise<SessionState> {
@@ -72,7 +76,7 @@ export async function loginWithPasskey(): Promise<LoginResult> {
       if (prfWrapper) {
         try {
           const kek = await derivePrfKek(prfResult, prfWrapper.salt)
-          dek = await unwrapDekFromWrapper(kek, prfWrapper.encryptedDek)
+          setDek(await unwrapDekFromWrapper(kek, prfWrapper.encryptedDek))
           return { ok: true, via: 'prf' }
         } catch {
           return { ok: false, error: '解锁失败', via: null }
@@ -112,7 +116,7 @@ export async function unlockWithRecoveryKey(recoveryKey: string): Promise<LoginR
     const recWrapper = wrappers.find((w) => w.wrapperType === 'recovery')
     if (!recWrapper) return { ok: false, error: '无恢复包装', via: null }
     try {
-      dek = await unwrapWithRecoveryKey(recWrapper.encryptedDek, recWrapper.salt, recoveryKey)
+      setDek(await unwrapWithRecoveryKey(recWrapper.encryptedDek, recWrapper.salt, recoveryKey))
       return { ok: true, via: 'recovery' }
     } catch {
       return { ok: false, error: '恢复密钥解密失败', via: null }
