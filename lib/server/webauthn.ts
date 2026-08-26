@@ -70,7 +70,11 @@ export async function generateLoginOptions(allowCredentials: { id: string; trans
   return generateAuthenticationOptions({
     rpID,
     allowCredentials,
-    userVerification: 'required',
+    // preferred：iOS 先唤起系统通行密钥弹窗（半屏），用户点击通行密钥后系统才唤醒 Face ID——
+    // 避免 required 下"弹窗出现即自动识别"（用户未准备时识别无效需重试）。
+    // 服务器侧 verifyLogin 已放宽 requireUserVerification（Windows Hello UV 兼容），
+    // 无 UV 的 assertion 仍通过 passkey 签名验证（密钥在安全硬件内，需设备已解锁）。
+    userVerification: 'preferred',
     timeout: 60_000,
   })
 }

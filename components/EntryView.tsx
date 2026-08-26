@@ -174,10 +174,10 @@ export default function EntryView({ id }: { id: string }) {
               <p className="text-xs tabular-nums text-neutral-400">
                 {entry.latitude.toFixed(6)}, {entry.longitude.toFixed(6)}
               </p>
-              <button onClick={() => setRemoveLocation(true)} className="text-xs text-red-500 underline">删除位置</button>
+              <button onClick={() => setRemoveLocation(true)} className="text-xs text-red-500 underline">移除坐标</button>
             </div>
           )}
-          {removeLocation && <p className="mt-2 text-xs text-neutral-400">保存后位置将被删除</p>}
+          {removeLocation && <p className="mt-2 text-xs text-neutral-400">保存后坐标将被移除</p>}
           <button
             onClick={() => void saveEdit()}
             disabled={busy || !plain.trim()}
