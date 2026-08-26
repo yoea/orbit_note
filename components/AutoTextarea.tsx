@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 
-// 可用高度：visualViewport（键盘弹出时变小）减去头部/底部操作区与安全区
+// 可用高度：visualViewport（键盘弹出时变小）减去头部/底部操作区与安全区。
+// 输入框固定占满此区域（内容多时内部滚动），键盘弹出时自动收缩到剩余区。
 function getAvailableHeight(): number {
   const vv = window.visualViewport
   const viewH = vv ? vv.height : window.innerHeight
-  return Math.max(viewH - 190, 160)
+  return Math.max(viewH - 200, 160)
 }
 
 export default function AutoTextarea({ value, onChange, placeholder, autoFocus, disabled }: {
@@ -18,15 +19,14 @@ export default function AutoTextarea({ value, onChange, placeholder, autoFocus, 
 }) {
   const ref = useRef<HTMLTextAreaElement>(null)
 
-  // 统一高度逻辑：内容少时撑满当前可用区（进入时=全屏区，键盘弹出后=剩余区），
-  // 内容多时按 scrollHeight 增长，最多不超过可用区（内部滚动）。
+  // 高度逻辑：固定占满当前可用区（header 与底部操作栏之间），内容多时内部滚动；
+  // 键盘弹出时 visualViewport 变小 → 自动收缩到剩余区（统一不割裂）。
   const fitHeight = useCallback(() => {
     const el = ref.current
     if (!el) return
-    const maxH = getAvailableHeight()
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, maxH)}px`
-    el.style.maxHeight = `${maxH}px`
+    const h = getAvailableHeight()
+    el.style.height = `${h}px`
+    el.style.maxHeight = `${h}px`
   }, [])
 
   // 内容变化 → 重新适配
