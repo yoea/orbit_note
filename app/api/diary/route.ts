@@ -10,7 +10,9 @@ export async function GET(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const url = new URL(req.url)
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 100) || 100, 1), 200)
-  const entries = await db.select().from(diaryEntries).orderBy(desc(diaryEntries.createdAt)).limit(limit)
+  // 分页：offset（客户端"加载更多"）
+  const offset = Math.max(Number(url.searchParams.get('offset') ?? 0) || 0, 0)
+  const entries = await db.select().from(diaryEntries).orderBy(desc(diaryEntries.createdAt)).limit(limit).offset(offset)
   return NextResponse.json({ entries })
 }
 
