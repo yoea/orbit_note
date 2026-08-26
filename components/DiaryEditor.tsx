@@ -210,7 +210,10 @@ export default function DiaryEditor() {
     <div className="flex min-h-dvh flex-col px-5 safe-pt safe-pb">
       <header className="flex items-center justify-between py-3">
         <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">我的日记</h1>
-        <a href="/settings" className="text-sm text-neutral-400">设置</a>
+        <nav className="flex items-center gap-4">
+          <a href="/history" className="text-sm text-neutral-400">历史</a>
+          <a href="/settings" className="text-sm text-neutral-400">设置</a>
+        </nav>
       </header>
       {showDraftBanner && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950">
