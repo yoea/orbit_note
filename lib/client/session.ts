@@ -20,12 +20,15 @@ export interface LoginResult {
   via: 'prf' | 'recovery' | null
 }
 
-// 解锁后的 DEK 仅存内存，刷新即清空 —— 规格二十六节。
-// 存储于 globalThis 而非模块级变量：Next.js（Turbopack）代码分割会把本模块重复打包进
-// 各路由 chunk（已实证 prf_unavailable 出现在 8 个 chunk），模块级变量在客户端导航后
-// 各 chunk 实例独立——首页解锁的 DEK 历史页读不到，导致每页都重新弹 Face ID。
-// globalThis 在同一页面上下文的所有 chunk 间共享；页面重载/多标签页行为与模块变量等价。
+// 解锁后的 DEK：globalThis 内存缓存 + sessionStorage 会话级持久化。
+// iOS PWA（standalone）中任何页面导航都会触发完整重载，纯内存 DEK 每次导航后丢失、
+// 被迫重复 Face ID——sessionStorage 在导航/重载后保留（同标签页会话），DEK 自动恢复。
+// 安全权衡（用户确认）：sessionStorage 为会话级（关闭标签页清除、不落盘），
+// XSS 威胁模型下与内存持有等价（脚本均可访问）。
+import { fromBase64, toBase64 } from './crypto/base64'
+
 const DEK_KEY = '__orbit_dek__'
+const DEK_SESSION_KEY = 'qo_dek'
 
 export function getDek(): CryptoKey | null {
   return (globalThis as Record<string, unknown>)[DEK_KEY] as CryptoKey | null ?? null
@@ -35,6 +38,32 @@ export function setDek(key: CryptoKey): void {
 }
 export function clearDek(): void {
   ;(globalThis as Record<string, unknown>)[DEK_KEY] = null
+  try { sessionStorage.removeItem(DEK_SESSION_KEY) } catch { /* ignore */ }
+}
+
+// 将内存 DEK 持久化到 sessionStorage（登录/解锁成功后调用）
+export async function persistDek(): Promise<void> {
+  const key = getDek()
+  if (!key) return
+  try {
+    const raw = new Uint8Array(await crypto.subtle.exportKey('raw', key))
+    sessionStorage.setItem(DEK_SESSION_KEY, toBase64(raw))
+  } catch { /* 导出失败忽略 */ }
+}
+
+// 从 sessionStorage 恢复 DEK（页面重载后调用；成功则已写入内存）
+export async function initDek(): Promise<boolean> {
+  if (getDek()) return true
+  try {
+    const b64 = sessionStorage.getItem(DEK_SESSION_KEY)
+    if (!b64) return false
+    const raw = fromBase64(b64)
+    const key = await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
+    ;(globalThis as Record<string, unknown>)[DEK_KEY] = key
+    return true
+  } catch {
+    return false
+  }
 }
 
 export async function fetchSession(): Promise<SessionState> {
@@ -77,6 +106,7 @@ export async function loginWithPasskey(): Promise<LoginResult> {
         try {
           const kek = await derivePrfKek(prfResult, prfWrapper.salt)
           setDek(await unwrapDekFromWrapper(kek, prfWrapper.encryptedDek))
+          await persistDek() // 会话级持久化（PWA 导航重载后自动恢复，无需重复 Face ID）
           return { ok: true, via: 'prf' }
         } catch {
           return { ok: false, error: '解锁失败', via: null }
@@ -117,6 +147,7 @@ export async function unlockWithRecoveryKey(recoveryKey: string): Promise<LoginR
     if (!recWrapper) return { ok: false, error: '无恢复包装', via: null }
     try {
       setDek(await unwrapWithRecoveryKey(recWrapper.encryptedDek, recWrapper.salt, recoveryKey))
+      await persistDek() // 会话级持久化
       return { ok: true, via: 'recovery' }
     } catch {
       return { ok: false, error: '恢复密钥解密失败', via: null }

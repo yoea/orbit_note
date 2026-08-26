@@ -30,8 +30,8 @@ async function confirmWithFaceId(): Promise<boolean> {
 // 定位开关（与 DiaryEditor 的 isLocationEnabled 共用 localStorage key）
 const LOCATION_KEY = 'qo-location-enabled'
 
-// 设置视图（首页状态机内切换，避免 PWA 导航重载导致解锁状态丢失）
-export default function SettingsView({ onBack }: { onBack: () => void }) {
+// 设置视图（原生路由页 /settings 渲染；DEK 会话级持久化，导航/重载自动恢复）
+export default function SettingsView() {
   const router = useRouter()
   const [info, setInfo] = useState<{ credentialCount: number; prfWrappers: number } | null>(null)
   const [locationEnabled, setLocationEnabled] = useState(true)
@@ -40,10 +40,13 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     void fetchSession().then((s) => setInfo({ credentialCount: s.credentialCount, prfWrappers: s.prfWrappers })).catch(() => setInfo(null))
-    // 读取定位开关（默认开启）
-    try {
-      setLocationEnabled(localStorage.getItem(LOCATION_KEY) !== '0')
-    } catch { /* localStorage 不可用则保持默认 */ }
+    // 读取定位开关（默认开启）——异步延迟 setState 避免 cascading render
+    const t = setTimeout(() => {
+      try {
+        setLocationEnabled(localStorage.getItem(LOCATION_KEY) !== '0')
+      } catch { /* localStorage 不可用则保持默认 */ }
+    }, 0)
+    return () => clearTimeout(t)
   }, [])
 
   function toggleLocation() {
@@ -84,10 +87,10 @@ export default function SettingsView({ onBack }: { onBack: () => void }) {
   return (
     <main className="min-h-dvh px-5 safe-pt safe-pb">
       <header className="flex items-center justify-between py-3">
-        {/* iOS 原生风格返回：chevron 箭头 */}
-        <button onClick={onBack} aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+        {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效） */}
+        <Link href="/" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
-        </button>
+        </Link>
         <h1 className="text-lg font-semibold">设置</h1>
         <span className="w-8" />
       </header>

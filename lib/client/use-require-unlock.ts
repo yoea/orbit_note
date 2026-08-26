@@ -2,16 +2,15 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { PRF_UNAVAILABLE, fetchSession, getDek, loginWithPasskey } from './session'
+import { PRF_UNAVAILABLE, fetchSession, getDek, initDek, loginWithPasskey } from './session'
 
 export type UnlockState = 'loading' | 'ready' | 'need-unlock' | 'error'
 
-// 页面守卫 + 原地自动解锁：
-// 已认证但 DEK 为空（刷新/后退恢复导致内存清空）时，在本页直接调用 Face ID 解锁——
-// 成功后无需导航，当前页面继续渲染（避免 iOS 导航/重载丢内存 DEK 的循环）。
-// 自动解锁失败/取消（如 bfcache 恢复时浏览器拦截非手势 WebAuthn 调用）→ 进入
-// 'need-unlock'：留在本页显示手动解锁按钮（用户手势下 Face ID 正常），不跳转登录页。
-// 仅 PRF 不可用（需恢复密钥）或未认证时跳转 /login。
+// 页面守卫 + 解锁：
+// 1. 先从 sessionStorage 恢复 DEK（会话级持久化——PWA 导航重载后自动恢复，无需重复 Face ID）
+// 2. 已认证但 DEK 仍为空（新会话/清除过）→ 自动触发一次 Face ID 解锁（原地，不跳转）
+// 3. 自动解锁失败/取消 → 'need-unlock'：留在本页显示手动解锁按钮（用户手势下 Face ID 正常）
+// 4. 仅 PRF 不可用（需恢复密钥）或未认证时跳转 /login
 export function useRequireUnlock(): { state: UnlockState; retryUnlock: () => Promise<void> } {
   const router = useRouter()
   const [state, setState] = useState<UnlockState>('loading')
@@ -20,17 +19,13 @@ export function useRequireUnlock(): { state: UnlockState; retryUnlock: () => Pro
     let cancelled = false
     void (async () => {
       try {
+        // 会话级恢复（同步内存缓存；导航/重载后 DEK 自动回来）
+        await initDek()
         const s = await fetchSession()
         if (!s.initialized) { router.replace('/setup'); return }
         if (!s.authenticated) { router.replace('/login'); return }
         if (getDek()) { setState('ready'); return }
-        // 自动解锁仅每会话自动弹一次（sessionStorage 标记）：
-        // iOS Safari 在 Face ID 弹窗后可能重载页面 → 内存 DEK 丢失 → 若不限制会重复弹窗。
-        // 重载后不再自动弹，显示手动解锁按钮（用户手势下 Face ID 正常）。
-        let autoAllowed = true
-        try { autoAllowed = sessionStorage.getItem('qo-auto-unlock-attempted') !== '1' } catch { /* ignore */ }
-        if (!autoAllowed) { setState('need-unlock'); return }
-        try { sessionStorage.setItem('qo-auto-unlock-attempted', '1') } catch { /* ignore */ }
+        // 原地自动解锁（页面实例尝试一次；页面不重载，无循环风险）
         const result = await loginWithPasskey()
         if (cancelled) return
         if (result.ok && getDek()) { setState('ready'); return }

@@ -7,7 +7,7 @@ import { generateDek } from '@/lib/client/crypto/encryption'
 import { createWrappedDek, derivePrfKek, wrapWithKek } from '@/lib/client/crypto/setup'
 import { generateRecoveryKey, decodeRecoveryKey, sha256Hex } from '@/lib/client/crypto/recovery-key'
 import { prfEvalB64 } from '@/lib/client/crypto/prf'
-import { fetchSession, setDek } from '@/lib/client/session'
+import { fetchSession, persistDek, setDek } from '@/lib/client/session'
 import { copyText } from '@/lib/client/clipboard'
 
 export default function SetupPage() {
@@ -109,8 +109,9 @@ export default function SetupPage() {
       })
       if (!wrapR.ok) throw new Error('保存恢复包装失败')
 
-      // 6. 把 DEK 交给 session 模块：用户进入首页无需再次解锁（刷新后仍须 Face ID 重新解锁）
+      // 6. 把 DEK 交给 session 模块并会话级持久化：用户进入首页及后续导航均无需再次解锁
       setDek(dek)
+      await persistDek()
       setRecoveryKey(recoveryKey)
       setStep('recovery')
     } catch (e) {

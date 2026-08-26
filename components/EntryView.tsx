@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { getDek } from '@/lib/client/session'
@@ -19,8 +20,8 @@ interface Entry {
   timezone: string | null
 }
 
-// 日记详情视图（首页状态机内切换，避免 PWA 导航重载导致解锁状态丢失）
-export default function EntryView({ id, onBack }: { id: string; onBack: () => void }) {
+// 日记详情视图（原生路由页 /entry/[id] 渲染；DEK 会话级持久化，导航/重载自动恢复）
+export default function EntryView({ id }: { id: string }) {
   const router = useRouter()
   const [entry, setEntry] = useState<Entry | null>(null)
   const [plain, setPlain] = useState('')
@@ -47,7 +48,7 @@ export default function EntryView({ id, onBack }: { id: string; onBack: () => vo
     void (async () => {
       try {
         const res = await fetch(`/api/diary/${id}`)
-        if (res.status === 404) { onBack(); return }
+        if (res.status === 404) { router.replace('/history'); return }
         if (!res.ok) throw new Error('加载失败')
         const { entry } = await res.json() as { entry: Entry }
         setEntry(entry)
@@ -104,7 +105,7 @@ export default function EntryView({ id, onBack }: { id: string; onBack: () => vo
       if (res.status === 401) { router.replace('/login'); return }
       if (res.ok) {
         // IDB 只存草稿（无条目缓存），删除无需清本地
-        onBack()
+        router.replace('/history')
         return
       }
       setError('删除失败，请重试')
@@ -131,10 +132,10 @@ export default function EntryView({ id, onBack }: { id: string; onBack: () => vo
   return (
     <main className="min-h-dvh px-5 safe-pt safe-pb">
       <header className="flex items-center justify-between py-3">
-        {/* iOS 原生风格返回：chevron 箭头 */}
-        <button onClick={onBack} aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+        {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效） */}
+        <Link href="/history" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
-        </button>
+        </Link>
         <h1 className="text-lg font-semibold">日记</h1>
         <button onClick={() => setEditing(!editing)} disabled={decryptFailed} className="text-sm text-neutral-400 disabled:opacity-50">
           {editing ? '取消' : '编辑'}

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
 
@@ -26,11 +27,8 @@ interface Group {
   items: { id: string; time: string; preview: string; lat: number | null }[]
 }
 
-// 历史视图（首页状态机内切换，避免 PWA 导航重载导致解锁状态丢失）
-export default function HistoryView({ onBack, onOpenEntry }: {
-  onBack: () => void
-  onOpenEntry: (id: string) => void
-}) {
+// 历史视图（原生路由页 /history 渲染；DEK 会话级持久化，导航/重载自动恢复）
+export default function HistoryView() {
   const [items, setItems] = useState<DecryptedItem[]>([])
   const [stats, setStats] = useState<{ count: number; days: number } | null>(null)
   const [offset, setOffset] = useState(0)
@@ -124,10 +122,10 @@ export default function HistoryView({ onBack, onOpenEntry }: {
   return (
     <main className="min-h-dvh px-5 safe-pt safe-pb">
       <header className="flex items-center justify-between py-3">
-        {/* iOS 原生风格返回：chevron 箭头 */}
-        <button onClick={onBack} aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+        {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效） */}
+        <Link href="/" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
-        </button>
+        </Link>
         <h1 className="text-lg font-semibold">历史</h1>
         <span className="w-8" />
       </header>
@@ -143,10 +141,10 @@ export default function HistoryView({ onBack, onOpenEntry }: {
             <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
               {g.items.map((item) => (
                 <li key={item.id}>
-                  <button onClick={() => onOpenEntry(item.id)} className="flex w-full flex-col gap-0.5 py-3 text-left active:opacity-60">
+                  <Link href={`/entry/${item.id}`} className="flex w-full flex-col gap-0.5 py-3 active:opacity-60">
                     <span className="text-sm tabular-nums text-neutral-400">{item.time}</span>
                     <span className="line-clamp-2 whitespace-pre-wrap text-neutral-800 dark:text-neutral-200">{item.preview}</span>
-                  </button>
+                  </Link>
                 </li>
               ))}
             </ul>

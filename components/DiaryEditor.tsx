@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import AutoTextarea from './AutoTextarea'
 import ConfettiBurst from './ConfettiBurst'
 import { getDek } from '@/lib/client/session'
@@ -14,10 +15,7 @@ export function isLocationEnabled(): boolean {
   return localStorage.getItem('qo-location-enabled') !== '0'
 }
 
-export default function DiaryEditor({ onOpenHistory, onOpenSettings }: {
-  onOpenHistory: () => void
-  onOpenSettings: () => void
-}) {
+export default function DiaryEditor() {
   const [text, setText] = useState('')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [savedTime, setSavedTime] = useState('')
@@ -198,9 +196,9 @@ export default function DiaryEditor({ onOpenHistory, onOpenSettings }: {
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Orbit</h1>
           <nav className="flex items-center gap-4">
-            {/* 状态机内切换（不导航不重载，解锁状态全程保留——PWA standalone 下导航会触发页面重载） */}
-            <button onClick={onOpenHistory} className="text-sm text-neutral-400">历史</button>
-            <button onClick={onOpenSettings} className="text-sm text-neutral-400">设置</button>
+            {/* 原生路由导航（DEK 会话级持久化——重载后自动恢复，无需重复 Face ID；右滑返回原生可用） */}
+            <Link href="/history" className="text-sm text-neutral-400">历史</Link>
+            <Link href="/settings" className="text-sm text-neutral-400">设置</Link>
           </nav>
         </div>
         <p className="mt-1 text-sm text-neutral-400">{today}</p>
