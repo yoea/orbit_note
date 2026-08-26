@@ -114,7 +114,7 @@ export default function SettingsPage() {
         <li className="py-4"><button onClick={() => void wipe()} disabled={wiping} className="text-red-500 disabled:opacity-50">{wiping ? '验证中…' : '删除所有数据'}</button></li>
         <li className="py-4">
           <p className="text-sm font-medium text-neutral-400">关于</p>
-          <p className="mt-1 text-xs text-neutral-400">版本：{process.env.NEXT_PUBLIC_COMMIT_ID ?? 'dev'}</p>
+          <p className="mt-1 text-xs text-neutral-400">版本：{process.env.NEXT_PUBLIC_VERSION ?? 'dev'}（{process.env.NEXT_PUBLIC_COMMIT_ID ?? 'unknown'}）</p>
           <p className="mt-1 text-xs leading-relaxed text-neutral-400">
             端到端加密的私人日记，只为一个人服务。<br />数据只属于你，服务器永远看不到你的文字。
           </p>
