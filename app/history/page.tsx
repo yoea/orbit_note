@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import UnlockPrompt from '@/components/UnlockPrompt'
 import { getDek } from '@/lib/client/session'
 import { useRequireUnlock } from '@/lib/client/use-require-unlock'
 import { decryptText } from '@/lib/client/crypto/encryption'
@@ -22,7 +23,7 @@ interface Group {
 
 export default function HistoryPage() {
   const router = useRouter()
-  const unlock = useRequireUnlock()
+  const { state: unlock, retryUnlock } = useRequireUnlock()
   const [groups, setGroups] = useState<Group[]>([])
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -79,12 +80,16 @@ export default function HistoryPage() {
     )
   }
 
+  if (unlock === 'need-unlock') return <UnlockPrompt onUnlock={() => void retryUnlock()} />
   if (!loaded) return <main className="min-h-dvh px-5 safe-pt" />
 
   return (
     <main className="min-h-dvh px-5 safe-pt safe-pb">
       <header className="flex items-center justify-between py-3">
-        <Link href="/" className="text-neutral-400">‹ 返回</Link>
+        {/* iOS 原生风格返回：chevron 箭头 + history.back */}
+        <button onClick={() => router.back()} aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+          ‹
+        </button>
         <h1 className="text-lg font-semibold">历史</h1>
         <span className="w-8" />
       </header>

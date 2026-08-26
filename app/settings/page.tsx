@@ -87,7 +87,10 @@ export default function SettingsPage() {
   return (
     <main className="min-h-dvh px-5 safe-pt safe-pb">
       <header className="flex items-center justify-between py-3">
-        <Link href="/" className="text-neutral-400">‹ 返回</Link>
+        {/* iOS 原生风格返回：chevron 箭头 + history.back */}
+        <button onClick={() => router.back()} aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+          ‹
+        </button>
         <h1 className="text-lg font-semibold">设置</h1>
         <span className="w-8" />
       </header>
@@ -117,7 +120,7 @@ export default function SettingsPage() {
         <li className="py-4"><button onClick={() => void wipe()} disabled={wiping} className="text-red-500 disabled:opacity-50">{wiping ? '验证中…' : '删除所有数据'}</button></li>
         <li className="py-4">
           <p className="text-sm font-medium text-neutral-400">关于</p>
-          <p className="mt-1 text-xs text-neutral-400">版本：{process.env.NEXT_PUBLIC_VERSION ?? 'dev'}（{process.env.NEXT_PUBLIC_COMMIT_ID ?? 'unknown'}）</p>
+          <p className="mt-1 text-xs text-neutral-400">版本：{process.env.NEXT_PUBLIC_VERSION ?? 'dev'}</p>
           <p className="mt-1 text-xs leading-relaxed text-neutral-400">
             端到端加密的私人日记，只为一个人服务。<br />数据只属于你，服务器永远看不到你的文字。
           </p>

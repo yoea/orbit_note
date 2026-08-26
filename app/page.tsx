@@ -1,10 +1,11 @@
 'use client'
 
 import DiaryEditor from '@/components/DiaryEditor'
+import UnlockPrompt from '@/components/UnlockPrompt'
 import { useRequireUnlock } from '@/lib/client/use-require-unlock'
 
 export default function HomePage() {
-  const state = useRequireUnlock()
+  const { state, retryUnlock } = useRequireUnlock()
 
   if (state === 'error') {
     return (
@@ -17,6 +18,7 @@ export default function HomePage() {
     )
   }
 
+  if (state === 'need-unlock') return <UnlockPrompt onUnlock={() => void retryUnlock()} />
   if (state !== 'ready') return null
   return <DiaryEditor />
 }

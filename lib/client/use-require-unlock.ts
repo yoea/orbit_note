@@ -1,16 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PRF_UNAVAILABLE, fetchSession, getDek, loginWithPasskey } from './session'
 
+export type UnlockState = 'loading' | 'ready' | 'need-unlock' | 'error'
+
 // 页面守卫 + 原地自动解锁：
-// 已认证但 DEK 为空（刷新后内存清空）时，在本页直接调用 Face ID 解锁——成功后**无需导航**，
-// 当前页面继续渲染。避免"解锁成功 → 跳转 → iOS Safari 重载页面 → 内存 DEK 丢失 → 踢回登录"的循环。
-// 失败/取消（或 PRF 不可用需恢复密钥）才跳转 /login。
-export function useRequireUnlock(): 'loading' | 'ready' | 'need-login' | 'error' {
+// 已认证但 DEK 为空（刷新/后退恢复导致内存清空）时，在本页直接调用 Face ID 解锁——
+// 成功后无需导航，当前页面继续渲染（避免 iOS 导航/重载丢内存 DEK 的循环）。
+// 自动解锁失败/取消（如 bfcache 恢复时浏览器拦截非手势 WebAuthn 调用）→ 进入
+// 'need-unlock'：留在本页显示手动解锁按钮（用户手势下 Face ID 正常），不跳转登录页。
+// 仅 PRF 不可用（需恢复密钥）或未认证时跳转 /login。
+export function useRequireUnlock(): { state: UnlockState; retryUnlock: () => Promise<void> } {
   const router = useRouter()
-  const [state, setState] = useState<'loading' | 'ready' | 'need-login' | 'error'>('loading')
+  const [state, setState] = useState<UnlockState>('loading')
 
   useEffect(() => {
     let cancelled = false
@@ -20,12 +24,13 @@ export function useRequireUnlock(): 'loading' | 'ready' | 'need-login' | 'error'
         if (!s.initialized) { router.replace('/setup'); return }
         if (!s.authenticated) { router.replace('/login'); return }
         if (getDek()) { setState('ready'); return }
-        // 原地自动解锁（本页面实例只尝试一次；页面不重载，无循环风险）
+        // 原地自动解锁（页面实例尝试一次；页面不重载，无循环风险）
         const result = await loginWithPasskey()
         if (cancelled) return
         if (result.ok && getDek()) { setState('ready'); return }
         if (result.error === PRF_UNAVAILABLE) { router.replace('/login'); return }
-        router.replace('/login?reason=no-dek')
+        // 其他失败（取消/浏览器拦截自动调用等）：留在本页，用户手动触发
+        setState('need-unlock')
       } catch {
         if (!cancelled) setState('error')
       }
@@ -33,5 +38,13 @@ export function useRequireUnlock(): 'loading' | 'ready' | 'need-login' | 'error'
     return () => { cancelled = true }
   }, [router])
 
-  return state
+  // 手动解锁（用户手势下 WebAuthn 正常）：成功 → ready；PRF 不可用 → 登录页（恢复密钥）
+  const retryUnlock = useCallback(async (): Promise<void> => {
+    const result = await loginWithPasskey()
+    if (result.ok && getDek()) { setState('ready'); return }
+    if (result.error === PRF_UNAVAILABLE) { router.replace('/login'); return }
+    setState('need-unlock') // 保持本页，可再试
+  }, [router])
+
+  return { state, retryUnlock }
 }

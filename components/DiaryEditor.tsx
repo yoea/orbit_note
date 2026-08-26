@@ -19,7 +19,6 @@ export default function DiaryEditor() {
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [savedTime, setSavedTime] = useState('')
   const [showDraftBanner, setShowDraftBanner] = useState(false)
-  const [showLocationNotice, setShowLocationNotice] = useState(false)
   const textRef = useRef('')
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingDraftRef = useRef<{ ciphertext: string; iv: string } | null>(null)
@@ -112,22 +111,6 @@ export default function DiaryEditor() {
           }
         }
       } catch { /* 草稿加载失败不阻塞编辑 */ }
-    })()
-  }, [])
-
-  // 首次定位权限说明（仅一次，sessionStorage 标记）：权限仍为 prompt（未授权）时提示保存日记会记录位置
-  useEffect(() => {
-    void (async () => {
-      try {
-        if (sessionStorage.getItem('qo-location-notice-shown')) return
-        if (typeof navigator !== 'undefined' && navigator.permissions) {
-          const status = await navigator.permissions.query({ name: 'geolocation' })
-          if (status.state === 'prompt') {
-            setShowLocationNotice(true)
-            sessionStorage.setItem('qo-location-notice-shown', '1')
-          }
-        }
-      } catch { /* 权限 API 不可用则不显示 */ }
     })()
   }, [])
 
@@ -227,9 +210,6 @@ export default function DiaryEditor() {
         autoFocus
         disabled={status === 'saving'}
       />
-      {showLocationNotice && (
-        <p className="text-xs text-neutral-400">保存日记时记录当前位置，仅用于记录你当时在哪里。</p>
-      )}
       <footer className="flex items-center justify-between py-4 pb-safe">
         <p className="text-sm text-neutral-400">
           {status === 'saving' && '正在保存…'}
