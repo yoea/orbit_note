@@ -24,7 +24,11 @@ export async function POST(req: Request) {
   // 归一化 credentialId（base64url 解码再编码，容错大小写/填充差异）
   const credentialId = Buffer.from(assertion.id, 'base64url').toString('base64url')
   const [stored] = await db.select().from(credentials).where(eq(credentials.credentialId, credentialId))
-  if (!stored) return NextResponse.json({ error: 'unknown_credential' }, { status: 400 })
+  if (!stored) {
+    // eslint-disable-next-line no-console
+    console.error('[login] unknown_credential: received', credentialId.slice(0, 12), '…', 'stored ids:', (await db.select({ id: credentials.credentialId }).from(credentials)).map((c) => c.id.slice(0, 12)))
+    return NextResponse.json({ error: 'unknown_credential' }, { status: 400 })
+  }
 
   // 重要：存储的 publicKey 是 base64url 文本，需解码为 Uint8Array 传给 verifyLogin（@simplewebauthn 13.x 要求）
   const verification = await verifyLogin(assertion, expectedChallenge, {
@@ -32,7 +36,12 @@ export async function POST(req: Request) {
     publicKey: Buffer.from(stored.publicKey, 'base64url'),
     counter: stored.counter,
     transports: stored.transports as AuthenticatorTransportFuture[],
-  }).catch(() => null)
+  }).catch((e: unknown) => {
+    // 诊断日志：只记录错误类型与 short id，不记录 assertion/密钥内容
+    // eslint-disable-next-line no-console
+    console.error('[login] verifyLogin error:', e instanceof Error ? `${e.name}: ${e.message}` : String(e), 'credential:', stored.credentialId.slice(0, 12), 'counter:', stored.counter)
+    return null
+  })
 
   if (!verification?.verified) return NextResponse.json({ error: 'verification_failed' }, { status: 400 })
 

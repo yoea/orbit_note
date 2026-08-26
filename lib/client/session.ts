@@ -59,7 +59,11 @@ export async function loginWithPasskey(): Promise<LoginResult> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, assertion }),
     })
-    if (!loginRes.ok) return { ok: false, error: '登录验证失败', via: null }
+    if (!loginRes.ok) {
+      // 透传服务器错误码（便于定位；服务器只返回错误码，不返回敏感信息）
+      const serverError = (await loginRes.json().catch(() => null)) as { error?: string } | null
+      return { ok: false, error: serverError?.error ?? '登录验证失败', via: null }
+    }
 
     // 登录成功后拉取 wrappers 并解锁
     if (prfResult) {

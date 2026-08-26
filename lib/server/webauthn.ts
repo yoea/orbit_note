@@ -86,5 +86,10 @@ export async function verifyLogin(
     expectedOrigin: origin,
     expectedRPID: rpID,
     credential,
+    // Windows Hello 平台行为：系统已解锁时 credentials.get 返回的 authenticatorData UV flag = 0
+    // （create 时总是 UV，get 时可能跳过重新验证）。注册仍强制 UV（创建凭证必须生物识别）；
+    // 登录放宽 UV 但保留 UP（用户在场）校验——威胁模型：需要设备已解锁 + 浏览器交互才能认证，
+    // 对单用户私人日记可接受（iPhone Face ID 不受影响，UV 照常置位）。
+    requireUserVerification: false,
   })
 }
