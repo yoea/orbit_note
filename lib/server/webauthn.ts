@@ -42,8 +42,8 @@ export async function generateRegisterOptions() {
   return generateRegistrationOptions({
     rpName,
     rpID,
-    userName: 'owner',
-    userDisplayName: 'Owner',
+    userName: 'orbit_user',
+    userDisplayName: 'Orbit User',
     userID: new TextEncoder().encode('quiet-orbit-owner'),
     attestationType: 'none',
     authenticatorSelection: {
