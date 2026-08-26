@@ -22,6 +22,7 @@ interface Group {
 export default function HistoryPage() {
   const router = useRouter()
   const [groups, setGroups] = useState<Group[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -37,7 +38,8 @@ export default function HistoryPage() {
         for (const e of entries) {
           try {
             const plain = await decryptText(dek, e.ciphertext, e.iv)
-            decrypted.push({ id: e.id, createdAt: new Date(e.createdAt), preview: plain.split('\n')[0], lat: e.latitude })
+            const preview = plain.split('\n').find((l) => l.trim()) ?? ''
+            decrypted.push({ id: e.id, createdAt: new Date(e.createdAt), preview, lat: e.latitude })
           } catch {
             // 单条解密失败跳过（数据损坏不阻塞列表）
           }
@@ -57,6 +59,7 @@ export default function HistoryPage() {
             lat: i.lat,
           })),
         })))
+        setLoaded(true)
       } catch {
         setError('连接失败，请检查网络后重试')
       }
@@ -73,6 +76,8 @@ export default function HistoryPage() {
       </main>
     )
   }
+
+  if (!loaded) return <main className="min-h-dvh px-5 safe-pt" />
 
   return (
     <main className="min-h-dvh px-5 safe-pt safe-pb">

@@ -26,6 +26,7 @@ export default function EntryPage() {
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [decryptFailed, setDecryptFailed] = useState(false)
 
   useEffect(() => {
     void (async () => {
@@ -39,8 +40,10 @@ export default function EntryPage() {
         setEntry(entry)
         try {
           setPlain(await decryptText(getDek()!, entry.ciphertext, entry.iv))
+          setDecryptFailed(false)
         } catch {
           setPlain('(解密失败，数据可能已损坏)')
+          setDecryptFailed(true)
         }
       } catch {
         setError('连接失败，请检查网络后重试')
@@ -61,7 +64,8 @@ export default function EntryPage() {
       })
       if (!res.ok) throw new Error('保存失败')
       const data = await res.json()
-      setEntry((prev) => prev ? { ...prev, ...data.entry, updatedAt: data.entry.updatedAt } : prev)
+      setEntry((prev) => prev ? { ...prev, ...data.entry } : prev)
+      setError(null)
       setEditing(false)
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存失败')
@@ -72,8 +76,18 @@ export default function EntryPage() {
 
   const remove = useCallback(async () => {
     if (!window.confirm('确定删除这篇日记吗？删除后无法恢复。')) return
-    const res = await fetch(`/api/diary/${id}`, { method: 'DELETE' })
-    if (res.ok) router.replace('/history')
+    try {
+      const res = await fetch(`/api/diary/${id}`, { method: 'DELETE' })
+      if (res.status === 401) { router.replace('/login'); return }
+      if (res.ok) {
+        // TODO(Task 10): clearLocalEntryCache(id) —— 规格二十一节要求删除时清除本地缓存
+        router.replace('/history')
+        return
+      }
+      setError('删除失败，请重试')
+    } catch {
+      setError('删除失败，请重试')
+    }
   }, [id, router])
 
   if (error && !entry) {
@@ -95,7 +109,7 @@ export default function EntryPage() {
       <header className="flex items-center justify-between py-3">
         <Link href="/history" className="text-neutral-400">‹ 历史</Link>
         <h1 className="text-lg font-semibold">日记</h1>
-        <button onClick={() => setEditing(!editing)} className="text-sm text-neutral-400">
+        <button onClick={() => setEditing(!editing)} disabled={decryptFailed} className="text-sm text-neutral-400 disabled:opacity-50">
           {editing ? '取消' : '编辑'}
         </button>
       </header>
@@ -126,6 +140,9 @@ export default function EntryPage() {
         </>
       ) : (
         <p className="mt-4 whitespace-pre-wrap text-lg leading-relaxed text-neutral-800 dark:text-neutral-200">{plain}</p>
+      )}
+      {decryptFailed && (
+        <p className="mt-3 text-sm text-red-500">原内容无法解密，无法编辑，否则将覆盖原数据</p>
       )}
       {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
       {!editing && (
