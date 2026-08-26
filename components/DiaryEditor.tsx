@@ -217,7 +217,7 @@ export default function DiaryEditor({ onOpenHistory, onOpenSettings }: {
         autoFocus
         disabled={status === 'saving'}
       />
-      <footer className="mt-auto border-t border-neutral-100 py-4 pb-safe dark:border-neutral-800">
+      <footer className="mt-auto border-t border-neutral-100 px-2 pb-4 pt-4 safe-pb dark:border-neutral-800">
         <p className="mb-3 text-center text-xs text-neutral-400">
           {status === 'saving' && '正在保存…'}
           {status === 'saved' && `已保存 · ${savedTime}`}
@@ -231,6 +231,10 @@ export default function DiaryEditor({ onOpenHistory, onOpenSettings }: {
         >
           {status === 'saving' ? '保存中…' : '保存'}
         </button>
+        {/* 底部缓冲：版本号低调显示，PWA 全屏模式下保存按钮不至于贴底 */}
+        <p className="mt-4 text-center text-[10px] text-neutral-300 dark:text-neutral-600">
+          Orbit v{process.env.NEXT_PUBLIC_VERSION ?? 'dev'}
+        </p>
       </footer>
     </div>
   )
