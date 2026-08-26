@@ -27,7 +27,7 @@ export const diaryUpdateSchema = z
     message: 'ciphertext 与 iv 必须成对更新',
   })
   .refine((d) => Object.keys(d).length > 0, { message: '更新内容不能为空' })
-export const draftPutSchema = z.strictObject({ ...encryptedPayload })
+export const draftPutSchema = z.strictObject({ ...encryptedPayload, updatedAt: z.number().int().positive().optional() })
 export const wrapperSchema = z
   .strictObject({
     wrapperType: z.enum(['passkey_prf', 'recovery']),

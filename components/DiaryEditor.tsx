@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import AutoTextarea from './AutoTextarea'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
@@ -16,6 +16,28 @@ export default function DiaryEditor() {
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingDraftRef = useRef<{ ciphertext: string; iv: string } | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 草稿写回 epoch：save/discard 成功时递增，作废进行中的冲刷（防止"放弃/保存后草稿复活"的竞态）
+  const draftEpochRef = useRef(0)
+
+  // 草稿冲刷（防抖回调/卸载/pagehide/online 共用）：
+  // 加密存 IndexedDB（本地优先），随后尽力同步服务器；成功后回写服务器时间戳收敛两端时钟
+  // （冲突决策用本地时钟比较，收敛后两边同钟，避免下次加载误判）。
+  const flushDraft = useCallback(async (text: string): Promise<void> => {
+    const epoch = draftEpochRef.current
+    try {
+      const dek = getDek()
+      if (!dek || !text.trim()) return
+      const { ciphertext, iv } = await encryptText(dek, text)
+      if (epoch !== draftEpochRef.current) return // 保存/放弃已发生，不再写回草稿
+      const record = { ciphertext, iv, encryptionVersion: 1, updatedAt: Date.now() }
+      await saveLocalDraft(record) // 本地优先（离线可用）
+      const server = await pushServerDraft(record).catch(() => null) // 服务器同步尽力而为（离线静默失败，下次输入/页面加载重试）
+      if (server && epoch === draftEpochRef.current) {
+        // 收敛时钟：以服务器时间戳为准回写本地草稿记录
+        await saveLocalDraft({ ...record, updatedAt: new Date(server.updatedAt).getTime() })
+      }
+    } catch { /* 草稿保存失败不阻塞输入 */ }
+  }, [])
 
   // 键盘遮挡防护：visualViewport resize 时把活动元素滚入视野
   useEffect(() => {
@@ -32,13 +54,27 @@ export default function DiaryEditor() {
     return () => vv.removeEventListener('resize', onResize)
   }, [])
 
-  // 卸载时清理定时器（状态复位 + 草稿防抖），避免卸载后 setState / 泄漏
+  // 卸载/pagehide 冲刷未决草稿（避免丢末段输入，iOS Safari pagehide 更可靠）；online 恢复时补推
   useEffect(() => {
-    return () => {
-      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
-      if (debounceRef.current) clearTimeout(debounceRef.current)
+    const flushNow = () => {
+      if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }
+      const current = textRef.current
+      if (current.trim()) void flushDraft(current) // fire-and-forget，静默失败
     }
-  }, [])
+    const onPageHide = () => flushNow()
+    const onOnline = () => {
+      const current = textRef.current
+      if (current.trim()) void flushDraft(current)
+    }
+    window.addEventListener('pagehide', onPageHide)
+    window.addEventListener('online', onOnline)
+    return () => {
+      window.removeEventListener('pagehide', onPageHide)
+      window.removeEventListener('online', onOnline)
+      flushNow() // 卸载前冲刷
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+    }
+  }, [flushDraft])
 
   // 页面加载时检查本地/服务器草稿，有未完成草稿则显示恢复横幅
   useEffect(() => {
@@ -50,43 +86,44 @@ export default function DiaryEditor() {
         const server = await fetchServerDraft()
         // 冲突决策：本地更空或服务器更新则用服务器；否则用本地
         let best: { ciphertext: string; iv: string } | null = null
-        let bestUpdatedAt = 0
+        let useLocal = false
         if (local) {
           let localText = ''
           try { localText = await decryptText(dek, local.ciphertext, local.iv) } catch { /* 损坏草稿忽略 */ }
           const decision = pickNewer({ updatedAt: local.updatedAt, text: localText }, server ? { updatedAt: new Date(server.updatedAt).getTime() } : null)
           if (decision && decision.text.trim() !== '') {
             best = { ciphertext: local.ciphertext, iv: local.iv }
-            bestUpdatedAt = local.updatedAt
+            useLocal = true
           }
         }
         if (server && !best) {
           // 本地无草稿或本地更空 → 用服务器草稿（若服务器内容非空）
           best = { ciphertext: server.ciphertext, iv: server.iv }
-          bestUpdatedAt = new Date(server.updatedAt).getTime()
         }
         if (best) {
-          pendingDraftRef.current = best
-          setShowDraftBanner(true)
+          // 加载竞态：用户已开始输入则不弹横幅（输入内容会走防抖保存）
+          if (textRef.current === '') {
+            pendingDraftRef.current = best
+            setShowDraftBanner(true)
+          }
+          // 收敛：本地胜出（或服务器为空但本地非空）→ 推送服务器，成功后回写服务器时间戳（两端同钟）
+          if (useLocal && local) {
+            void (async () => {
+              const serverUpd = await pushServerDraft(local).catch(() => null)
+              if (serverUpd) await saveLocalDraft({ ...local, updatedAt: new Date(serverUpd.updatedAt).getTime() })
+            })()
+          }
         }
       } catch { /* 草稿加载失败不阻塞编辑 */ }
     })()
   }, [])
 
-  // 防抖保存：输入 1000ms 后加密存 IndexedDB（本地优先），随后尽力同步服务器
+  // 防抖保存：输入 1000ms 后冲刷草稿（本地 IndexedDB 优先，服务器同步尽力而为）
   function onDraftChange(text: string) {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      void (async () => {
-        try {
-          const dek = getDek()
-          if (!dek || !text.trim()) return
-          const { ciphertext, iv } = await encryptText(dek, text)
-          const record = { ciphertext, iv, encryptionVersion: 1, updatedAt: Date.now() }
-          await saveLocalDraft(record) // 本地优先（离线可用）
-          void pushServerDraft(record).catch(() => {}) // 服务器同步尽力而为（离线静默失败，下次输入/页面加载重试）
-        } catch { /* 草稿保存失败不阻塞输入 */ }
-      })()
+      debounceRef.current = null
+      void flushDraft(text)
     }, 1000)
   }
 
@@ -104,10 +141,12 @@ export default function DiaryEditor() {
     }
   }
 
-  // 放弃草稿：清本地 IndexedDB 与服务器
+  // 放弃草稿：清本地 IndexedDB 与服务器，并作废进行中的草稿写回
   async function discardDraft() {
     pendingDraftRef.current = null
     setShowDraftBanner(false)
+    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }
+    draftEpochRef.current++ // 放弃后不再写回草稿
     await clearLocalDraft()
     await fetch('/api/draft', { method: 'DELETE' }).catch(() => {})
   }
@@ -132,6 +171,9 @@ export default function DiaryEditor() {
         }),
       })
       if (!res.ok) throw new Error('save failed')
+      // 保存成功：取消未决防抖并作废进行中的冲刷，防止草稿"复活"
+      if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }
+      draftEpochRef.current++
       await fetch('/api/draft', { method: 'DELETE' }).catch(() => {})
       await clearLocalDraft()
       const now = new Date()

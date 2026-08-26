@@ -40,11 +40,20 @@ export async function fetchServerDraft(): Promise<{ ciphertext: string; iv: stri
   return draft ? { ciphertext: draft.ciphertext, iv: draft.iv, updatedAt: draft.updatedAt } : null
 }
 
-export async function pushServerDraft(record: DraftRecord): Promise<boolean> {
+// 推送草稿到服务器（携带客户端 updatedAt 供服务器条件更新，防旧覆盖新）。
+// 成功返回服务器时间戳（用于回写本地、收敛两端时钟），409 stale_draft/网络失败返回 null。
+export async function pushServerDraft(record: DraftRecord): Promise<{ updatedAt: string } | null> {
   const res = await fetch('/api/draft', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ciphertext: record.ciphertext, iv: record.iv, encryptionVersion: record.encryptionVersion }),
+    body: JSON.stringify({
+      ciphertext: record.ciphertext,
+      iv: record.iv,
+      encryptionVersion: record.encryptionVersion,
+      updatedAt: record.updatedAt,
+    }),
   })
-  return res.ok
+  if (!res.ok) return null
+  const { draft } = await res.json()
+  return draft ? { updatedAt: draft.updatedAt } : null
 }
