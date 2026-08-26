@@ -186,18 +186,23 @@ export default function DiaryEditor({ onOpenHistory, onOpenSettings }: {
     }
   }
 
+  const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
+
   return (
-    <div className="flex min-h-dvh flex-col px-5 safe-pt safe-pb">
-      <header className="flex items-center justify-between py-3">
-        <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Orbit</h1>
-        <nav className="flex items-center gap-4">
-          {/* 状态机内切换（不导航不重载，解锁状态全程保留——PWA standalone 下导航会触发页面重载） */}
-          <button onClick={onOpenHistory} className="text-sm text-neutral-400">历史</button>
-          <button onClick={onOpenSettings} className="text-sm text-neutral-400">设置</button>
-        </nav>
+    <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 safe-pt safe-pb">
+      <header className="py-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Orbit</h1>
+          <nav className="flex items-center gap-4">
+            {/* 状态机内切换（不导航不重载，解锁状态全程保留——PWA standalone 下导航会触发页面重载） */}
+            <button onClick={onOpenHistory} className="text-sm text-neutral-400">历史</button>
+            <button onClick={onOpenSettings} className="text-sm text-neutral-400">设置</button>
+          </nav>
+        </div>
+        <p className="mt-1 text-sm text-neutral-400">{today}</p>
       </header>
       {showDraftBanner && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950">
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950">
           <p className="text-sm font-medium text-amber-800 dark:text-amber-200">发现上次未完成的日记</p>
           <div className="mt-2 flex gap-3">
             <button onClick={() => void restoreDraft()} className="text-sm font-medium text-amber-800 underline dark:text-amber-200">恢复草稿</button>
@@ -212,18 +217,19 @@ export default function DiaryEditor({ onOpenHistory, onOpenSettings }: {
         autoFocus
         disabled={status === 'saving'}
       />
-      <footer className="flex items-center justify-between py-4 pb-safe">
-        <p className="text-sm text-neutral-400">
+      <footer className="mt-auto border-t border-neutral-100 py-4 pb-safe dark:border-neutral-800">
+        <p className="mb-3 text-center text-sm text-neutral-400">
           {status === 'saving' && '正在保存…'}
           {status === 'saved' && `已保存 · ${savedTime}`}
           {status === 'error' && '保存失败，请重试'}
+          {status === 'idle' && '写下此刻，或稍后回来继续'}
         </p>
         <button
           onClick={() => void save()}
           disabled={!text.trim() || status === 'saving'}
-          className="rounded-full bg-neutral-900 px-8 py-3 font-medium text-white disabled:opacity-30 dark:bg-neutral-100 dark:text-neutral-900"
+          className="w-full rounded-2xl bg-neutral-900 py-3.5 font-medium text-white active:scale-[0.99] disabled:opacity-30 dark:bg-neutral-100 dark:text-neutral-900"
         >
-          保存
+          {status === 'saving' ? '保存中…' : '保存'}
         </button>
       </footer>
     </div>
