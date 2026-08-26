@@ -185,7 +185,12 @@ export default function EntryPage() {
           </button>
         </>
       ) : (
-        <p className="mt-4 whitespace-pre-wrap text-lg leading-relaxed text-neutral-800 dark:text-neutral-200">{plain}</p>
+        // 正文：小一号字体（text-base）+ 段落间距（按空行分段，段间 mb-3）
+        <div className="mt-4 text-base leading-relaxed text-neutral-800 dark:text-neutral-200">
+          {plain.split(/\n\s*\n/).map((para, i) => (
+            <p key={i} className="mb-3 whitespace-pre-wrap last:mb-0">{para}</p>
+          ))}
+        </div>
       )}
       {decryptFailed && (
         <p className="mt-3 text-sm text-red-500">原内容无法解密，无法编辑，否则将覆盖原数据</p>

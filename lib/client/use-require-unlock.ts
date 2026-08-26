@@ -24,7 +24,13 @@ export function useRequireUnlock(): { state: UnlockState; retryUnlock: () => Pro
         if (!s.initialized) { router.replace('/setup'); return }
         if (!s.authenticated) { router.replace('/login'); return }
         if (getDek()) { setState('ready'); return }
-        // 原地自动解锁（页面实例尝试一次；页面不重载，无循环风险）
+        // 自动解锁仅每会话自动弹一次（sessionStorage 标记）：
+        // iOS Safari 在 Face ID 弹窗后可能重载页面 → 内存 DEK 丢失 → 若不限制会重复弹窗。
+        // 重载后不再自动弹，显示手动解锁按钮（用户手势下 Face ID 正常）。
+        let autoAllowed = true
+        try { autoAllowed = sessionStorage.getItem('qo-auto-unlock-attempted') !== '1' } catch { /* ignore */ }
+        if (!autoAllowed) { setState('need-unlock'); return }
+        try { sessionStorage.setItem('qo-auto-unlock-attempted', '1') } catch { /* ignore */ }
         const result = await loginWithPasskey()
         if (cancelled) return
         if (result.ok && getDek()) { setState('ready'); return }
