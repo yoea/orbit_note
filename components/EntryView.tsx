@@ -130,7 +130,7 @@ export default function EntryView({ id }: { id: string }) {
 
   const created = new Date(entry.createdAt)
   return (
-    <main className="flex-1 min-h-0 px-5 safe-pt safe-pb">
+    <main className="flex min-h-0 flex-1 flex-col px-5 safe-pt safe-pb">
       <header className="relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
         <Link href="/history" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
@@ -152,7 +152,7 @@ export default function EntryView({ id }: { id: string }) {
           {/* 直接显示坐标（带小定位图标），点击复制 */}
           <button
             onClick={() => void copyCoords()}
-            className="text-xs tabular-nums text-neutral-400 underline active:opacity-60"
+            className="text-xs tabular-nums text-neutral-400 active:opacity-60"
           >
             <span className="mr-0.5 text-[10px]">📍</span>
             {entry.latitude.toFixed(6)}, {entry.longitude.toFixed(6)}
@@ -199,22 +199,20 @@ export default function EntryView({ id }: { id: string }) {
       )}
       {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
       {!editing && (
-        /* 底部操作栏：编辑 / 删除（小尺寸图标） */
+        /* 底部操作栏：编辑 / 删除（小文字按钮，内容末尾贴底——页脚紧随其后） */
         <div className="mt-auto flex items-center justify-end gap-6 border-t border-neutral-100 py-4 dark:border-neutral-800">
           <button
             onClick={() => setEditing(true)}
             disabled={decryptFailed}
-            aria-label="编辑"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-neutral-500 active:bg-neutral-100 disabled:opacity-40 dark:active:bg-neutral-800"
+            className="text-sm text-neutral-500 active:opacity-60 disabled:opacity-40"
           >
-            ✎
+            编辑
           </button>
           <button
             onClick={() => setConfirmingDelete(true)}
-            aria-label="删除"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-red-500 active:bg-neutral-100 dark:active:bg-neutral-800"
+            className="text-sm text-red-500 active:opacity-60"
           >
-            🗑
+            删除
           </button>
         </div>
       )}
