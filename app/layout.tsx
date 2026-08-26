@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import SwRegister from "@/components/SwRegister";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="zh-CN" suppressHydrationWarning>
       <body className="bg-white text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100">
         {children}
+        <SwRegister />
       </body>
     </html>
   );
