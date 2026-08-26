@@ -1,0 +1,47 @@
+# Quiet Orbit Nginx 站点配置示例
+# 复制到 /etc/nginx/sites-available/quiet-orbit 并替换域名
+
+server {
+    listen 80;
+    server_name diary.example.com;
+
+    # HTTPS 重定向（certbot 会自动改写此块）
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name diary.example.com;
+
+    # SSL 证书（certbot 生成后自动配置；也可手动指定）
+    # ssl_certificate     /etc/letsencrypt/live/diary.example.com/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/diary.example.com/privkey.pem;
+
+    # 安全头（CSP 由应用注入，此处不重复；其余保留）
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Frame-Options DENY always;
+
+    # 上传大小限制（日记正文密文上限 300KB）
+    client_max_body_size 512k;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # 静态资源缓存（图标等）
+    location ~* \.(png|ico|webmanifest)$ {
+        proxy_pass http://127.0.0.1:3000;
+        expires 7d;
+    }
+}

@@ -1,0 +1,23 @@
+# Quiet Orbit systemd 服务示例
+# 复制到 /etc/systemd/system/quiet-orbit.service 并调整路径/用户
+
+[Unit]
+Description=Quiet Orbit (private diary)
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/quiet-orbit
+EnvironmentFile=/opt/quiet-orbit/.env
+ExecStart=/usr/bin/npm run start -- --port 3000
+Restart=always
+RestartSec=3
+# 基础安全加固
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/quiet-orbit/.next /opt/quiet-orbit/.cache
+
+[Install]
+WantedBy=multi-user.target
