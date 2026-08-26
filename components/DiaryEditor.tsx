@@ -190,8 +190,9 @@ export default function DiaryEditor() {
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
 
   return (
-    // 固定视口高度 + 禁止滚动：header/输入区/footer 全部在视口内，输入区 flex 弹性分配剩余空间
-    <div className="mx-auto flex h-dvh w-full max-w-md flex-col overflow-hidden px-5 safe-pt safe-pb">
+    // 固定视口高度（扣除全局页脚 34px）+ 禁止滚动：header/输入区/footer 全部在视口内，
+    // 输入区 flex 弹性分配剩余空间；全局页脚（版本/版权）显示在容器下方不遮挡保存按钮
+    <div className="mx-auto flex h-[calc(100dvh-34px)] w-full max-w-md flex-col overflow-hidden px-5 safe-pt">
       <header className="py-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Orbit</h1>
