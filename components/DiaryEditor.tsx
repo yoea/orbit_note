@@ -1,11 +1,18 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import AutoTextarea from './AutoTextarea'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
 import { clearLocalDraft, fetchServerDraft, loadLocalDraft, pickNewer, pushServerDraft, saveLocalDraft } from '@/lib/client/draft-sync'
+
+// 定位开关（设置页可关，默认开启）：localStorage 存储，关闭后保存不请求定位
+export function isLocationEnabled(): boolean {
+  if (typeof window === 'undefined') return true
+  return localStorage.getItem('qo-location-enabled') !== '0'
+}
 
 export default function DiaryEditor() {
   const [text, setText] = useState('')
@@ -42,14 +49,14 @@ export default function DiaryEditor() {
     } catch { /* 草稿保存失败不阻塞输入 */ }
   }, [])
 
-  // 键盘遮挡防护：visualViewport resize 时把活动元素滚入视野
+  // 键盘遮挡防护：visualViewport resize 时只调整输入框高度，不主动 scrollIntoView——
+  // iOS Safari 键盘弹出时会自动滚动活动元素进入视野，scrollIntoView 反而把页面顶到最顶部（体验割裂）。
   useEffect(() => {
     const vv = window.visualViewport
     if (!vv) return
     const onResize = () => {
       const el = document.activeElement
       if (el instanceof HTMLTextAreaElement) {
-        el.scrollIntoView({ block: 'center' })
         el.style.maxHeight = `${vv.height - 120}px`
       }
     }
@@ -176,7 +183,8 @@ export default function DiaryEditor() {
     if (!dek || !body) { setStatus('idle'); return }
     setStatus('saving')
     try {
-      const loc = await getPosition(2000)
+      // 定位开关（默认开启）：关闭后不请求定位
+      const loc = isLocationEnabled() ? await getPosition(2000) : null
       const { ciphertext, iv } = await encryptText(dek, body)
       const res = await fetch('/api/diary', {
         method: 'POST',
@@ -211,8 +219,9 @@ export default function DiaryEditor() {
       <header className="flex items-center justify-between py-3">
         <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">我的日记</h1>
         <nav className="flex items-center gap-4">
-          <a href="/history" className="text-sm text-neutral-400">历史</a>
-          <a href="/settings" className="text-sm text-neutral-400">设置</a>
+          {/* 客户端导航（Link）：不重载页面，内存 DEK 保留——已解锁状态下直接进入，无需重新 Face ID */}
+          <Link href="/history" className="text-sm text-neutral-400">历史</Link>
+          <Link href="/settings" className="text-sm text-neutral-400">设置</Link>
         </nav>
       </header>
       {showDraftBanner && (

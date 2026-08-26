@@ -34,11 +34,17 @@ export default function LoginPage() {
     })()
   }, [router])
 
+  // 回到来源页面（守卫跳转时携带 ?from=），默认首页
+  function goToFrom() {
+    const from = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('from') : null
+    router.replace(from && from.startsWith('/') ? from : '/')
+  }
+
   async function handlePasskey() {
     setBusy(true); setError(null)
     try {
       const result = await loginWithPasskey()
-      if (result.ok) { router.replace('/'); return }
+      if (result.ok) { goToFrom(); return }
       if (result.error === PRF_UNAVAILABLE) { setMode('recovery'); return }
       setError(result.error ?? '登录失败')
     } catch {
@@ -54,9 +60,7 @@ export default function LoginPage() {
     try {
       const result = await unlockWithRecoveryKey(recoveryKey.trim())
       if (result.ok) {
-        // 回到来源页面（守卫跳转时携带 ?from=），默认首页
-        const from = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('from') : null
-        router.replace(from && from.startsWith('/') ? from : '/')
+        goToFrom()
         return
       }
       setError(result.error ?? '登录失败')

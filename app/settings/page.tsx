@@ -6,13 +6,29 @@ import { useRouter } from 'next/navigation'
 import { clearDek, fetchSession } from '@/lib/client/session'
 import { idbClearAll } from '@/lib/client/idb'
 
+// 定位开关（与 DiaryEditor 的 isLocationEnabled 共用 localStorage key）
+const LOCATION_KEY = 'qo-location-enabled'
+
 export default function SettingsPage() {
   const router = useRouter()
   const [info, setInfo] = useState<{ credentialCount: number; prfWrappers: number } | null>(null)
+  const [locationEnabled, setLocationEnabled] = useState(true)
 
   useEffect(() => {
     void fetchSession().then((s) => setInfo({ credentialCount: s.credentialCount, prfWrappers: s.prfWrappers })).catch(() => setInfo(null))
+    // 读取定位开关（默认开启）
+    try {
+      setLocationEnabled(localStorage.getItem(LOCATION_KEY) !== '0')
+    } catch { /* localStorage 不可用则保持默认 */ }
   }, [])
+
+  function toggleLocation() {
+    const next = !locationEnabled
+    setLocationEnabled(next)
+    try {
+      localStorage.setItem(LOCATION_KEY, next ? '1' : '0')
+    } catch { /* 忽略存储失败（隐私模式等） */ }
+  }
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
@@ -47,7 +63,20 @@ export default function SettingsPage() {
           <span className="text-sm text-neutral-400">已启用（{info ? info.credentialCount : '—'} 个）</span>
         </li>
         <li className="py-4"><Link href="/settings/passkey" className="text-neutral-800 dark:text-neutral-200">注册新的 Passkey</Link></li>
-        <li className="py-4"><Link href="/settings/recovery?mode=export" className="text-neutral-800 dark:text-neutral-200">导出恢复密钥</Link></li>
+        <li className="flex items-center justify-between py-4">
+          <div>
+            <p className="text-neutral-800 dark:text-neutral-200">保存时记录位置</p>
+            <p className="mt-0.5 text-xs text-neutral-400">关闭后保存日记不再请求定位</p>
+          </div>
+          <button
+            onClick={toggleLocation}
+            role="switch"
+            aria-checked={locationEnabled}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${locationEnabled ? 'bg-neutral-900 dark:bg-neutral-100' : 'bg-neutral-300 dark:bg-neutral-700'}`}
+          >
+            <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${locationEnabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+          </button>
+        </li>
         <li className="py-4"><Link href="/settings/recovery?mode=regenerate" className="text-neutral-800 dark:text-neutral-200">重新生成恢复密钥</Link></li>
         <li className="py-4"><button onClick={() => void logout()} className="text-neutral-800 dark:text-neutral-200">退出登录</button></li>
         <li className="py-4"><button onClick={() => void wipe()} className="text-red-500">删除所有数据</button></li>
