@@ -16,7 +16,7 @@ export function encodeRecoveryKey(bytes: Uint8Array): string {
   return toBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-export function decodeRecoveryKey(key: string): Uint8Array {
+export function decodeRecoveryKey(key: string): Uint8Array<ArrayBuffer> {
   // 严格校验格式：43 字符 base64url（32 字节 × 8 bit ÷ 6 bit = 42.67 → 43，无 padding）
   if (!/^[A-Za-z0-9_-]{43}$/.test(key)) throw new Error('无效的恢复密钥格式')
   const b64 = key.replace(/-/g, '+').replace(/_/g, '/') + '='

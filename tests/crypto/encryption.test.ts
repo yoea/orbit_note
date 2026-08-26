@@ -43,13 +43,14 @@ describe('AES-256-GCM 日记加密', () => {
     expect(randomBytes(12).length).toBe(12)
   })
   it('wrapper iv 内嵌往返', async () => {
-    // generateDek() 的 DEK 不可导出（extractable=false，安全设计）；
-    // 用临时可导出密钥制造 raw 字节，验证 wrapper 的 IV 内嵌格式
-    const rawKey = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
-    const raw = new Uint8Array(await crypto.subtle.exportKey('raw', rawKey))
-    const wrapped = encodeWrapped(raw.buffer as ArrayBuffer)
-    const { iv, data } = decodeWrapped(wrapped)
-    expect(iv.length).toBe(12)
-    expect(data.length).toBe(raw.length)
+    // generateDek() 的 DEK 可导出（extractable=true，决策 A），raw 字节即包裹载荷
+    const dek = await generateDek()
+    const raw = new Uint8Array(await crypto.subtle.exportKey('raw', dek))
+    // 决策 B：IV 由调用方传入（与 AES-GCM 加密所用 IV 一致），encodeWrapped 只做拼接编码
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const wrapped = encodeWrapped(iv, raw.buffer as ArrayBuffer)
+    const decoded = decodeWrapped(wrapped)
+    expect(decoded.iv).toEqual(iv)
+    expect(decoded.data).toEqual(raw)
   })
 })
