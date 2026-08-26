@@ -80,13 +80,17 @@ export async function fetchWrappers(): Promise<WrappedKeyRow[]> {
 }
 
 // Passkey + PRF 解锁（正常路径）。契约：绝不 throw——所有失败以 LoginResult.error 返回。
+// 两步认证：第一步 get **不带 PRF 扩展**——iOS 26 对"带 PRF 的 get"自动 Face ID 偶发无效
+// （弹窗出现即识别但失败，需用户再点系统弹窗）；无 PRF 的 get 自动 Face ID 正常。
+// 认证成功后第二步 get（带 PRF）仅取 PRF 输出用于解锁 DEK（该 assertion 无需服务器再验证）。
 export async function loginWithPasskey(): Promise<LoginResult> {
   try {
     const optionsRes = await fetch('/api/auth/login/options')
     if (!optionsRes.ok) return { ok: false, error: '获取登录选项失败', via: null }
     const { token, options, prfEval } = await optionsRes.json()
 
-    const { assertion, prfResult } = await authenticatePasskey(options, prfEval)
+    // 第一步：认证（无 PRF 扩展——iOS 自动 Face ID 一次成功）
+    const { assertion } = await authenticatePasskey(options, null)
     const loginRes = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -98,23 +102,27 @@ export async function loginWithPasskey(): Promise<LoginResult> {
       return { ok: false, error: serverError?.error ?? '登录验证失败', via: null }
     }
 
-    // 登录成功后拉取 wrappers 并解锁
-    if (prfResult) {
-      const wrappers = await fetchWrappers()
-      const prfWrapper = wrappers.find((w) => w.wrapperType === 'passkey_prf')
-      if (prfWrapper) {
-        try {
-          const kek = await derivePrfKek(prfResult, prfWrapper.salt)
-          setDek(await unwrapDekFromWrapper(kek, prfWrapper.encryptedDek))
-          await persistDek() // 会话级持久化（PWA 导航重载后自动恢复，无需重复 Face ID）
-          return { ok: true, via: 'prf' }
-        } catch {
-          return { ok: false, error: '解锁失败', via: null }
+    // 第二步：带 PRF 的 get 获取 PRF 输出（解锁 DEK；assertion 无需服务器再验证）
+    if (prfEval) {
+      const { prfResult } = await authenticatePasskey(options, prfEval)
+      if (prfResult) {
+        const wrappers = await fetchWrappers()
+        const prfWrapper = wrappers.find((w) => w.wrapperType === 'passkey_prf')
+        if (prfWrapper) {
+          try {
+            const kek = await derivePrfKek(prfResult, prfWrapper.salt)
+            setDek(await unwrapDekFromWrapper(kek, prfWrapper.encryptedDek))
+            await persistDek() // 会话级持久化（PWA 导航重载后自动恢复，无需重复 Face ID）
+            return { ok: true, via: 'prf' }
+          } catch {
+            return { ok: false, error: '解锁失败', via: null }
+          }
         }
+        return { ok: false, error: PRF_UNAVAILABLE, via: null }
       }
+      // PRF 无结果（浏览器不支持）→ 前端转入 recovery 输入模式
       return { ok: false, error: PRF_UNAVAILABLE, via: null }
     }
-    // PRF 无结果（浏览器不支持）→ 前端转入 recovery 输入模式
     return { ok: false, error: PRF_UNAVAILABLE, via: null }
   } catch (e) {
     // 用户取消 Face ID 弹窗（NotAllowedError）是必然路径，需与网络/服务错误区分
