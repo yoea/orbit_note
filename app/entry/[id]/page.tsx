@@ -27,6 +27,7 @@ export default function EntryPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [decryptFailed, setDecryptFailed] = useState(false)
+  const [showCoords, setShowCoords] = useState(false)
 
   useEffect(() => {
     void (async () => {
@@ -118,9 +119,20 @@ export default function EntryPage() {
         {created.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
       </p>
       {entry.latitude != null && entry.longitude != null && (
-        <p className="mt-1 text-xs text-neutral-400">
-          记录了当前位置 · 点击查看坐标
-        </p>
+        <div className="mt-1">
+          <button
+            onClick={() => setShowCoords((v) => !v)}
+            className="text-xs text-neutral-400 underline"
+          >
+            {showCoords ? '收起位置' : '记录了当前位置 · 点击查看坐标'}
+          </button>
+          {showCoords && (
+            <p className="mt-1 text-xs tabular-nums text-neutral-400">
+              {entry.latitude.toFixed(6)}, {entry.longitude.toFixed(6)}
+              {entry.locationAccuracy != null && ` · 精度 ±${Math.round(entry.locationAccuracy)} 米`}
+            </p>
+          )}
+        </div>
       )}
       {editing ? (
         <>
