@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import SwRegister from "@/components/SwRegister";
 import SecureContextCheck from "@/components/SecureContextCheck";
+import AppFooter from "@/components/AppFooter";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {children}
         <SwRegister />
         <SecureContextCheck />
+        <AppFooter />
       </body>
     </html>
   );

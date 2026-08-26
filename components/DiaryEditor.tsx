@@ -238,10 +238,6 @@ export default function DiaryEditor() {
         >
           {status === 'saving' ? '保存中…' : status === 'saved' ? '已保存 ✓' : '保存'}
         </button>
-        {/* 底部缓冲：版本号 + 版权低调显示，PWA 全屏模式下保存按钮不至于贴底 */}
-        <p className="mt-4 text-center text-[10px] text-neutral-300 dark:text-neutral-600">
-          Orbit {process.env.NEXT_PUBLIC_VERSION ?? 'dev'} · © 2026 Ethan
-        </p>
       </footer>
     </div>
   )
