@@ -24,6 +24,11 @@ body {
 }
 
 /* iOS safe-area 辅助类（非 Tailwind 工具类，直接使用） */
+/* 高度百分比链：body h-full 依赖 html 有确定高度（视口），否则 flex 弹性布局塌陷为内容高度 */
+html {
+  height: 100%;
+}
+
 .safe-pt { padding-top: env(safe-area-inset-top); }
 .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
 .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
