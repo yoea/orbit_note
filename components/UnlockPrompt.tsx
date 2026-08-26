@@ -1,8 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import OrbitLogo from './OrbitLogo'
 
-// 手动解锁入口（留在当前页，用户手势下 Face ID 正常）；支持错误信息展示
+// 手动解锁入口（留在当前页，用户手势下 Face ID 正常）；支持错误信息展示。
+// 点击后延迟 300ms 再发起认证——iOS PWA 冷启动后立即调用 WebAuthn 偶发失败，
+// 短暂延迟让系统稳定，减少"首次识别无响应"。
 export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<string | null> }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -11,6 +14,7 @@ export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<str
     if (busy) return
     setBusy(true); setError(null)
     try {
+      await new Promise((r) => setTimeout(r, 300))
       const err = await onUnlock()
       if (err) setError(err)
     } catch {
@@ -21,13 +25,10 @@ export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<str
   }
 
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-8 px-6 safe-pb">
-      {/* 应用图标 */}
-      <div className="flex h-20 w-20 items-center justify-center rounded-[22px] bg-neutral-900 text-3xl font-bold text-white shadow-lg dark:bg-neutral-100 dark:text-neutral-900">
-        O
-      </div>
+    <main className="flex h-full flex-col items-center justify-center gap-8 px-6 safe-pb">
+      {/* 品牌 LOGO */}
+      <OrbitLogo size="lg" />
       <div className="text-center">
-        <h1 className="text-2xl font-semibold text-neutral-800 dark:text-neutral-100">Orbit</h1>
         <p className="mt-2 text-sm text-neutral-400">安全 · 私密 · 只属于你</p>
       </div>
       <div className="w-full max-w-xs">

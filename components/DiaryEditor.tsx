@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import AutoTextarea from './AutoTextarea'
 import ConfettiBurst from './ConfettiBurst'
+import OrbitLogo from './OrbitLogo'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
@@ -190,12 +191,12 @@ export default function DiaryEditor() {
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
 
   return (
-    // 固定视口高度（扣除全局页脚 34px + 底部安全区）+ 禁止滚动：header/输入区/footer 全部在视口内，
-    // 输入区 flex 弹性分配剩余空间；全局页脚（版本/版权）显示在容器下方不遮挡保存按钮
-    <div className="mx-auto flex h-[calc(100dvh-34px-env(safe-area-inset-bottom,0px))] w-full max-w-md flex-col overflow-hidden px-5 safe-pt">
+    // 弹性高度（body flex 布局中自动分配视口减页脚后的空间）+ 禁止滚动：
+    // header/输入区/footer 全部在可视区内，输入区 flex 弹性分配剩余空间；页脚在流内不遮挡
+    <div className="mx-auto flex h-full w-full max-w-md flex-col overflow-hidden px-5 safe-pt">
       <header className="py-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Orbit</h1>
+          <OrbitLogo />
           <nav className="flex items-center gap-4">
             {/* 原生路由导航（DEK 会话级持久化——重载后自动恢复，无需重复 Face ID；右滑返回原生可用） */}
             <Link href="/history" className="text-sm text-neutral-400">历史</Link>

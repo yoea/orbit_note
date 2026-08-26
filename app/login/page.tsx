@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PRF_UNAVAILABLE, fetchSession, getDek, loginWithPasskey, unlockWithRecoveryKey } from '@/lib/client/session'
+import OrbitLogo from '@/components/OrbitLogo'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -73,7 +74,7 @@ export default function LoginPage() {
 
   if (loadError) {
     return (
-      <main className="flex min-h-dvh flex-col items-center justify-center gap-4 px-6 safe-pb">
+      <main className="flex h-full flex-col items-center justify-center gap-4 px-6 safe-pb">
         <p className="text-sm text-neutral-500">连接失败，请检查网络后重试</p>
         <button onClick={() => window.location.reload()} className="rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900">
           重试
@@ -83,13 +84,10 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-8 px-6 safe-pb">
-      {/* 应用图标 */}
-      <div className="flex h-20 w-20 items-center justify-center rounded-[22px] bg-neutral-900 text-3xl font-bold text-white shadow-lg dark:bg-neutral-100 dark:text-neutral-900">
-        O
-      </div>
+    <main className="flex h-full flex-col items-center justify-center gap-8 px-6 safe-pb">
+      {/* 品牌 LOGO */}
+      <OrbitLogo size="lg" />
       <div className="text-center">
-        <h1 className="text-2xl font-semibold text-neutral-800 dark:text-neutral-100">Orbit</h1>
         <p className="mt-2 text-sm text-neutral-400">安全 · 私密 · 只属于你</p>
       </div>
       {mode === 'passkey' ? (

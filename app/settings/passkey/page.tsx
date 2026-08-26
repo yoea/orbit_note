@@ -73,7 +73,7 @@ export default function AddPasskeyPage() {
   }
 
   return (
-    <main className="min-h-dvh px-5 safe-pt safe-pb">
+    <main className="h-full px-5 safe-pt safe-pb">
       <header className="flex items-center justify-between py-3">
         <Link href="/settings" className="text-neutral-400">‹ 设置</Link>
         <h1 className="text-lg font-semibold">添加 Passkey</h1>

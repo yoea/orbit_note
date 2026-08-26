@@ -28,11 +28,6 @@ body {
 .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
 .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
 
-/* 全局吸底页脚占位：fixed 页脚高度 + 安全区，避免遮挡各页面底部内容 */
-body {
-  padding-bottom: calc(34px + env(safe-area-inset-bottom));
-}
-
 /* 保存成功的庆祝粒子（游戏获奖感）：向上飘散 + 旋转 + 淡出 */
 @keyframes confetti-fall {
   0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
