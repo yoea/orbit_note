@@ -1,16 +1,18 @@
-# Quiet Orbit — 私人日记
+# Orbit
 
 端到端加密的单用户私人日记 Web App。日记正文在浏览器加密后上传，服务器数据库只有密文。
 
 ## 功能
 
 - Passkey / Face ID 登录（WebAuthn，无密码）
-- WebAuthn PRF 密钥派生（KEK 保护 DEK）
+- WebAuthn PRF 密钥派生（KEK 保护 DEK），iPhone 上验证 Face ID 即直接解锁
 - AES-256-GCM 客户端加密（每篇独立 IV）
 - Recovery Key 灾难恢复（HKDF-SHA-256 派生）
 - 自动草稿（IndexedDB 加密草稿 + 服务器同步 + 冲突处理）
-- 自动记录时间与位置（位置为服务器可见 metadata）
-- 历史查看 / 编辑 / 删除（历史列表单次加载最近 200 篇（API 上限），超过后更早日记暂不可见——后续版本将支持分页加载）
+- 自动记录时间与位置（位置为服务器可见 metadata，可设置关闭 / 编辑删除）
+- 历史查看 / 编辑 / 删除（顶部统计：共 N 篇 · 写了 M 天；分页加载 10 条/次 + 加载更多）
+- 详情页坐标直接显示，点击复制到剪贴板
+- 定位开关（设置页，默认开启）
 - PWA（iPhone 主屏幕安装，独立启动）
 
 ## 安全设计
@@ -99,12 +101,20 @@ npm run dev                  # http://localhost:3000
 
 ## 测试
 
-- `npm test`：48 个单元测试（crypto / 校验 / 限流 / challenge / API 保护）
+- `npm test`：65 个单元测试（crypto / 校验 / 限流 / challenge / API 保护 / PRF）
 - 手动清单：[docs/MANUAL_TESTING.md](docs/MANUAL_TESTING.md)（iPhone + Edge 双平台）
 
 ## 部署
 
-生产部署（ECS + Nginx + PostgreSQL）详见 [docs/deploy/ECS-DEPLOY.md](docs/deploy/ECS-DEPLOY.md)。
+生产环境：fischerECS（`/home/ewing/craft/quiet-orbit`），PM2 进程管理（崩溃自动重启 + 开机自启）。
+
+**一键部署**（本地执行，构建 → 打包 → 上传 → 远程重启 → 验证）：
+
+```bash
+bash scripts/deploy.sh
+```
+
+版本号自动取自最近 git tag（设置页「关于」显示）。完整部署文档见 [docs/deploy/ECS-DEPLOY.md](docs/deploy/ECS-DEPLOY.md)。
 
 ## 数据库备份
 
