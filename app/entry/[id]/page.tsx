@@ -1,12 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import UnlockPrompt from '@/components/UnlockPrompt'
 import { getDek } from '@/lib/client/session'
 import { useRequireUnlock } from '@/lib/client/use-require-unlock'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
+import { copyText } from '@/lib/client/clipboard'
 
 interface Entry {
   id: string
@@ -29,8 +30,21 @@ export default function EntryPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [decryptFailed, setDecryptFailed] = useState(false)
-  const [showCoords, setShowCoords] = useState(false)
+  const [coordsCopied, setCoordsCopied] = useState(false)
+  const [removeLocation, setRemoveLocation] = useState(false)
+  const coordsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { state: unlock, retryUnlock } = useRequireUnlock()
+
+  // 复制坐标到剪贴板并提示
+  async function copyCoords() {
+    if (entry?.latitude == null || entry.longitude == null) return
+    const ok = await copyText(`${entry.latitude.toFixed(6)}, ${entry.longitude.toFixed(6)}`)
+    if (ok) {
+      setCoordsCopied(true)
+      if (coordsTimerRef.current) clearTimeout(coordsTimerRef.current)
+      coordsTimerRef.current = setTimeout(() => setCoordsCopied(false), 2000)
+    }
+  }
 
   useEffect(() => {
     if (unlock !== 'ready') return
@@ -60,14 +74,22 @@ export default function EntryPage() {
     try {
       const dek = getDek()!
       const { ciphertext, iv } = await encryptText(dek, plain)
+      const body: Record<string, unknown> = { ciphertext, iv }
+      // 用户删除位置：显式传 null 覆盖原坐标（diaryUpdateSchema 接受 nullable 字段）
+      if (removeLocation) {
+        body.latitude = null
+        body.longitude = null
+        body.locationAccuracy = null
+      }
       const res = await fetch(`/api/diary/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ciphertext, iv }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error('保存失败')
       const data = await res.json()
       setEntry((prev) => prev ? { ...prev, ...data.entry } : prev)
+      setRemoveLocation(false)
       setError(null)
       setEditing(false)
     } catch (e) {
@@ -75,7 +97,7 @@ export default function EntryPage() {
     } finally {
       setBusy(false)
     }
-  }, [entry, plain, id])
+  }, [entry, plain, id, removeLocation])
 
   const remove = useCallback(async () => {
     if (!window.confirm('确定删除这篇日记吗？删除后无法恢复。')) return
@@ -124,20 +146,17 @@ export default function EntryPage() {
         {created.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}{' '}
         {created.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
       </p>
-      {entry.latitude != null && entry.longitude != null && (
+      {entry.latitude != null && entry.longitude != null && !editing && (
         <div className="mt-1">
+          {/* 直接显示坐标，点击复制 */}
           <button
-            onClick={() => setShowCoords((v) => !v)}
-            className="text-xs text-neutral-400 underline"
+            onClick={() => void copyCoords()}
+            className="text-xs tabular-nums text-neutral-400 underline active:opacity-60"
           >
-            {showCoords ? '收起位置' : '记录了当前位置 · 点击查看坐标'}
+            {entry.latitude.toFixed(6)}, {entry.longitude.toFixed(6)}
+            {entry.locationAccuracy != null && ` · ±${Math.round(entry.locationAccuracy)} 米`}
           </button>
-          {showCoords && (
-            <p className="mt-1 text-xs tabular-nums text-neutral-400">
-              {entry.latitude.toFixed(6)}, {entry.longitude.toFixed(6)}
-              {entry.locationAccuracy != null && ` · 精度 ±${Math.round(entry.locationAccuracy)} 米`}
-            </p>
-          )}
+          {coordsCopied && <p className="mt-0.5 text-xs text-neutral-400">已复制坐标</p>}
         </div>
       )}
       {editing ? (
@@ -148,6 +167,15 @@ export default function EntryPage() {
             disabled={busy}
             className="mt-3 min-h-[50dvh] w-full resize-none bg-transparent text-lg leading-relaxed outline-none disabled:opacity-60"
           />
+          {entry.latitude != null && entry.longitude != null && !removeLocation && (
+            <div className="mt-2 flex items-center gap-3">
+              <p className="text-xs tabular-nums text-neutral-400">
+                {entry.latitude.toFixed(6)}, {entry.longitude.toFixed(6)}
+              </p>
+              <button onClick={() => setRemoveLocation(true)} className="text-xs text-red-500 underline">删除位置</button>
+            </div>
+          )}
+          {removeLocation && <p className="mt-2 text-xs text-neutral-400">保存后位置将被删除</p>}
           <button
             onClick={() => void saveEdit()}
             disabled={busy || !plain.trim()}
