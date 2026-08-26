@@ -121,12 +121,12 @@ export default function HistoryView() {
 
   return (
     <main className="min-h-dvh px-5 safe-pt safe-pb">
-      <header className="flex items-center justify-between py-3">
-        {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效） */}
+      <header className="relative flex items-center justify-between py-3">
+        {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
         <Link href="/" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
         </Link>
-        <h1 className="text-lg font-semibold">历史</h1>
+        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">历史</h1>
         <span className="w-8" />
       </header>
       {stats && (

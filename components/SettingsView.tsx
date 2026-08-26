@@ -36,6 +36,7 @@ export default function SettingsView() {
   const [info, setInfo] = useState<{ credentialCount: number; prfWrappers: number } | null>(null)
   const [locationEnabled, setLocationEnabled] = useState(true)
   const [wiping, setWiping] = useState(false)
+  const [confirmLogout, setConfirmLogout] = useState(false)
   const [wipeConfirmStep, setWipeConfirmStep] = useState<0 | 1 | 2>(0) // 0=无确认, 1=第一次, 2=第二次
 
   useEffect(() => {
@@ -86,12 +87,12 @@ export default function SettingsView() {
 
   return (
     <main className="min-h-dvh px-5 safe-pt safe-pb">
-      <header className="flex items-center justify-between py-3">
-        {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效） */}
+      <header className="relative flex items-center justify-between py-3">
+        {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
         <Link href="/" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
         </Link>
-        <h1 className="text-lg font-semibold">设置</h1>
+        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">设置</h1>
         <span className="w-8" />
       </header>
       <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -116,7 +117,7 @@ export default function SettingsView() {
           </button>
         </li>
         <li className="py-4"><Link href="/settings/recovery?mode=regenerate" className="text-neutral-800 dark:text-neutral-200">重新生成恢复密钥</Link></li>
-        <li className="py-4"><button onClick={() => void logout()} className="text-neutral-800 dark:text-neutral-200">退出登录</button></li>
+        <li className="py-4"><button onClick={() => setConfirmLogout(true)} className="text-neutral-800 dark:text-neutral-200">退出登录</button></li>
         <li className="py-4"><button onClick={() => setWipeConfirmStep(1)} disabled={wiping} className="text-red-500 disabled:opacity-50">{wiping ? '验证中…' : '删除所有数据'}</button></li>
         <li className="py-4">
           <p className="text-sm font-medium text-neutral-400">关于</p>
@@ -126,6 +127,16 @@ export default function SettingsView() {
           </p>
         </li>
       </ul>
+      {confirmLogout && (
+        <ConfirmDialog
+          title="确定退出登录吗？"
+          message="退出后需要重新验证 Face ID 才能解锁日记。"
+          confirmText="退出"
+          cancelText="取消"
+          onConfirm={() => { setConfirmLogout(false); void logout() }}
+          onCancel={() => setConfirmLogout(false)}
+        />
+      )}
       {wipeConfirmStep === 1 && (
         <ConfirmDialog
           title="确定删除所有数据吗？"
