@@ -134,7 +134,7 @@ export default function SetupPage() {
 
   if (loadError) {
     return (
-      <main className="flex h-full flex-col items-center justify-center gap-4 px-6 safe-pb">
+      <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 safe-pb">
         <p className="text-sm text-neutral-500">连接失败，请检查网络后重试</p>
         <button onClick={() => window.location.reload()} className="rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900">
           重试
@@ -144,7 +144,7 @@ export default function SetupPage() {
   }
 
   return (
-    <main className="flex h-full flex-col items-center justify-center gap-6 px-6 safe-pb">
+    <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 px-6 safe-pb">
       {step === 'intro' && (
         <>
           <h1 className="text-2xl font-semibold">创建你的私人日记</h1>

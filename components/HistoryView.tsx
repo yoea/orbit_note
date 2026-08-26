@@ -110,7 +110,7 @@ export default function HistoryView() {
 
   if (error) {
     return (
-      <main className="flex h-full items-center justify-center px-5 safe-pt safe-pb">
+      <main className="flex min-h-0 flex-1 items-center justify-center px-5 safe-pt safe-pb">
         <div className="text-center">
           <p className="text-sm text-neutral-500">{error}</p>
           <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white">重试</button>
@@ -120,7 +120,7 @@ export default function HistoryView() {
   }
 
   return (
-    <main className="h-full px-5 safe-pt safe-pb">
+    <main className="flex-1 min-h-0 px-5 safe-pt safe-pb">
       <header className="relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
         <Link href="/" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">

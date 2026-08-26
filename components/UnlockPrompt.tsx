@@ -25,12 +25,9 @@ export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<str
   }
 
   return (
-    <main className="flex h-full flex-col items-center justify-center gap-8 px-6 safe-pb">
+    <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-8 px-6 safe-pb">
       {/* 品牌 LOGO */}
       <OrbitLogo size="lg" />
-      <div className="text-center">
-        <p className="mt-2 text-sm text-neutral-400">安全 · 私密 · 只属于你</p>
-      </div>
       <div className="w-full max-w-xs">
         <button
           onClick={() => void handleUnlock()}

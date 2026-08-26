@@ -61,7 +61,7 @@ export default function RecoverySettingsPage() {
   }
 
   return (
-    <main className="h-full px-5 safe-pt safe-pb">
+    <main className="flex-1 min-h-0 px-5 safe-pt safe-pb">
       <header className="flex items-center justify-between py-3">
         <Link href="/settings" className="text-neutral-400">‹ 设置</Link>
         <h1 className="text-lg font-semibold">重新生成恢复密钥</h1>

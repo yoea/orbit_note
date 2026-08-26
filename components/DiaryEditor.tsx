@@ -193,7 +193,7 @@ export default function DiaryEditor() {
   return (
     // 弹性高度（body flex 布局中自动分配视口减页脚后的空间）+ 禁止滚动：
     // header/输入区/footer 全部在可视区内，输入区 flex 弹性分配剩余空间；页脚在流内不遮挡
-    <div className="mx-auto flex h-full w-full max-w-md flex-col overflow-hidden px-5 safe-pt">
+    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5 safe-pt">
       <header className="py-4">
         <div className="flex items-center justify-between">
           <OrbitLogo />

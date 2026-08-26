@@ -86,7 +86,7 @@ export default function SettingsView() {
   }
 
   return (
-    <main className="h-full px-5 safe-pt safe-pb">
+    <main className="flex-1 min-h-0 px-5 safe-pt safe-pb">
       <header className="relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
         <Link href="/" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">

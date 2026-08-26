@@ -117,7 +117,7 @@ export default function EntryView({ id }: { id: string }) {
 
   if (error && !entry) {
     return (
-      <main className="flex h-full items-center justify-center px-5 safe-pt safe-pb">
+      <main className="flex min-h-0 flex-1 items-center justify-center px-5 safe-pt safe-pb">
         <div className="text-center">
           <p className="text-sm text-neutral-500">{error}</p>
           <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white">重试</button>
@@ -126,20 +126,22 @@ export default function EntryView({ id }: { id: string }) {
     )
   }
 
-  if (!entry) return <main className="h-full px-5 safe-pt" />
+  if (!entry) return <main className="flex-1 min-h-0 px-5 safe-pt" />
 
   const created = new Date(entry.createdAt)
   return (
-    <main className="h-full px-5 safe-pt safe-pb">
+    <main className="flex-1 min-h-0 px-5 safe-pt safe-pb">
       <header className="relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
         <Link href="/history" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">日记</h1>
-        <button onClick={() => setEditing(!editing)} disabled={decryptFailed} className="text-sm text-neutral-400 disabled:opacity-50">
-          {editing ? '取消' : '编辑'}
-        </button>
+        {editing ? (
+          <button onClick={() => setEditing(false)} className="text-sm text-neutral-400">取消</button>
+        ) : (
+          <span className="w-8" />
+        )}
       </header>
       <p className="text-sm tabular-nums text-neutral-400">
         {created.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}{' '}
@@ -147,11 +149,12 @@ export default function EntryView({ id }: { id: string }) {
       </p>
       {entry.latitude != null && entry.longitude != null && !editing && (
         <div className="mt-1">
-          {/* 直接显示坐标，点击复制 */}
+          {/* 直接显示坐标（带小定位图标），点击复制 */}
           <button
             onClick={() => void copyCoords()}
             className="text-xs tabular-nums text-neutral-400 underline active:opacity-60"
           >
+            <span className="mr-0.5 text-[10px]">📍</span>
             {entry.latitude.toFixed(6)}, {entry.longitude.toFixed(6)}
             {entry.locationAccuracy != null && ` · ±${Math.round(entry.locationAccuracy)} 米`}
           </button>
@@ -196,12 +199,24 @@ export default function EntryView({ id }: { id: string }) {
       )}
       {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
       {!editing && (
-        <button
-          onClick={() => setConfirmingDelete(true)}
-          className="mt-10 w-full rounded-2xl border border-red-200 py-3 text-sm text-red-500 dark:border-red-900"
-        >
-          删除日记
-        </button>
+        /* 底部操作栏：编辑 / 删除（小尺寸图标） */
+        <div className="mt-auto flex items-center justify-end gap-6 border-t border-neutral-100 py-4 dark:border-neutral-800">
+          <button
+            onClick={() => setEditing(true)}
+            disabled={decryptFailed}
+            aria-label="编辑"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-neutral-500 active:bg-neutral-100 disabled:opacity-40 dark:active:bg-neutral-800"
+          >
+            ✎
+          </button>
+          <button
+            onClick={() => setConfirmingDelete(true)}
+            aria-label="删除"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-red-500 active:bg-neutral-100 dark:active:bg-neutral-800"
+          >
+            🗑
+          </button>
+        </div>
       )}
       {confirmingDelete && (
         <ConfirmDialog
