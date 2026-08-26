@@ -74,7 +74,8 @@ export default function SettingsPage() {
             aria-checked={locationEnabled}
             className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${locationEnabled ? 'bg-neutral-900 dark:bg-neutral-100' : 'bg-neutral-300 dark:bg-neutral-700'}`}
           >
-            <span className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${locationEnabled ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+            {/* 圆点：left-0.5(2px) 基础偏移 + 开启时 translate-x-5(20px) → 22+24=46px ≤ 48px 不溢出 */}
+            <span className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${locationEnabled ? 'translate-x-5' : ''}`} />
           </button>
         </li>
         <li className="py-4"><Link href="/settings/recovery?mode=regenerate" className="text-neutral-800 dark:text-neutral-200">重新生成恢复密钥</Link></li>

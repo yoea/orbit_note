@@ -1,5 +1,5 @@
 // Service Worker：仅缓存静态资源，绝不缓存日记密文（日记数据走 IndexedDB）
-const CACHE = 'qo-static-v1'
+const CACHE = 'qo-static-v2'
 const STATIC = ['/', '/manifest.webmanifest', '/icons/icon-180.png', '/icons/icon-192.png', '/icons/icon-512.png']
 
 self.addEventListener('install', (e) => {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PRF_UNAVAILABLE, fetchSession, getDek, loginWithPasskey, unlockWithRecoveryKey } from '@/lib/client/session'
 
@@ -16,6 +16,9 @@ export default function LoginPage() {
     if (typeof window === 'undefined') return null
     return new URLSearchParams(window.location.search).get('reason')
   })
+  // 自动解锁尝试标记：session 有效但 DEK 为空时（刷新后），自动触发一次 Face ID 认证，
+  // 避免"刷新 → 登录页 → 再点一次"的重复操作（WebAuthn get 无需用户手势，iOS 弹 Face ID 确认一次即可）。
+  const autoUnlockTriedRef = useRef(false)
 
   useEffect(() => {
     void (async () => {
@@ -24,9 +27,12 @@ export default function LoginPage() {
         if (!s.initialized) { router.replace('/setup'); return }
         // 已认证且 DEK 在内存才进首页；否则停留本页重新解锁（DEK 刷新即清空，规格二十六节）
         if (s.authenticated && getDek()) { router.replace('/'); return }
-        // 已认证但 DEK 为空：保持 Face ID 模式——PRF 可用时（iPhone/iOS）点解锁直接进入；
-        // PRF 不可用（Windows Hello 等）时 loginWithPasskey 返回 prf_unavailable 再切恢复密钥。
-        // 注：不要在此直接切 recovery——会跳过 iPhone 的 PRF 解锁路径。
+        // 已认证但 DEK 为空（刷新后）：自动触发一次 Face ID 解锁（PRF 可用时直接进入；
+        // 失败/取消则停留在 Face ID 按钮，用户可手动重试或切恢复密钥）
+        if (s.authenticated && !getDek() && !autoUnlockTriedRef.current) {
+          autoUnlockTriedRef.current = true
+          setTimeout(() => void handlePasskey(), 300) // 延迟到首帧渲染后，避免 effect 内同步 setState
+        }
       } catch {
         // 网络/服务错误：绝不走初始化分支，停留在本页提示
         setLoadError(true)
