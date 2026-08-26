@@ -11,7 +11,7 @@ export default function SettingsPage() {
   const [info, setInfo] = useState<{ credentialCount: number; prfWrappers: number } | null>(null)
 
   useEffect(() => {
-    void fetchSession().then((s) => setInfo({ credentialCount: s.credentialCount, prfWrappers: s.prfWrappers })).catch(() => {})
+    void fetchSession().then((s) => setInfo({ credentialCount: s.credentialCount, prfWrappers: s.prfWrappers })).catch(() => setInfo(null))
   }, [])
 
   async function logout() {
@@ -44,7 +44,7 @@ export default function SettingsPage() {
       <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
         <li className="flex items-center justify-between py-4">
           <span className="text-neutral-800 dark:text-neutral-200">Passkey</span>
-          <span className="text-sm text-neutral-400">已启用（{info?.credentialCount ?? 0} 个）</span>
+          <span className="text-sm text-neutral-400">已启用（{info ? info.credentialCount : '—'} 个）</span>
         </li>
         <li className="py-4"><Link href="/settings/passkey" className="text-neutral-800 dark:text-neutral-200">注册新的 Passkey</Link></li>
         <li className="py-4"><Link href="/settings/recovery?mode=export" className="text-neutral-800 dark:text-neutral-200">导出恢复密钥</Link></li>

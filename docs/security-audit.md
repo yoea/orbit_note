@@ -50,7 +50,8 @@
 ## 9. 是否存在 XSS？—— 通过
 
 - 检查方法：grep `dangerouslySetInnerHTML`。
-- 结论：零使用（全项目无匹配，仅规格/计划文档文字提及）。正文一律 React 默认文本渲染，换行用 CSS `white-space: pre-wrap`。配合 CSP（生产无 `unsafe-inline` script、无 `unsafe-eval`）双重防御。
+- 结论：零使用（全项目无匹配，仅规格/计划文档文字提及）。正文一律 React 默认文本渲染，换行用 CSS `white-space: pre-wrap`。
+- CSP 说明（质量审查修正）：生产 `script-src 'self' 'unsafe-inline'`——Next.js 预渲染产物含内联 `self.__next_f` RSC flight 脚本（`.next/server/app/index.html` 实证），无 nonce 方案的官方配置即 `'unsafe-inline'`。XSS 防护主要依赖零 `dangerouslySetInnerHTML` + React 文本渲染（攻击者注入的内容无法成为可执行脚本），外部脚本仍被 `default-src 'self'` 阻断。
 
 ## 10. 未登录能否调用 diary API？—— 通过
 
@@ -77,7 +78,7 @@
 ## 14. 第三方脚本是否能够读取日记？—— 通过
 
 - 检查方法：grep `script src`/外链 URL，阅读 `app/layout.tsx` 与 `components/`。
-- 结论：零第三方脚本、零外链（无 analytics/CDN/广告）。唯一脚本是本项目自己的 Service Worker 注册与 Next 构建产物。CSP 生产仅 `'self'`，第三方脚本即便被注入也无法加载。
+- 结论：零第三方脚本、零外链（无 analytics/CDN/广告）。唯一脚本是本项目自己的 Service Worker 注册与 Next 构建产物。CSP 生产 `default-src 'self'`（`script-src` 含 `'unsafe-inline'` 仅为 Next.js RSC 内联脚本，见第 9 项），外部第三方脚本仍被 `'self'` 来源限制阻断。
 
 ## 15. 数据库泄露后攻击者是否能直接看到正文？—— 通过（密文不可读）
 
@@ -89,7 +90,7 @@
 
 ## 附：本次 Task 13 新增的加固项
 
-- `proxy.ts`（Next 16 的 middleware）：所有页面响应附加 CSP（生产严格）/X-Content-Type-Options/Referrer-Policy/X-Frame-Options/Permissions-Policy；粗粒度路由保护（未登录访问 `/`、`/history`、`/entry/*`、`/settings/*` 重定向 `/login`；已登录访问 `/login`、`/setup` 重定向 `/`）。
+- `proxy.ts`（Next 16 的 middleware）：所有页面响应附加 CSP（生产严格）/X-Content-Type-Options/Referrer-Policy/X-Frame-Options/Permissions-Policy；单向粗粒度路由保护（未登录访问 `/`、`/history`、`/entry/*`、`/settings/*` 重定向 `/login`）。不做已登录 → `/login` → 首页的跳转（DEK 仅存内存，刷新即失，`/login` 必须恒可达，客户端守卫负责已登录跳转）。
 - `app/api/admin/wipe/route.ts`：认证 + 限流 + 清空全部表 + 清除会话 cookie。
 - `app/api/keys/wrappers/recovery/route.ts`：PUT 更新 recovery wrapper（需认证，先经客户端旧密钥验证）。
 - `app/settings/passkey/`：新 Passkey 复用服务器 `prfEval`（S 不变量），不生成新 S。

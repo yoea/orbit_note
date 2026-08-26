@@ -4,7 +4,7 @@ import { use, useState } from 'react'
 import Link from 'next/link'
 import { fetchWrappers } from '@/lib/client/session'
 import { createWrappedDek, unwrapWithRecoveryKey } from '@/lib/client/crypto/setup'
-import { generateRecoveryKey, sha256Hex } from '@/lib/client/crypto/recovery-key'
+import { decodeRecoveryKey, generateRecoveryKey, sha256Hex } from '@/lib/client/crypto/recovery-key'
 
 type Mode = 'export' | 'regenerate'
 
@@ -28,8 +28,10 @@ export default function RecoverySettingsPage({ searchParams }: { searchParams: P
         setResult(currentKey.trim())
       } else {
         // 生成新 key，用新 key 包裹 DEK 并更新服务器
+        // IKM 必须是 decodeRecoveryKey 解码后的 32 字节（与 setup/unlock 的 unwrapWithRecoveryKey 内部一致）——
+        // 用 43 字符 ASCII 文本作 IKM 会导致新 wrapper 永远解不开（质量审查 C3）
         const next = generateRecoveryKey()
-        const wrapped = await createWrappedDek(dek, new TextEncoder().encode(next), 'recovery-kek')
+        const wrapped = await createWrappedDek(dek, decodeRecoveryKey(next), 'recovery-kek')
         const up = await fetch('/api/keys/wrappers/recovery', {
           method: 'PUT', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -79,6 +81,9 @@ export default function RecoverySettingsPage({ searchParams }: { searchParams: P
       {result && (
         <div className="mt-6">
           <p className="text-sm text-neutral-500">请立即保存，此密钥仅显示一次：</p>
+          {mode === 'regenerate' && (
+            <p className="mt-2 text-sm text-amber-600 dark:text-amber-400">保存新密钥前不要关闭页面——保存后旧密钥立即失效</p>
+          )}
           <code className="mt-2 block break-all rounded-xl bg-neutral-100 px-4 py-3 text-sm dark:bg-neutral-800">{result}</code>
           <button onClick={() => void navigator.clipboard?.writeText(result).catch(() => {})} className="mt-2 text-sm text-neutral-500 underline">复制</button>
         </div>

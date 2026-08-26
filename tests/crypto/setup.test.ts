@@ -19,6 +19,16 @@ describe('setup 密钥流程', () => {
     const { ciphertext, iv } = await encryptText(restored, 'ok')
     expect(await decryptText(dek, ciphertext, iv)).toBe('ok')
   })
+  it('recovery 重新生成往返（新密钥解包新 wrapper）', async () => {
+    // 回归（质量审查 C3）：IKM 必须用 decodeRecoveryKey 解码后的 32 字节，
+    // 用 43 字符 ASCII 文本作 IKM 会导致新 wrapper 永远解不开
+    const dek = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
+    const next = 'x'.repeat(43) // 占位（生产由 generateRecoveryKey 生成；'x' 是合法 base64url 字符）
+    const wrapped = await createWrappedDek(dek, decodeRecoveryKey(next), 'recovery-kek')
+    const restored = await unwrapWithRecoveryKey(wrapped.encryptedDek, wrapped.salt, next)
+    const { ciphertext, iv } = await encryptText(restored, 'ok')
+    expect(await decryptText(dek, ciphertext, iv)).toBe('ok')
+  })
   it('错误 recovery key 必须失败', async () => {
     const recoveryKey = 'b'.repeat(43)
     const dek = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])

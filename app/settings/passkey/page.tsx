@@ -21,12 +21,14 @@ export default function AddPasskeyPage() {
 
       // 1. 获取现有 S（PRF eval 输入不变量：所有 passkey 共用第一个 wrapper 的 salt）
       const loginOptsRes = await fetch('/api/auth/login/options')
+      if (!loginOptsRes.ok) throw new Error('网络错误，请重试')
       const { prfEval } = await loginOptsRes.json()
       if (!prfEval) throw new Error('未找到现有 Passkey 包装，请先在主设备完成初始化')
       const prfEvalBytes = fromBase64Url(prfEval)
 
       // 2. 注册新 Passkey（注入同一个 S，绝不生成新的）
       const optsRes = await fetch('/api/auth/register/options')
+      if (!optsRes.ok) throw new Error('网络错误，请重试')
       const { token, options } = await optsRes.json()
       const { registration, prfEnabled } = await registerPasskey(options, prfEvalBytes)
       if (!prfEnabled) throw new Error('此设备不支持 PRF，无法添加 Passkey 解锁')
@@ -39,6 +41,7 @@ export default function AddPasskeyPage() {
 
       // 3. 重新获取登录选项（新 token）→ 认证新 Passkey 获取 PRF 输出（eval 输入仍是同一个 S）
       const authOptsRes = await fetch('/api/auth/login/options')
+      if (!authOptsRes.ok) throw new Error('网络错误，请重试')
       const authOpts = await authOptsRes.json()
       const { assertion, prfResult } = await authenticatePasskey(authOpts.options, prfEval)
       const loginResp = await fetch('/api/auth/login', {

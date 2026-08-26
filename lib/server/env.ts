@@ -21,6 +21,3 @@ try {
   throw e
 }
 export const env = parsed
-
-// 生产环境标志：API 日志开关/安全头等据此决定行为
-export const isProd = env.NODE_ENV === 'production'
