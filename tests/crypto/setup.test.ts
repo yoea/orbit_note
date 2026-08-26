@@ -4,6 +4,9 @@ import { decryptText, encryptText } from '../../lib/client/crypto/encryption'
 import { prfEvalB64 } from '../../lib/client/crypto/prf'
 import { decodeRecoveryKey } from '../../lib/client/crypto/recovery-key'
 
+// derivePrfKek 强制校验 PRF 输出为 32 字节，测试用固定 32 字节 IKM
+const prfIkm32 = new TextEncoder().encode('quiet-orbit-prf-output-32-bytes!')
+
 describe('setup 密钥流程', () => {
   it('recovery wrapper 往返', async () => {
     const recoveryKey = 'a'.repeat(43) // 占位格式（测试用固定值；生产由 generateRecoveryKey 生成）
@@ -25,20 +28,36 @@ describe('setup 密钥流程', () => {
   it('wrapWithKek 生成可解包格式', async () => {
     const dek = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
     const kek = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'])
+    // wrapWithKek 不返回 salt（HKDF salt 由调用方管理），只产出 encryptedDek
     const { encryptedDek } = await wrapWithKek(dek, kek)
     // encryptedDek 应为 base64(iv+cipher)，长度 > 0
     expect(encryptedDek.length).toBeGreaterThan(0)
   })
   it('derivePrfKek 派生确定性 KEK', async () => {
-    const ikm = new TextEncoder().encode('prf-output-32-bytes-x')
     const salt = 'c2FsdA==' // "salt" base64
-    const kek1 = await derivePrfKek(prfEvalB64(new Uint8Array(ikm.buffer)), salt)
-    const kek2 = await derivePrfKek(prfEvalB64(new Uint8Array(ikm.buffer)), salt)
+    const kek1 = await derivePrfKek(prfEvalB64(new Uint8Array(prfIkm32.buffer)), salt)
+    const kek2 = await derivePrfKek(prfEvalB64(new Uint8Array(prfIkm32.buffer)), salt)
     // 相同输入 → 相同 KEK：用同一密文验证
     const raw = new Uint8Array(32).fill(9)
     const iv = crypto.getRandomValues(new Uint8Array(12))
     const ct1 = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, kek1, raw)
     const pt2 = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, kek2, ct1)
     expect(new Uint8Array(pt2)).toEqual(raw)
+  })
+  it('derivePrfKek 接受 base64url 无 padding 的 salt', async () => {
+    // Task 8 前端可能把 prfEvalB64(S)（base64url 无 padding）直接存入 wrapper salt：必须能规范化解析
+    const saltBytes = crypto.getRandomValues(new Uint8Array(16))
+    const saltB64url = prfEvalB64(saltBytes)
+    const kek1 = await derivePrfKek(prfEvalB64(new Uint8Array(prfIkm32.buffer)), saltB64url)
+    const raw = new Uint8Array(32).fill(5)
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, kek1, raw)
+    const kek2 = await derivePrfKek(prfEvalB64(new Uint8Array(prfIkm32.buffer)), saltB64url)
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, kek2, ct)
+    expect(new Uint8Array(pt)).toEqual(raw)
+  })
+  it('derivePrfKek 拒绝非 32 字节 PRF 输出', async () => {
+    const short = prfEvalB64(new Uint8Array(16).fill(1))
+    await expect(derivePrfKek(short, 'c2FsdA==')).rejects.toThrow('PRF 输出长度无效')
   })
 })

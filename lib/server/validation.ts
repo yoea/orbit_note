@@ -33,7 +33,7 @@ export const wrapperSchema = z
     wrapperType: z.enum(['passkey_prf', 'recovery']),
     credentialId: z.string().min(1).max(512).optional(), // recovery 不需要
     encryptedDek: z.string().min(1).max(2048),
-    salt: z.string().min(1).max(256),
+    salt: z.string().min(1).max(256), // 编码约定：标准 base64 或 base64url 均可（derivePrfKek 内规范化）
     encryptionVersion: z.number().int().min(1).max(10).default(1),
     recoveryKeyHash: z.string().length(64).regex(/^[0-9a-f]+$/).optional(), // 仅 recovery
   })

@@ -19,7 +19,10 @@ export async function registerPasskey(
 ): Promise<RegistrationResult> {
   const optionsJSON = {
     ...options,
-    extensions: { prf: { eval: { first: prfEvalB64(prfEvalS) } } },
+    extensions: {
+      ...((options.extensions as Record<string, unknown>) ?? {}),
+      prf: { eval: { first: prfEvalB64(prfEvalS) } },
+    },
   }
   const registration = await startRegistration({
     optionsJSON: optionsJSON as unknown as PublicKeyCredentialCreationOptionsJSON,
@@ -37,7 +40,15 @@ export async function authenticatePasskey(
   options: Record<string, unknown>,
   prfEvalS: string | null,
 ): Promise<{ assertion: Record<string, unknown>; prfResult: string | null }> {
-  const optionsJSON = prfEvalS ? { ...options, extensions: { prf: { eval: { first: prfEvalS } } } } : options
+  const optionsJSON = prfEvalS
+    ? {
+        ...options,
+        extensions: {
+          ...((options.extensions as Record<string, unknown>) ?? {}),
+          prf: { eval: { first: prfEvalS } },
+        },
+      }
+    : options
   const assertion = await startAuthentication({
     optionsJSON: optionsJSON as unknown as PublicKeyCredentialRequestOptionsJSON,
   })

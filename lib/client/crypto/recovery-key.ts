@@ -1,5 +1,5 @@
 import { randomBytes } from './encryption'
-import { fromBase64, toBase64 } from './base64'
+import { fromBase64Url, toBase64Url } from './base64'
 
 // 密钥层级（规格第四节）：Recovery Key 是灾难恢复路径的 IKM
 //   DEK ── 256-bit CSPRNG 随机，仅存浏览器内存
@@ -13,14 +13,13 @@ export function generateRecoveryKey(): string {
 }
 
 export function encodeRecoveryKey(bytes: Uint8Array): string {
-  return toBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return toBase64Url(bytes)
 }
 
 export function decodeRecoveryKey(key: string): Uint8Array<ArrayBuffer> {
   // 严格校验格式：43 字符 base64url（32 字节 × 8 bit ÷ 6 bit = 42.67 → 43，无 padding）
   if (!/^[A-Za-z0-9_-]{43}$/.test(key)) throw new Error('无效的恢复密钥格式')
-  const b64 = key.replace(/-/g, '+').replace(/_/g, '/') + '='
-  return fromBase64(b64)
+  return fromBase64Url(key)
 }
 
 // 服务器端 recovery-login 校验用哈希（recovery key 256-bit 熵，SHA-256 不可逆且不可爆破）

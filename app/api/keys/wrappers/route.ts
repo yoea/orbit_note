@@ -14,7 +14,7 @@ async function authed(req: Request): Promise<boolean> {
 
 export async function GET(req: Request) {
   if (!(await authed(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  const wrappers = await db.select().from(keyWrappers)
+  const wrappers = await db.select().from(keyWrappers).orderBy(keyWrappers.createdAt)
   return NextResponse.json({ wrappers })
 }
 
