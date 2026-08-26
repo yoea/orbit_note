@@ -4,8 +4,8 @@ import { useState } from 'react'
 import OrbitLogo from './OrbitLogo'
 
 // 手动解锁入口（留在当前页）；单次认证完成登录+解锁。
-// iOS 弹窗会自动尝试 Face ID——先展示"请注视屏幕"准备提示（约 1 秒），
-// 让用户准备好后系统自动识别一次成功（避免弹窗瞬间自动识别因未注视而无效）。
+// 点击后立即唤起系统通行密钥弹窗（userVerification: discouraged——不自动识别，
+// 用户点击通行密钥后由系统决定是否 Face ID）。
 export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<string | null> }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -14,9 +14,7 @@ export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<str
     if (busy) return
     setBusy(true); setError(null)
     try {
-      // 准备提示：给用户时间注视屏幕（iOS 弹窗自动 Face ID 需要用户就绪）
-      await new Promise((r) => setTimeout(r, 1000))
-      const err = await onUnlock()
+      const err = await onUnlock() // 立即唤起系统通行密钥弹窗
       if (err) setError(err)
     } catch {
       setError('解锁失败，请重试')
@@ -37,7 +35,7 @@ export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<str
             disabled={busy}
             className="w-full rounded-2xl bg-neutral-900 px-6 py-4 text-base font-medium text-white active:scale-[0.98] disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
           >
-            {busy ? '请注视屏幕…' : '使用通行密钥登录'}
+            {busy ? '正在验证…' : '使用通行密钥登录'}
           </button>
           <p className="mt-3 text-center text-xs text-neutral-400">通过 Face ID 或 Windows Hello 快速安全登录</p>
           {error && <p className="mt-3 text-center text-sm text-red-500">{error}</p>}
