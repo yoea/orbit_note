@@ -32,6 +32,8 @@ export default function DiaryEditor() {
       if (epoch !== draftEpochRef.current) return // 保存/放弃已发生，不再写回草稿
       const record = { ciphertext, iv, encryptionVersion: 1, updatedAt: Date.now() }
       await saveLocalDraft(record) // 本地优先（离线可用）
+      // 发出前再查 epoch：保存/放弃已发生时不再推服务器（防止"放弃/保存后草稿复活"竞态）
+      if (epoch !== draftEpochRef.current) return
       const server = await pushServerDraft(record).catch(() => null) // 服务器同步尽力而为（离线静默失败，下次输入/页面加载重试）
       if (server && epoch === draftEpochRef.current) {
         // 收敛时钟：以服务器时间戳为准回写本地草稿记录

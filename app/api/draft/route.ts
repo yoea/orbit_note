@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { drafts } from '@/lib/server/db/schema'
 import { eq } from 'drizzle-orm'
-import { requireAuth } from '@/lib/server/auth'
+import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { draftPutSchema } from '@/lib/server/validation'
 import { rateLimit } from '@/lib/server/ratelimit'
 
@@ -16,6 +16,7 @@ export async function GET(req: Request) {
 
 export async function PUT(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!assertSameOrigin(req)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 })
   if (!rateLimit('draft-save', 60, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
   const body = draftPutSchema.safeParse(await req.json().catch(() => null))
   if (!body.success) return NextResponse.json({ error: 'bad_request', details: body.error.issues }, { status: 400 })
@@ -41,6 +42,7 @@ export async function PUT(req: Request) {
 
 export async function DELETE(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!assertSameOrigin(req)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 })
   await db.delete(drafts).where(eq(drafts.id, DRAFT_ID))
   return new NextResponse(null, { status: 204 })
 }

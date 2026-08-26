@@ -6,9 +6,11 @@ import { credentials } from '@/lib/server/db/schema'
 import { createSession, SESSION_COOKIE } from '@/lib/server/session'
 import { takeChallenge, verifyLogin } from '@/lib/server/webauthn'
 import { rateLimit } from '@/lib/server/ratelimit'
+import { assertSameOrigin } from '@/lib/server/auth'
 
 export async function POST(req: Request) {
   if (!rateLimit('login', 10, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
+  if (!assertSameOrigin(req)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 })
   const body = (await req.json().catch(() => null)) as { token?: string; assertion?: unknown } | null
   if (!body?.token || !body.assertion) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
 

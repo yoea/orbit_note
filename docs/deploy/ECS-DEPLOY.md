@@ -6,6 +6,10 @@
 Internet → Nginx(:443, TLS) → Next.js(:3000) → PostgreSQL(:5432)
 ```
 
+> ⚠️ **必须单实例运行**：WebAuthn challenge 与登录/写入限流均为进程内存态（`lib/server/webauthn.ts` 的 challengeMap、`lib/server/ratelimit.ts` 的滑动窗口）。
+> 配置多实例负载均衡会导致 challenge 随机失效（注册/登录 400）、限流计数分裂。
+> 请以单容器/单 systemd 服务部署，**勿**为应用配置多实例。数据库（PostgreSQL）不受此限制。
+
 ## 1. 服务器准备
 
 - Ubuntu 22.04+ / Debian 12（或你习惯的发行版）

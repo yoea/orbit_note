@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { credentials, keyWrappers } from '@/lib/server/db/schema'
 import { eq } from 'drizzle-orm'
-import { isAuthed } from '@/lib/server/auth'
+import { assertSameOrigin, isAuthed } from '@/lib/server/auth'
 import { wrapperSchema } from '@/lib/server/validation'
 
 export async function GET(req: Request) {
@@ -13,6 +13,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   if (!(await isAuthed(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!assertSameOrigin(req)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 })
   const body = wrapperSchema.safeParse(await req.json().catch(() => null))
   if (!body.success) return NextResponse.json({ error: 'bad_request', details: body.error.issues }, { status: 400 })
   const { wrapperType, credentialId, encryptedDek, salt, encryptionVersion, recoveryKeyHash } = body.data

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { keyWrappers } from '@/lib/server/db/schema'
 import { and, eq, isNull } from 'drizzle-orm'
-import { requireAuth } from '@/lib/server/auth'
+import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { rateLimit } from '@/lib/server/ratelimit'
 import { z } from 'zod'
 
@@ -16,6 +16,7 @@ const schema = z.object({
 // 更新 recovery wrapper（重新生成恢复密钥时由客户端调用，需先验证旧密钥——客户端先用旧密钥解开 wrapper 才允许 PUT）
 export async function PUT(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!assertSameOrigin(req)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 })
   if (!rateLimit('recovery-update', 5, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
   const body = schema.safeParse(await req.json().catch(() => null))
   if (!body.success) return NextResponse.json({ error: 'bad_request' }, { status: 400 })

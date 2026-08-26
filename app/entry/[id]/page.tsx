@@ -81,7 +81,7 @@ export default function EntryPage() {
       const res = await fetch(`/api/diary/${id}`, { method: 'DELETE' })
       if (res.status === 401) { router.replace('/login'); return }
       if (res.ok) {
-        // TODO(Task 10): clearLocalEntryCache(id) —— 规格二十一节要求删除时清除本地缓存
+        // IDB 只存草稿（无条目缓存），删除无需清本地
         router.replace('/history')
         return
       }

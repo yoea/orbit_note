@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { diaryEntries } from '@/lib/server/db/schema'
 import { eq } from 'drizzle-orm'
-import { requireAuth } from '@/lib/server/auth'
+import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { diaryUpdateSchema } from '@/lib/server/validation'
 
 function parseId(param: string): string | null {
@@ -21,6 +21,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!assertSameOrigin(req)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 })
   const { id } = await params
   if (!parseId(id)) return NextResponse.json({ error: 'not_found' }, { status: 404 })
   const body = diaryUpdateSchema.safeParse(await req.json().catch(() => null))
@@ -36,6 +37,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!assertSameOrigin(req)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 })
   const { id } = await params
   if (!parseId(id)) return NextResponse.json({ error: 'not_found' }, { status: 404 })
   const [deleted] = await db.delete(diaryEntries).where(eq(diaryEntries.id, id)).returning()

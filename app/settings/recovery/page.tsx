@@ -2,13 +2,15 @@
 
 import { use, useState } from 'react'
 import Link from 'next/link'
-import { fetchWrappers } from '@/lib/client/session'
+import { useRouter } from 'next/navigation'
+import { fetchSession, fetchWrappers } from '@/lib/client/session'
 import { createWrappedDek, unwrapWithRecoveryKey } from '@/lib/client/crypto/setup'
 import { decodeRecoveryKey, generateRecoveryKey, sha256Hex } from '@/lib/client/crypto/recovery-key'
 
 type Mode = 'export' | 'regenerate'
 
 export default function RecoverySettingsPage({ searchParams }: { searchParams: Promise<{ mode?: string }> }) {
+  const router = useRouter()
   const sp = use(searchParams)
   const [mode, setMode] = useState<Mode>(() => (sp.mode === 'regenerate' ? 'regenerate' : 'export'))
   const [currentKey, setCurrentKey] = useState('')
@@ -45,6 +47,11 @@ export default function RecoverySettingsPage({ searchParams }: { searchParams: P
         setResult(next)
       }
     } catch {
+      // session 过期（fetchWrappers 401）→ 回登录页重新解锁；其余错误保持"验证失败"提示
+      try {
+        const s = await fetchSession()
+        if (!s.authenticated) { router.replace('/login'); return }
+      } catch { /* 网络错误保持原提示 */ }
       setError('验证失败（当前恢复密钥不正确？）')
     } finally {
       setBusy(false)

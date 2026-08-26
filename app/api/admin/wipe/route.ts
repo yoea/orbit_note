@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { credentials, diaryEntries, drafts, keyWrappers } from '@/lib/server/db/schema'
-import { requireAuth } from '@/lib/server/auth'
+import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { rateLimit } from '@/lib/server/ratelimit'
 import { SESSION_COOKIE } from '@/lib/server/session'
 
@@ -9,6 +9,7 @@ import { SESSION_COOKIE } from '@/lib/server/session'
 // 删除顺序：先子表后父表（wrappers 无 FK，顺序不严格但保持此顺序）
 export async function POST(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  if (!assertSameOrigin(req)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 })
   if (!rateLimit('wipe', 3, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
   await db.delete(drafts)
   await db.delete(diaryEntries)

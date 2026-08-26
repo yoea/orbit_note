@@ -20,6 +20,6 @@ export async function GET() {
   // 固化不变量：所有 passkey 必须共用同一个 PRF eval 输入 S（即第一个 wrapper 的 salt）。
   // 后续注册新 Passkey（Task 13 设置页）必须复用该 S，不得生成新的——否则新 wrapper_p 的 KEK
   // 与登录时基于 S 派生的 PRF 输出无法匹配。
-  const [anyPrf] = await db.select().from(keyWrappers).where(eq(keyWrappers.wrapperType, 'passkey_prf')).limit(1)
+  const [anyPrf] = await db.select().from(keyWrappers).where(eq(keyWrappers.wrapperType, 'passkey_prf')).orderBy(keyWrappers.createdAt).limit(1)
   return NextResponse.json({ token, options: { ...options, challenge }, prfEval: anyPrf?.salt ?? null })
 }
