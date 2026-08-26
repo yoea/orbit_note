@@ -43,7 +43,7 @@ export default function SetupPage() {
       const optsRes = await fetch('/api/auth/register/options')
       if (!optsRes.ok) throw new Error('初始化被拒绝（系统可能已初始化）')
       const { token, options } = await optsRes.json()
-      const { registration, prfEnabled } = await registerPasskey(options, prfEval)
+      const { registration } = await registerPasskey(options, prfEval)
 
       // 3. 先注册 credential（成功后设置 session）——wrapper 保存需要认证
       const regResp = await fetch('/api/auth/register', {

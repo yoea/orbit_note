@@ -11,11 +11,8 @@ export default function LoginPage() {
   const [loadError, setLoadError] = useState(false)
   const [mode, setMode] = useState<'passkey' | 'recovery'>('passkey')
   const [recoveryKey, setRecoveryKey] = useState('')
-  const [reason, setReason] = useState<string | null>(() => {
-    // 首页守卫踢回时携带原因（诊断）
-    if (typeof window === 'undefined') return null
-    return new URLSearchParams(window.location.search).get('reason')
-  })
+  // 首页守卫踢回时携带原因（诊断）
+  const reason = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('reason')
   useEffect(() => {
     void (async () => {
       try {

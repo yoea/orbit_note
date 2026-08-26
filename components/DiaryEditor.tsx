@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
 import AutoTextarea from './AutoTextarea'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
@@ -14,7 +13,10 @@ export function isLocationEnabled(): boolean {
   return localStorage.getItem('qo-location-enabled') !== '0'
 }
 
-export default function DiaryEditor() {
+export default function DiaryEditor({ onOpenHistory, onOpenSettings }: {
+  onOpenHistory: () => void
+  onOpenSettings: () => void
+}) {
   const [text, setText] = useState('')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [savedTime, setSavedTime] = useState('')
@@ -189,9 +191,9 @@ export default function DiaryEditor() {
       <header className="flex items-center justify-between py-3">
         <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">Orbit</h1>
         <nav className="flex items-center gap-4">
-          {/* 客户端导航（Link）：不重载页面，内存 DEK 保留——已解锁状态下直接进入，无需重新 Face ID */}
-          <Link href="/history" className="text-sm text-neutral-400">历史</Link>
-          <Link href="/settings" className="text-sm text-neutral-400">设置</Link>
+          {/* 状态机内切换（不导航不重载，解锁状态全程保留——PWA standalone 下导航会触发页面重载） */}
+          <button onClick={onOpenHistory} className="text-sm text-neutral-400">历史</button>
+          <button onClick={onOpenSettings} className="text-sm text-neutral-400">设置</button>
         </nav>
       </header>
       {showDraftBanner && (
