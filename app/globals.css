@@ -27,3 +27,17 @@ body {
 .safe-pt { padding-top: env(safe-area-inset-top); }
 .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
 .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
+
+/* 保存成功的庆祝粒子（游戏获奖感）：向上飘散 + 旋转 + 淡出 */
+@keyframes confetti-fall {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  100% { transform: translate(var(--dx, 0px), -170px) rotate(var(--rot, 0deg)); opacity: 0; }
+}
+
+/* 保存成功状态文字的弹跳 */
+@keyframes pop {
+  0% { transform: scale(0.5); opacity: 0; }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.animate-pop { animation: pop 0.4s ease-out; }

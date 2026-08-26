@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import AutoTextarea from './AutoTextarea'
+import ConfettiBurst from './ConfettiBurst'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
@@ -20,6 +21,7 @@ export default function DiaryEditor({ onOpenHistory, onOpenSettings }: {
   const [text, setText] = useState('')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [savedTime, setSavedTime] = useState('')
+  const [showConfetti, setShowConfetti] = useState(false)
   const [showDraftBanner, setShowDraftBanner] = useState(false)
   const textRef = useRef('')
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -178,9 +180,10 @@ export default function DiaryEditor({ onOpenHistory, onOpenSettings }: {
       const now = new Date()
       setSavedTime(now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }))
       setStatus('saved')
+      setShowConfetti(true) // 游戏获奖式庆祝反馈
       setText(''); textRef.current = ''
       if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
-      statusTimeoutRef.current = setTimeout(() => setStatus('idle'), 3000)
+      statusTimeoutRef.current = setTimeout(() => { setStatus('idle'); setShowConfetti(false) }, 2000)
     } catch {
       setStatus('error')
     }
@@ -218,19 +221,24 @@ export default function DiaryEditor({ onOpenHistory, onOpenSettings }: {
         autoFocus
         disabled={status === 'saving'}
       />
+      {showConfetti && <ConfettiBurst />}
       <footer className="mt-auto border-t border-neutral-100 px-2 pb-4 pt-4 safe-pb dark:border-neutral-800">
         <p className="mb-3 text-center text-xs text-neutral-400">
           {status === 'saving' && '正在保存…'}
-          {status === 'saved' && `已保存 · ${savedTime}`}
+          {status === 'saved' && (
+            <span className="animate-pop inline-block text-sm font-semibold text-emerald-500">✓ 已保存 · {savedTime}</span>
+          )}
           {status === 'error' && '保存失败，请重试'}
           {status === 'idle' && `共 ${text.trim().length} 字`}
         </p>
         <button
           onClick={() => void save()}
           disabled={!text.trim() || status === 'saving'}
-          className="w-full rounded-2xl bg-neutral-900 py-3.5 font-medium text-white active:scale-[0.99] disabled:opacity-30 dark:bg-neutral-100 dark:text-neutral-900"
+          className={`w-full rounded-2xl py-3.5 font-medium text-white transition-colors active:scale-[0.99] disabled:opacity-30 ${
+            status === 'saved' ? 'bg-emerald-500 dark:bg-emerald-500' : 'bg-neutral-900 dark:bg-neutral-100 dark:text-neutral-900'
+          }`}
         >
-          {status === 'saving' ? '保存中…' : '保存'}
+          {status === 'saving' ? '保存中…' : status === 'saved' ? '已保存 ✓' : '保存'}
         </button>
         {/* 底部缓冲：版本号 + 版权低调显示，PWA 全屏模式下保存按钮不至于贴底 */}
         <p className="mt-4 text-center text-[10px] text-neutral-300 dark:text-neutral-600">
