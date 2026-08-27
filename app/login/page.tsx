@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { PRF_UNAVAILABLE, fetchSession, getDek, loginWithPasskey, unlockWithRecoveryKey } from '@/lib/client/session'
+import { LOGIN_ERRORS, PRF_UNAVAILABLE, fetchSession, getDek, loginWithPasskey, unlockWithRecoveryKey } from '@/lib/client/session'
 import OrbitLogo from '@/components/OrbitLogo'
 
 export default function LoginPage() {
@@ -12,6 +12,8 @@ export default function LoginPage() {
   const [loadError, setLoadError] = useState(false)
   const [mode, setMode] = useState<'passkey' | 'recovery'>('passkey')
   const [recoveryKey, setRecoveryKey] = useState('')
+  // 通行密钥登录失败过 → 才显示"使用恢复密钥"入口（平时不打扰）
+  const [passkeyFailed, setPasskeyFailed] = useState(false)
   // 首页守卫踢回时携带原因（诊断）
   const reason = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('reason')
   useEffect(() => {
@@ -47,7 +49,14 @@ export default function LoginPage() {
         return
       }
       if (result.error === PRF_UNAVAILABLE) { setMode('recovery'); return }
+      // 通行密钥不存在/被禁用：直接切到恢复密钥输入，并显示明显的中文提示
+      if (result.error === LOGIN_ERRORS.unknown_credential || result.error === LOGIN_ERRORS.disabled_credential) {
+        setMode('recovery')
+        setError(`${result.error}，请使用恢复密钥解锁`)
+        return
+      }
       setError(result.error ?? '登录失败')
+      setPasskeyFailed(true)
     } catch {
       setError('登录失败')
     } finally {
@@ -99,10 +108,16 @@ export default function LoginPage() {
             {busy ? '正在验证…' : '使用通行密钥登录'}
           </button>
           <p className="mt-3 text-center text-xs text-neutral-400">通过 Face ID 或 Windows Hello 快速安全登录</p>
+          {/* 恢复密钥入口：仅在通行密钥登录失败后出现（小字、居中、无下划线、淡色） */}
+          {passkeyFailed && (
+            <button onClick={() => setMode('recovery')} className="mt-2 text-center text-xs text-neutral-400/70">
+              使用恢复密钥登录
+            </button>
+          )}
         </div>
       ) : (
         <form onSubmit={(e) => void handleRecoverySubmit(e)} className="flex w-full max-w-xs flex-col gap-3">
-          <p className="text-sm text-neutral-500">通行密钥已验证 ✓，请输入恢复密钥完成解锁</p>
+          <p className="text-sm text-neutral-500">输入恢复密钥完成解锁</p>
           <input
             value={recoveryKey}
             onChange={(e) => setRecoveryKey(e.target.value)}
@@ -121,7 +136,12 @@ export default function LoginPage() {
       {reason === 'no-dek' && <p className="text-sm text-amber-600 dark:text-amber-400">解锁未完成：密钥未载入内存（诊断 no-dek）</p>}
       {reason === 'no-auth' && <p className="text-sm text-amber-600 dark:text-amber-400">会话未建立（诊断 no-auth）</p>}
       {mode === 'recovery' && (
-        <button onClick={() => setMode('passkey')} className="text-sm text-neutral-400 underline">返回 Face ID</button>
+        <button
+          onClick={() => { setMode('passkey'); setPasskeyFailed(false) }}
+          className="text-sm text-neutral-400 underline"
+        >
+          返回 Face ID
+        </button>
       )}
       </div>
     </main>

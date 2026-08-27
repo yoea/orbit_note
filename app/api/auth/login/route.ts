@@ -11,8 +11,10 @@ import { assertSameOrigin } from '@/lib/server/auth'
 export async function POST(req: Request) {
   if (!rateLimit('login', 10, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
   if (!assertSameOrigin(req)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 })
-  const body = (await req.json().catch(() => null)) as { token?: string; assertion?: unknown } | null
+  const body = (await req.json().catch(() => null)) as { token?: string; assertion?: unknown; device?: string } | null
   if (!body?.token || !body.assertion) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
+  // 登录时客户端上报的设备名（仅用于凭证从未打标时自动补标，注册时已有标签的不覆盖）
+  const device = typeof body.device === 'string' && body.device.length <= 64 ? body.device : null
 
   // 形状防御检查后再 cast（@simplewebauthn 13.x JSON 响应类型）
   const assertion = body.assertion as AuthenticationResponseJSON
@@ -27,6 +29,10 @@ export async function POST(req: Request) {
   if (!stored) {
     console.error('[login] unknown_credential: received', credentialId.slice(0, 12), '…', 'stored ids:', (await db.select({ id: credentials.credentialId }).from(credentials)).map((c) => c.id.slice(0, 12)))
     return NextResponse.json({ error: 'unknown_credential' }, { status: 400 })
+  }
+  // 软禁用：凭证仍在库中，但拒绝认证（设置页可重新启用）
+  if (stored.disabled) {
+    return NextResponse.json({ error: 'disabled_credential' }, { status: 400 })
   }
 
   // 重要：存储的 publicKey 是 base64url 文本，需解码为 Uint8Array 传给 verifyLogin（@simplewebauthn 13.x 要求）
@@ -48,9 +54,15 @@ export async function POST(req: Request) {
   if (stored.counter > 0 && newCounter <= stored.counter) {
     return NextResponse.json({ error: 'counter_replay_detected' }, { status: 400 })
   }
-  await db.update(credentials).set({ counter: newCounter, lastUsedAt: new Date() }).where(eq(credentials.credentialId, stored.credentialId))
+  await db.update(credentials).set({
+    counter: newCounter,
+    lastUsedAt: new Date(),
+    // 自动打标：仅当凭证尚无设备名时写入（注册时已标记的不覆盖）
+    ...(stored.device == null && device ? { device } : {}),
+  }).where(eq(credentials.credentialId, stored.credentialId))
 
-  const session = await createSession()
+  // 会话绑定本次登录的凭证——设置页可标注"当前登录"用的是哪把 key
+  const session = await createSession(stored.credentialId)
   const res = NextResponse.json({ ok: true })
   res.cookies.set(SESSION_COOKIE, session, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/', maxAge: 60 * 60 * 24 * 30 })
   return res

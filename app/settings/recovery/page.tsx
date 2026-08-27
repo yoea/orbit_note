@@ -61,35 +61,49 @@ export default function RecoverySettingsPage() {
   }
 
   return (
-    <main className="flex-1 min-h-0 px-5 safe-pt safe-pb">
-      <header className="flex items-center justify-between py-3">
-        <Link href="/settings" className="text-neutral-400">‹ 设置</Link>
-        <h1 className="text-lg font-semibold">重新生成恢复密钥</h1>
+    <main className="flex flex-1 min-h-0 flex-col px-6 safe-pt safe-pb">
+      <header className="relative flex items-center justify-between py-3">
+        {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
+        <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+          ‹
+        </Link>
+        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">重新生成恢复密钥</h1>
         <span className="w-8" />
       </header>
-      <p className="text-sm text-neutral-500">先输入当前恢复密钥验证身份</p>
-      <input
-        value={currentKey}
-        onChange={(e) => setCurrentKey(e.target.value)}
-        placeholder="当前恢复密钥"
-        autoCapitalize="none" autoCorrect="off" spellCheck={false}
-        className="mt-4 w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-base outline-none focus:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-      />
-      <button
-        onClick={() => void verifyAndProceed()}
-        disabled={busy || !currentKey.trim()}
-        className="mt-4 w-full rounded-2xl bg-neutral-900 py-4 font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
-      >
-        {busy ? '验证中…' : '验证'}
-      </button>
-      {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
-      {result && (
-        <div className="mt-6">
-          <p className="text-sm text-neutral-500">请立即保存，此密钥仅显示一次：</p>
-          <p className="mt-2 text-sm text-amber-600 dark:text-amber-400">保存新密钥前不要关闭页面——保存后旧密钥立即失效</p>
-          <code className="mt-2 block break-all rounded-xl bg-neutral-100 px-4 py-3 text-sm dark:bg-neutral-800">{result}</code>
-          <button onClick={() => void handleCopyResult()} className="mt-2 text-sm text-neutral-500 underline">
-            {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败，请手动选择复制' : '复制'}
+      {!result ? (
+        /* 验证阶段：m-auto 垂直居中；描述文字在按钮下方 */
+        <div className="m-auto flex w-full max-w-xs flex-col gap-3">
+          <input
+            value={currentKey}
+            onChange={(e) => setCurrentKey(e.target.value)}
+            placeholder="当前恢复密钥"
+            autoCapitalize="none" autoCorrect="off" spellCheck={false}
+            className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-base outline-none focus:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          />
+          <button
+            onClick={() => void verifyAndProceed()}
+            disabled={busy || !currentKey.trim()}
+            className="w-full rounded-2xl bg-neutral-900 py-4 font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+          >
+            {busy ? '验证中…' : '验证'}
+          </button>
+          <p className="text-center text-xs text-neutral-400">先输入当前恢复密钥验证身份，验证通过后生成新密钥</p>
+          {error && <p className="text-center text-sm text-red-500">{error}</p>}
+        </div>
+      ) : (
+        /* 结果阶段：新密钥仅显示一次，居中展示 */
+        <div className="m-auto flex w-full max-w-xs flex-col gap-4">
+          <p className="text-sm text-neutral-500">新的恢复密钥已生成，仅显示一次：</p>
+          <code className="break-all rounded-xl bg-neutral-100 px-4 py-3 text-sm dark:bg-neutral-800">{result}</code>
+          <button
+            onClick={() => void handleCopyResult()}
+            className="w-full rounded-2xl bg-neutral-900 py-4 font-medium text-white dark:bg-neutral-100 dark:text-neutral-900"
+          >
+            {copyState === 'copied' ? '已复制 ✓' : copyState === 'failed' ? '复制失败，请手动选择复制' : '复制恢复密钥'}
+          </button>
+          <p className="text-center text-xs text-amber-600 dark:text-amber-400">保存后旧密钥立即失效——请先妥善保存再离开页面</p>
+          <button onClick={() => router.replace('/settings')} className="w-full rounded-2xl border border-neutral-200 py-3.5 text-sm font-medium text-neutral-600 dark:border-neutral-700 dark:text-neutral-300">
+            完成
           </button>
         </div>
       )}

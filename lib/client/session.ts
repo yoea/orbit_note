@@ -1,10 +1,21 @@
 import { authenticatePasskey } from './webauthn'
+import { detectDeviceName } from './device'
 import { derivePrfKek, unwrapWithRecoveryKey } from './crypto/setup'
 import { unwrapDekFromWrapper } from './crypto/encryption'
 import type { WrappedKeyRow } from './types'
 
 // PRF 不可用/无结果错误码：登录页据此切换到 Recovery Key 输入模式
 export const PRF_UNAVAILABLE = 'prf_unavailable'
+
+// 服务器错误码 → 用户可读的中文提示（登录页显示；未列出的码原样透传便于定位）
+export const LOGIN_ERRORS: Record<string, string> = {
+  unknown_credential: '此通行密钥不存在或已被删除',
+  disabled_credential: '此通行密钥已被禁用',
+  verification_failed: '通行密钥验证失败，请重试',
+  counter_replay_detected: '通行密钥验证异常，请重新注册',
+  challenge_expired: '验证已过期，请重试',
+  too_many_requests: '操作太频繁，请稍后再试',
+}
 
 export interface SessionState {
   initialized: boolean
@@ -94,18 +105,24 @@ export async function loginWithPasskey(): Promise<LoginResult> {
     const loginRes = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, assertion }),
+      // device：登录时上报设备名——凭证从未打标时服务器自动补标（设置页区分设备）
+      body: JSON.stringify({ token, assertion, device: detectDeviceName(navigator.userAgent) }),
     })
     if (!loginRes.ok) {
-      // 透传服务器错误码（便于定位；服务器只返回错误码，不返回敏感信息）
+      // 服务器只返回错误码不返回敏感信息；这里把错误码映射成中文提示
       const serverError = (await loginRes.json().catch(() => null)) as { error?: string } | null
-      return { ok: false, error: serverError?.error ?? '登录验证失败', via: null }
+      const code = serverError?.error
+      return { ok: false, error: code ? (LOGIN_ERRORS[code] ?? code) : '登录验证失败', via: null }
     }
 
     // 登录成功后拉取 wrappers 并解锁
     if (prfResult) {
       const wrappers = await fetchWrappers()
-      const prfWrapper = wrappers.find((w) => w.wrapperType === 'passkey_prf')
+      // 关键：PRF 输出按凭证隔离——每把通行密钥有自己的 PRF 密钥，同一 eval 输入 S 的
+      // 输出也各不相同。必须用"与本次认证凭证匹配"的 wrapper 解包（每把钥匙一个 wrapper，
+      // credentialId 对应）。取第一个 wrapper 在单钥匙时恰好正确，多钥匙时必然解包失败。
+      const assertionId = typeof assertion.id === 'string' ? assertion.id : null
+      const prfWrapper = wrappers.find((w) => w.wrapperType === 'passkey_prf' && w.credentialId === assertionId)
       if (prfWrapper) {
         try {
           const kek = await derivePrfKek(prfResult, prfWrapper.salt)
