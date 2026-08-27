@@ -23,6 +23,8 @@ export interface SessionState {
   credentialCount: number
   prfWrappers: number
   hasRecoveryWrapper: boolean
+  // 删除冷静期状态：非空 = 有软删数据待清理，设置页显示"撤销删除 + 倒计时"
+  pendingWipe?: { deletedAt: string; graceMs: number } | null
 }
 
 export interface LoginResult {

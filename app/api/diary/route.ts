@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { diaryEntries } from '@/lib/server/db/schema'
-import { desc } from 'drizzle-orm'
+import { desc, isNull } from 'drizzle-orm'
 import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { diaryCreateSchema } from '@/lib/server/validation'
 import { rateLimit } from '@/lib/server/ratelimit'
@@ -12,7 +12,8 @@ export async function GET(req: Request) {
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 100) || 100, 1), 200)
   // 分页：offset（客户端"加载更多"）
   const offset = Math.max(Number(url.searchParams.get('offset') ?? 0) || 0, 0)
-  const entries = await db.select().from(diaryEntries).orderBy(desc(diaryEntries.createdAt)).limit(limit).offset(offset)
+  // 软删过滤：删除冷静期内的数据不可见
+  const entries = await db.select().from(diaryEntries).where(isNull(diaryEntries.deletedAt)).orderBy(desc(diaryEntries.createdAt)).limit(limit).offset(offset)
   return NextResponse.json({ entries })
 }
 

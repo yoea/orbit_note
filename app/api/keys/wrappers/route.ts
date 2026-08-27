@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { credentials, keyWrappers } from '@/lib/server/db/schema'
-import { eq } from 'drizzle-orm'
+import { eq, isNull } from 'drizzle-orm'
 import { assertSameOrigin, isAuthed } from '@/lib/server/auth'
 import { wrapperSchema } from '@/lib/server/validation'
 
 export async function GET(req: Request) {
   if (!(await isAuthed(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  const wrappers = await db.select().from(keyWrappers).orderBy(keyWrappers.createdAt)
+  // 软删过滤：冷静期内 wrapper 不可见（登录解锁流程同样拿不到 → 自然失败并引导恢复密钥）
+  const wrappers = await db.select().from(keyWrappers).where(isNull(keyWrappers.deletedAt)).orderBy(keyWrappers.createdAt)
   return NextResponse.json({ wrappers })
 }
 

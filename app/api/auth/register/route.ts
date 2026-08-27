@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import type { RegistrationResponseJSON } from '@simplewebauthn/server'
 import { db } from '@/lib/server/db'
-import { credentials } from '@/lib/server/db/schema'
+import { credentials, keyWrappers } from '@/lib/server/db/schema'
+import { and, isNotNull, isNull } from 'drizzle-orm'
 import { createSession, SESSION_COOKIE } from '@/lib/server/session'
 import { takeChallenge, verifyRegistration } from '@/lib/server/webauthn'
 import { rateLimit } from '@/lib/server/ratelimit'
 import { assertSameOrigin, isAuthed } from '@/lib/server/auth'
+import { purgeExpiredWipes } from '@/lib/server/pending-wipe'
 
 export async function POST(req: Request) {
   if (!rateLimit('register', 5, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
@@ -13,9 +15,14 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as { token?: string; registration?: unknown; device?: string } | null
   if (!body?.token || !body.registration) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
 
-  const existing = await db.select().from(credentials).limit(1)
+  await purgeExpiredWipes()
+  // 冷静期内禁止注册/重新初始化（撤销删除或冷静期结束后才允许）——以 key_wrappers 标记为准
+  const [pendingDeleted] = await db.select().from(keyWrappers).where(isNotNull(keyWrappers.deletedAt)).limit(1)
+  if (pendingDeleted) return NextResponse.json({ error: 'wipe_pending' }, { status: 403 })
+  // 软删过滤：已初始化判断只看未删除凭证
+  const [existing] = await db.select().from(credentials).where(and(isNull(credentials.deletedAt))).limit(1)
   // 已初始化：注册仅允许已登录用户（完整 JWT 验证，防伪造 cookie 获得 session 后调用 wipe）
-  if (existing.length > 0 && !(await isAuthed(req))) {
+  if (existing && !(await isAuthed(req))) {
     return NextResponse.json({ error: 'already_initialized' }, { status: 403 })
   }
 
