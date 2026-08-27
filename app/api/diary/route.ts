@@ -22,11 +22,12 @@ export async function POST(req: Request) {
   if (!rateLimit('diary-create', 30, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
   const body = diaryCreateSchema.safeParse(await req.json().catch(() => null))
   if (!body.success) return NextResponse.json({ error: 'bad_request', details: body.error.issues }, { status: 400 })
-  const { ciphertext, iv, encryptionVersion, latitude, longitude, locationAccuracy, timezone } = body.data
+  const { ciphertext, iv, encryptionVersion, latitude, longitude, locationAccuracy, timezone, wordCount } = body.data
   const [entry] = await db.insert(diaryEntries).values({
     ciphertext, iv, encryptionVersion,
     latitude: latitude ?? null, longitude: longitude ?? null, locationAccuracy: locationAccuracy ?? null,
     timezone: timezone ?? null,
+    wordCount: wordCount ?? 0,
   }).returning()
   return NextResponse.json({ entry }, { status: 201 })
 }

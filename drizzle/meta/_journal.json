@@ -15,6 +15,27 @@
       "when": 1787705579753,
       "tag": "0001_safe_nighthawk",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787816611812,
+      "tag": "0002_awesome_dragon_lord",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787818064491,
+      "tag": "0003_goofy_doomsday",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787819011237,
+      "tag": "0004_dry_bastion",
+      "breakpoints": true
     }
   ]
 }

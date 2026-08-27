@@ -1,0 +1,1 @@
+ALTER TABLE "diary_entries" ADD COLUMN "word_count" integer DEFAULT 0 NOT NULL;

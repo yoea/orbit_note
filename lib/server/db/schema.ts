@@ -1,5 +1,5 @@
 import {
-  bigint, check, doublePrecision, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid,
+  bigint, boolean, check, doublePrecision, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
@@ -9,6 +9,10 @@ export const credentials = pgTable('credentials', {
   publicKey: text('public_key').notNull(),
   counter: bigint('counter', { mode: 'number' }).notNull().default(0),
   transports: jsonb('transports').$type<string[]>().notNull().default([]),
+  // 注册时客户端上报的设备标识（明文元数据，仅用于设置页区分是哪台设备）
+  device: text('device'),
+  // 软禁用标记：禁用后无法登录，可随时重新启用（不删除凭证与 PRF wrapper）
+  disabled: boolean('disabled').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
 })
@@ -41,6 +45,8 @@ export const diaryEntries = pgTable('diary_entries', {
   longitude: doublePrecision('longitude'),
   locationAccuracy: doublePrecision('location_accuracy'),
   timezone: text('timezone'),
+  // 解密时计算的字数（列表/统计无需解密即可显示）
+  wordCount: integer('word_count').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
+import ContributionHeatmap from './ContributionHeatmap'
 
 const PAGE_SIZE = 10
 
@@ -18,19 +19,39 @@ interface Entry {
 interface DecryptedItem {
   id: string
   createdAt: Date
-  preview: string
+  title: string // 首行非空行（加粗标题）
+  preview: string // 去除标题行后的剩余正文
+  wordCount: number // 解密时计算（trim 后长度，与详情页/编辑器口径一致）
   lat: number | null
 }
 
 interface Group {
-  date: string
-  items: { id: string; time: string; preview: string; lat: number | null }[]
+  key: string // yyyy-mm-dd（本地时区）
+  label: string // 今天 / 昨天 / 2026年8月25日 · 星期二
+  items: { id: string; time: string; title: string; preview: string; wordCount: number; lat: number | null }[]
+  totalWords: number
+}
+
+// 本地日期 key（分组与"今天/昨天"判断同口径）
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// 组头：今天/昨天人性化显示，其余显示 日期 + 星期
+function dayLabel(key: string): string {
+  const today = dayKey(new Date())
+  if (key === today) return '今天'
+  const y = new Date()
+  y.setDate(y.getDate() - 1)
+  if (key === dayKey(y)) return '昨天'
+  const d = new Date(`${key}T00:00:00`)
+  return `${d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })} · ${d.toLocaleDateString('zh-CN', { weekday: 'long' })}`
 }
 
 // 历史视图（原生路由页 /history 渲染；DEK 会话级持久化，导航/重载自动恢复）
 export default function HistoryView() {
   const [items, setItems] = useState<DecryptedItem[]>([])
-  const [stats, setStats] = useState<{ count: number; days: number } | null>(null)
+  const [stats, setStats] = useState<{ count: number; days: number; byDay: Record<string, number> } | null>(null)
   const [offset, setOffset] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -47,7 +68,19 @@ export default function HistoryView() {
     for (const e of entries) {
       try {
         const plain = await decryptText(dek, e.ciphertext, e.iv)
-        decrypted.push({ id: e.id, createdAt: new Date(e.createdAt), preview: plain.split('\n').find((l) => l.trim()) ?? '', lat: e.latitude })
+        // 标题 = 首行非空行；预览 = 其后剩余正文（列表两行截断）
+        const lines = plain.split('\n')
+        const titleIdx = lines.findIndex((l) => l.trim() !== '')
+        const title = titleIdx >= 0 ? lines[titleIdx].trim() : ''
+        const preview = titleIdx >= 0 ? lines.slice(titleIdx + 1).join('\n').trim() : ''
+        decrypted.push({
+          id: e.id,
+          createdAt: new Date(e.createdAt),
+          title,
+          preview,
+          wordCount: plain.trim().length,
+          lat: e.latitude,
+        })
       } catch {
         // 单条解密失败跳过（数据损坏不阻塞列表）
       }
@@ -89,20 +122,24 @@ export default function HistoryView() {
     }
   }
 
-  // 按日期分组（基于已加载条目）
+  // 按本地日期分组（基于已加载条目），组头含当天篇数与总字数
   const groups: Group[] = (() => {
     const sorted = [...items].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
     const grouped = new Map<string, DecryptedItem[]>()
     for (const item of sorted) {
-      const key = item.createdAt.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })
+      const key = dayKey(item.createdAt)
       grouped.set(key, [...(grouped.get(key) ?? []), item])
     }
-    return [...grouped.entries()].map(([date, list]) => ({
-      date,
+    return [...grouped.entries()].map(([key, list]) => ({
+      key,
+      label: dayLabel(key),
+      totalWords: list.reduce((s, i) => s + i.wordCount, 0),
       items: list.map((i) => ({
         id: i.id,
         time: i.createdAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }),
+        title: i.title,
         preview: i.preview,
+        wordCount: i.wordCount,
         lat: i.lat,
       })),
     }))
@@ -130,20 +167,41 @@ export default function HistoryView() {
         <span className="w-8" />
       </header>
       {stats && (
-        <p className="pb-2 text-xs tabular-nums text-neutral-400">
-          共 {stats.count} 篇 · 写了 {stats.days} 天
-        </p>
+        <>
+          <p className="pb-2 text-xs tabular-nums text-neutral-400">
+            共 {stats.count} 篇 · 写了 {stats.days} 天
+          </p>
+          {/* 写作频率热力图（仅在有日记时显示） */}
+          {stats.count > 0 && <ContributionHeatmap byDay={stats.byDay ?? {}} />}
+        </>
       )}
       <div className="flex flex-col gap-6 pb-10">
         {groups.map((g) => (
-          <section key={g.date}>
-            <h2 className="mb-2 text-sm font-medium text-neutral-400">{g.date}</h2>
+          <section key={g.key}>
+            {/* 组头：日期（今天/昨天人性化）+ 当天篇数 + 当天总字数 */}
+            <h2 className="mb-2 text-sm font-medium text-neutral-400">
+              {g.label} · {g.items.length} 篇 · {g.totalWords} 字
+            </h2>
             <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
               {g.items.map((item) => (
                 <li key={item.id}>
-                  <Link href={`/entry/${item.id}`} className="flex w-full flex-col gap-0.5 py-3 active:opacity-60">
-                    <span className="text-sm tabular-nums text-neutral-400">{item.time}</span>
-                    <span className="line-clamp-2 whitespace-pre-wrap text-neutral-800 dark:text-neutral-200">{item.preview}</span>
+                  <Link href={`/entry/${item.id}`} className="flex flex-col gap-1 py-3 active:opacity-60">
+                    <span className="flex items-baseline gap-2">
+                      <span className="shrink-0 text-xs tabular-nums text-neutral-400">{item.time}</span>
+                      {/* 标题 = 首行加粗 */}
+                      <span className="line-clamp-1 font-medium text-neutral-800 dark:text-neutral-200">{item.title}</span>
+                    </span>
+                    {/* 剩余正文预览（最多两行） */}
+                    {item.preview && (
+                      <span className="line-clamp-2 whitespace-pre-wrap text-sm text-neutral-500 dark:text-neutral-400">
+                        {item.preview}
+                      </span>
+                    )}
+                    {/* 元信息：位置图标 + 字数 */}
+                    <span className="flex items-center gap-1.5 text-[10px] text-neutral-400">
+                      {item.lat != null && <span>📍</span>}
+                      <span>{item.wordCount} 字</span>
+                    </span>
                   </Link>
                 </li>
               ))}

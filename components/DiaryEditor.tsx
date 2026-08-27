@@ -164,6 +164,7 @@ export default function DiaryEditor() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ciphertext, iv, encryptionVersion: 1,
+          wordCount: body.length, // 解密时计算（与编辑器底部字数一致：trim 后长度）
           latitude: loc?.latitude ?? null,
           longitude: loc?.longitude ?? null,
           locationAccuracy: loc?.accuracy ?? null,

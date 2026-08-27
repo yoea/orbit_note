@@ -72,7 +72,7 @@ export default function EntryView({ id }: { id: string }) {
     try {
       const dek = getDek()!
       const { ciphertext, iv } = await encryptText(dek, plain)
-      const body: Record<string, unknown> = { ciphertext, iv }
+      const body: Record<string, unknown> = { ciphertext, iv, wordCount: plain.trim().length }
       // 用户删除位置：显式传 null 覆盖原坐标（diaryUpdateSchema 接受 nullable 字段）
       if (removeLocation) {
         body.latitude = null
@@ -129,6 +129,11 @@ export default function EntryView({ id }: { id: string }) {
   if (!entry) return <main className="h-full overflow-y-auto px-5 safe-pt" />
 
   const created = new Date(entry.createdAt)
+  // 编辑过（updatedAt 晚于 createdAt）→ 额外显示"编辑于"；否则只显示创建时间
+  const editedAt = new Date(entry.updatedAt)
+  const isEdited = editedAt.getTime() !== created.getTime()
+  const fmtDate = (d: Date) =>
+    `${d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
   return (
     <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 safe-pt safe-pb">
       <header className="relative flex items-center justify-between py-3">
@@ -144,9 +149,13 @@ export default function EntryView({ id }: { id: string }) {
         )}
       </header>
       <p className="text-sm tabular-nums text-neutral-400">
-        {created.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}{' '}
-        {created.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}
+        {fmtDate(created)}
+        {/* 字数在解密时计算（与编辑器底部"共 x 字"一致：trim 后长度） */}
+        {!decryptFailed && <> · {plain.trim().length} 字</>}
       </p>
+      {isEdited && (
+        <p className="mt-0.5 text-sm tabular-nums text-neutral-400">编辑于 {fmtDate(editedAt)}</p>
+      )}
       {entry.latitude != null && entry.longitude != null && !editing && (
         <div className="mt-1">
           {/* 直接显示坐标（带小定位图标），点击复制 */}

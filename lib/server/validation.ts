@@ -12,9 +12,12 @@ const encryptedPayload = {
   encryptionVersion: z.number().int().min(1).max(10).default(1),
 }
 
+// 字数（解密时计算，明文数字——列表/统计无需解密即可显示）
+const wordCountField = { wordCount: z.number().int().min(0).max(1_000_000).optional() }
+
 // 明确拒绝客户端传 id/created_at/updated_at（strict 模式会拒绝未知键）
 export const diaryCreateSchema = z
-  .strictObject({ ...encryptedPayload, timezone: z.string().max(64).nullable().optional(), ...locationFields })
+  .strictObject({ ...encryptedPayload, timezone: z.string().max(64).nullable().optional(), ...locationFields, ...wordCountField })
 export const diaryUpdateSchema = z
   .strictObject({
     ciphertext: z.string().min(1).max(300_000).optional(),
@@ -22,6 +25,7 @@ export const diaryUpdateSchema = z
     encryptionVersion: z.number().int().min(1).max(10).optional(),
     timezone: z.string().max(64).nullable().optional(),
     ...locationFields,
+    ...wordCountField,
   })
   .refine((d) => (d.ciphertext === undefined) === (d.iv === undefined), {
     message: 'ciphertext 与 iv 必须成对更新',

@@ -1,0 +1,1 @@
+ALTER TABLE "credentials" ADD COLUMN "disabled" boolean DEFAULT false NOT NULL;
