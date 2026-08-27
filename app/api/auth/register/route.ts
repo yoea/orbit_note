@@ -10,7 +10,7 @@ import { assertSameOrigin, isAuthed } from '@/lib/server/auth'
 export async function POST(req: Request) {
   if (!rateLimit('register', 5, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
   if (!assertSameOrigin(req)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 })
-  const body = (await req.json().catch(() => null)) as { token?: string; registration?: unknown } | null
+  const body = (await req.json().catch(() => null)) as { token?: string; registration?: unknown; device?: string } | null
   if (!body?.token || !body.registration) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
 
   const existing = await db.select().from(credentials).limit(1)
@@ -39,6 +39,8 @@ export async function POST(req: Request) {
     publicKey: base64url(credential.publicKey),
     counter: credential.counter,
     transports: credential.transports ?? [],
+    // 设备标识（客户端 UA 解析，仅展示用途；长度防御）
+    device: typeof body.device === 'string' && body.device.length <= 64 ? body.device : null,
   }).onConflictDoNothing()
 
   const session = await createSession()

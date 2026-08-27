@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { registerPasskey, authenticatePasskey } from '@/lib/client/webauthn'
+import { detectDeviceName } from '@/lib/client/device'
 import { generateDek } from '@/lib/client/crypto/encryption'
 import { createWrappedDek, derivePrfKek, wrapWithKek } from '@/lib/client/crypto/setup'
 import { generateRecoveryKey, decodeRecoveryKey, sha256Hex } from '@/lib/client/crypto/recovery-key'
@@ -49,7 +50,7 @@ export default function SetupPage() {
       const regResp = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, registration }),
+        body: JSON.stringify({ token, registration, device: detectDeviceName(navigator.userAgent) }),
       })
       if (!regResp.ok) throw new Error('注册失败')
 

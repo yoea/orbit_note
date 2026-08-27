@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { registerPasskey, authenticatePasskey } from '@/lib/client/webauthn'
+import { detectDeviceName } from '@/lib/client/device'
 import { getDek } from '@/lib/client/session'
 import { derivePrfKek, wrapWithKek } from '@/lib/client/crypto/setup'
 import { fromBase64Url } from '@/lib/client/crypto/base64'
@@ -35,7 +36,7 @@ export default function AddPasskeyPage() {
 
       const regResp = await fetch('/api/auth/register', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, registration }),
+        body: JSON.stringify({ token, registration, device: detectDeviceName(navigator.userAgent) }),
       })
       if (!regResp.ok) throw new Error('注册失败')
 
@@ -73,17 +74,27 @@ export default function AddPasskeyPage() {
   }
 
   return (
-    <main className="flex-1 min-h-0 px-5 safe-pt safe-pb">
-      <header className="flex items-center justify-between py-3">
-        <Link href="/settings" className="text-neutral-400">‹ 设置</Link>
-        <h1 className="text-lg font-semibold">添加 Passkey</h1>
+    <main className="flex flex-1 min-h-0 flex-col px-6 safe-pt safe-pb">
+      <header className="relative flex items-center justify-between py-3">
+        {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
+        <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+          ‹
+        </Link>
+        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">添加 Passkey</h1>
         <span className="w-8" />
       </header>
-      <p className="text-sm text-neutral-500">新增 Passkey 后将可用它（Face ID）解锁同一份日记。</p>
-      <button onClick={() => void add()} disabled={busy} className="mt-6 w-full rounded-2xl bg-neutral-900 py-4 font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900">
-        {busy ? '添加中…' : '注册新的 Passkey'}
-      </button>
-      {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+      {/* m-auto：按钮整体垂直居中；描述文字在按钮下方 */}
+      <div className="m-auto flex w-full max-w-xs flex-col gap-4">
+        <button
+          onClick={() => void add()}
+          disabled={busy}
+          className="w-full rounded-2xl bg-neutral-900 px-6 py-4 text-base font-medium text-white active:scale-[0.98] disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+        >
+          {busy ? '添加中…' : '注册新的 Passkey'}
+        </button>
+        <p className="text-center text-xs text-neutral-400">新增一个Passkey后，将可以用它解锁同一份日记</p>
+        {error && <p className="text-center text-sm text-red-500">{error}</p>}
+      </div>
     </main>
   )
 }
