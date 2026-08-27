@@ -49,10 +49,17 @@ export default function LoginPage() {
         return
       }
       if (result.error === PRF_UNAVAILABLE) { setMode('recovery'); return }
-      // 通行密钥不存在/被禁用：直接切到恢复密钥输入，并显示明显的中文提示
-      if (result.error === LOGIN_ERRORS.unknown_credential || result.error === LOGIN_ERRORS.disabled_credential) {
+      // 通行密钥被禁用：直接切到恢复密钥输入（可恢复的明确路径）。
+      // 注意：恢复密钥只解锁数据，不会解除禁用——禁用状态要在设置页手动重新启用。
+      if (result.error === LOGIN_ERRORS.disabled_credential) {
         setMode('recovery')
-        setError(`${result.error}，请使用恢复密钥解锁`)
+        setError('此通行密钥已被禁用。请使用恢复密钥登录，登录后可在设置中重新启用')
+        return
+      }
+      // 通行密钥不存在：停留在登录页（不自动跳转），显示提示 + 「使用恢复密钥登录」入口
+      if (result.error === LOGIN_ERRORS.unknown_credential) {
+        setError('此通行密钥不存在或已被删除。请使用恢复密钥登录')
+        setPasskeyFailed(true)
         return
       }
       setError(result.error ?? '登录失败')
@@ -137,10 +144,10 @@ export default function LoginPage() {
       {reason === 'no-auth' && <p className="text-sm text-amber-600 dark:text-amber-400">会话未建立（诊断 no-auth）</p>}
       {mode === 'recovery' && (
         <button
-          onClick={() => { setMode('passkey'); setPasskeyFailed(false) }}
+          onClick={() => { setMode('passkey'); setPasskeyFailed(false); setError(null) }}
           className="text-sm text-neutral-400 underline"
         >
-          返回 Face ID
+          返回通行密钥登录
         </button>
       )}
       </div>

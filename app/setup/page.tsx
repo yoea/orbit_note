@@ -151,7 +151,7 @@ export default function SetupPage() {
           <h1 className="text-2xl font-semibold">创建你的私人日记</h1>
           <p className="max-w-xs text-center text-sm text-neutral-500">日记内容将端到端加密，只有你的设备能解密。</p>
           <button onClick={() => void start()} disabled={busy} className="w-full max-w-xs rounded-2xl bg-neutral-900 px-6 py-4 font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900">
-            {busy ? '正在创建…' : '使用 Face ID 创建通行密钥'}
+            {busy ? '正在创建…' : '创建通行密钥'}
           </button>
           {error && <p className="text-sm text-red-500">{error}</p>}
         </>
