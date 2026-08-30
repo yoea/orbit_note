@@ -103,7 +103,7 @@ export default function PasskeysDialog({ initialData, onClose }: {
             </div>
             {/* 添加新 Passkey：弱化为右上角加号，跳转注册页（带前进方向动画） */}
             <button
-              onClick={() => router.push('/settings/passkey', { transitionTypes: ['nav-forward'] })}
+              onClick={() => router.push('/settings/passkey')}
               aria-label="注册新的 Passkey"
               className="shrink-0 text-2xl font-light leading-6 text-neutral-400 active:opacity-60"
             >
@@ -123,7 +123,7 @@ export default function PasskeysDialog({ initialData, onClose }: {
           <ul className="mt-4 divide-y divide-neutral-100 dark:divide-neutral-800">
             {passkeys.map((pk) => (
               <li key={pk.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-1.5 text-sm font-medium text-neutral-800 dark:text-neutral-200">
                     <span className={pk.disabled ? 'text-neutral-400' : undefined}>{pk.device ?? '未知设备'}</span>
                     {/* 当前会话登录用的那把 key（登录后自动标注） */}
@@ -135,10 +135,13 @@ export default function PasskeysDialog({ initialData, onClose }: {
                       <span className="rounded-full bg-neutral-500/10 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500">已禁用</span>
                     )}
                   </p>
-                  <p className="mt-0.5 text-xs tabular-nums text-neutral-400">
-                    添加于 {fmtShort(pk.createdAt)} · {pk.lastUsedAt ? `最近使用 ${fmtShortTime(pk.lastUsedAt)}` : '从未使用'}
-                    <span className="ml-1 font-mono">…{pk.credentialIdTail}</span>
-                  </p>
+                  {/* 信息行：添加/最近使用左对齐，凭证尾号右对齐（信息区 flex-1 撑满至按钮左侧） */}
+                  <div className="mt-0.5 flex items-baseline justify-between gap-2">
+                    <span className="min-w-0 truncate text-xs tabular-nums text-neutral-400">
+                      添加于 {fmtShort(pk.createdAt)} · {pk.lastUsedAt ? `最近使用 ${fmtShortTime(pk.lastUsedAt)}` : '从未使用'}
+                    </span>
+                    <span className="shrink-0 font-mono text-xs text-neutral-400">…{pk.credentialIdTail}</span>
+                  </div>
                 </div>
                 {pk.disabled ? (
                   <button

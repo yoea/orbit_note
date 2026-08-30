@@ -5,45 +5,21 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import AboutDialog from '@/components/AboutDialog'
-import InputConfirmDialog from '@/components/InputConfirmDialog'
 import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
+import RecoveryRegenerateDialog from '@/components/RecoveryRegenerateDialog'
 import { clearDek } from '@/lib/client/session'
-import { authenticatePasskey } from '@/lib/client/webauthn'
-import { idbClearAll } from '@/lib/client/idb'
-
-// 二次确认：通过 WebAuthn 认证（iOS 原生 Face ID 弹窗）确认用户在场。
-// 认证成功（服务端验证 assertion）才视为确认——防止误触/他人操作删除。
-async function confirmWithFaceId(): Promise<boolean> {
-  try {
-    const optsRes = await fetch('/api/auth/login/options')
-    if (!optsRes.ok) return false
-    const { token, options } = await optsRes.json()
-    const { assertion } = await authenticatePasskey(options, null) // 仅认证，不需要 PRF
-    const loginRes = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token, assertion }),
-    })
-    return loginRes.ok
-  } catch {
-    return false // 用户取消/认证失败
-  }
-}
 
 // 定位开关（与 DiaryEditor 的 isLocationEnabled 共用 localStorage key）
 const LOCATION_KEY = 'qo-location-enabled'
-// 删除所有数据：必须手动输入这段文字才能通过（防误触强确认）
-const WIPE_CONFIRM_TEXT = '永久删除'
 
 // 设置视图（原生路由页 /settings 渲染；DEK 会话级持久化，导航/重载自动恢复）
 export default function SettingsView() {
   const router = useRouter()
   const [locationEnabled, setLocationEnabled] = useState(true)
-  const [wiping, setWiping] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
-  const [wipeConfirmStep, setWipeConfirmStep] = useState<0 | 1>(0) // 0=无确认, 1=输入文字验证
   const [showAbout, setShowAbout] = useState(false)
   const [showPasskeys, setShowPasskeys] = useState(false)
+  const [showRecovery, setShowRecovery] = useState(false)
   // 预取的 Passkey 列表：点击前 fetch 完成，弹窗打开第一帧即完整列表（无加载闪烁）
   const [passkeysData, setPasskeysData] = useState<PasskeyInfo[] | null>(null)
 
@@ -87,35 +63,13 @@ export default function SettingsView() {
     router.replace('/login')
   }
 
-  async function wipe() {
-    setWiping(true)
-    try {
-      // 输入文字验证后：通行密钥生物识别验证（认证成功才执行删除）
-      const ok = await confirmWithFaceId()
-      if (!ok) {
-        window.alert('身份验证未完成，未执行删除')
-        return
-      }
-      const res = await fetch('/api/admin/wipe', { method: 'POST' })
-      if (!res.ok) throw new Error()
-      // 物理删除完成：清本地缓存与 DEK，跳转重新初始化
-      await idbClearAll()
-      clearDek()
-      router.replace('/setup')
-    } catch {
-      window.alert('删除失败，请重试')
-    } finally {
-      setWiping(false)
-    }
-  }
-
   return (
-    <main className="mx-auto h-full w-full max-w-md overflow-y-auto bg-neutral-100/50 px-5 safe-pt safe-pb dark:bg-neutral-900/50">
+    <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt safe-pb">
       {/* 电脑版与主页同宽（手机视图宽度），不随屏幕拉伸 */}
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
-      <header className="relative flex items-center justify-between py-3" style={{ viewTransitionName: 'site-header' }}>
+      <header className="relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/" aria-label="返回" transitionTypes={['nav-back']} className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+        <Link href="/" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">设置</h1>
@@ -135,13 +89,14 @@ export default function SettingsView() {
           </button>
         </li>
         <li>
-          <Link href="/settings/recovery?mode=regenerate" className="flex items-center justify-between px-4 py-3.5 active:opacity-60">
+          {/* 重新生成恢复密钥：弹窗完成（不再跳转独立页面） */}
+          <button onClick={() => setShowRecovery(true)} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">重新生成恢复密钥</p>
               <p className="mt-0.5 text-xs text-neutral-400">更换新的恢复密钥，旧密钥立即失效</p>
             </div>
             <span className="text-lg text-neutral-300">›</span>
-          </Link>
+          </button>
         </li>
       </ul>
       <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">偏好</p>
@@ -165,6 +120,15 @@ export default function SettingsView() {
       <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">数据</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
+          <Link href="/settings/export" className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
+            <div>
+              <p className="text-neutral-800 dark:text-neutral-200">导出笔记</p>
+              <p className="mt-0.5 text-xs text-neutral-400">解密全部日记为 CSV 文件</p>
+            </div>
+            <span className="text-lg text-neutral-300">›</span>
+          </Link>
+        </li>
+        <li>
           <button onClick={() => setConfirmLogout(true)} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">退出登录</p>
@@ -186,16 +150,6 @@ export default function SettingsView() {
           </button>
         </li>
       </ul>
-      {/* 危险操作弱化入口：小字置底，防误触（真正的删除还需文字验证 + 通行密钥验证） */}
-      <div className="pt-6 text-center">
-        <button
-          onClick={() => setWipeConfirmStep(1)}
-          disabled={wiping}
-          className="text-xs text-neutral-400/70 disabled:opacity-50"
-        >
-          {wiping ? '验证中…' : '删除所有数据'}
-        </button>
-      </div>
       {confirmLogout && (
         <ConfirmDialog
           title="确定退出登录吗？"
@@ -206,21 +160,11 @@ export default function SettingsView() {
           onCancel={() => setConfirmLogout(false)}
         />
       )}
-      {wipeConfirmStep === 1 && (
-        <InputConfirmDialog
-          title="输入验证"
-          message={`所有日记、通行密钥与恢复密钥将全部删除，无法恢复，账号也将被删除。请输入「${WIPE_CONFIRM_TEXT}」确认，之后将通过通行密钥验证身份。`}
-          expected={WIPE_CONFIRM_TEXT}
-          placeholder={WIPE_CONFIRM_TEXT}
-          confirmText="删除"
-          onConfirm={() => { setWipeConfirmStep(0); void wipe() }}
-          onCancel={() => setWipeConfirmStep(0)}
-        />
-      )}
       {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
       {showPasskeys && (
         <PasskeysDialog initialData={passkeysData} onClose={() => setShowPasskeys(false)} />
       )}
+      {showRecovery && <RecoveryRegenerateDialog onClose={() => setShowRecovery(false)} />}
     </main>
   )
 }

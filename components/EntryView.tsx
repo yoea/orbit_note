@@ -7,6 +7,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { copyText } from '@/lib/client/clipboard'
+import { clientReverseGeocode } from '@/lib/client/geocode'
 
 interface Entry {
   id: string
@@ -17,6 +18,7 @@ interface Entry {
   latitude: number | null
   longitude: number | null
   locationAccuracy: number | null
+  locationName: string | null
   timezone: string | null
 }
 
@@ -33,14 +35,32 @@ export default function EntryView({ id }: { id: string }) {
   const [removeLocation, setRemoveLocation] = useState(false)
   const coordsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // 复制坐标到剪贴板并提示
+  // 复制坐标到剪贴板并提示；无地点名时顺带查询一次（已有点名不重复查询，失败静默保持坐标）
   async function copyCoords() {
     if (entry?.latitude == null || entry.longitude == null) return
-    const ok = await copyText(`${entry.latitude.toFixed(6)}, ${entry.longitude.toFixed(6)}`)
+    const lat = entry.latitude // 闭包内提取，避免 TS 收缩丢失
+    const lon = entry.longitude
+    const ok = await copyText(`${lat.toFixed(6)}, ${lon.toFixed(6)}`)
     if (ok) {
       setCoordsCopied(true)
       if (coordsTimerRef.current) clearTimeout(coordsTimerRef.current)
       coordsTimerRef.current = setTimeout(() => setCoordsCopied(false), 2000)
+    }
+    if (!entry.locationName) {
+      void (async () => {
+        try {
+          // 客户端直调反查（大陆可达、CORS 开放），成功后 PATCH 存库并更新界面
+          const name = await clientReverseGeocode(lat, lon)
+          if (name) {
+            await fetch(`/api/diary/${entry.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ locationName: name }),
+            })
+            setEntry((prev) => prev ? { ...prev, locationName: name } : prev)
+          }
+        } catch { /* 查询失败静默：保持坐标显示 */ }
+      })()
     }
   }
 
@@ -117,7 +137,7 @@ export default function EntryView({ id }: { id: string }) {
 
   if (error && !entry) {
     return (
-      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center bg-neutral-100/50 px-5 safe-pt safe-pb dark:bg-neutral-900/50">
+      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center px-5 safe-pt safe-pb">
         <div className="text-center">
           <p className="text-sm text-neutral-500">{error}</p>
           <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white">重试</button>
@@ -126,7 +146,7 @@ export default function EntryView({ id }: { id: string }) {
     )
   }
 
-  if (!entry) return <main className="mx-auto h-full w-full max-w-md overflow-y-auto bg-neutral-100/50 px-5 safe-pt dark:bg-neutral-900/50" />
+  if (!entry) return <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt" />
 
   const created = new Date(entry.createdAt)
   // 编辑过（updatedAt 晚于 createdAt）→ 额外显示"编辑于"；否则只显示创建时间
@@ -135,11 +155,11 @@ export default function EntryView({ id }: { id: string }) {
   const fmtDate = (d: Date) =>
     `${d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
   return (
-    <main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-y-auto bg-neutral-100/50 px-5 safe-pt safe-pb dark:bg-neutral-900/50">
+    <main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-y-auto px-5 safe-pt safe-pb">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
-      <header className="relative flex items-center justify-between py-3" style={{ viewTransitionName: 'site-header' }}>
+      <header className="relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/history" aria-label="返回" transitionTypes={['nav-back']} className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+        <Link href="/history" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">日记</h1>
@@ -159,13 +179,13 @@ export default function EntryView({ id }: { id: string }) {
       )}
       {entry.latitude != null && entry.longitude != null && !editing && (
         <div className="mt-1">
-          {/* 直接显示坐标（带小定位图标），点击复制 */}
+          {/* 优先显示地点名（保存时反查）；获取不到退回坐标。点击复制精确坐标 */}
           <button
             onClick={() => void copyCoords()}
             className="text-xs tabular-nums text-neutral-400 active:opacity-60"
           >
             <span className="mr-0.5 text-[10px]">📍</span>
-            {entry.latitude.toFixed(6)}, {entry.longitude.toFixed(6)}
+            {entry.locationName ? `${entry.locationName} · ${entry.latitude.toFixed(4)}, ${entry.longitude.toFixed(4)}` : `${entry.latitude.toFixed(6)}, ${entry.longitude.toFixed(6)}`}
             {entry.locationAccuracy != null && ` · ±${Math.round(entry.locationAccuracy)} 米`}
           </button>
           {coordsCopied && <p className="mt-0.5 text-xs text-neutral-400">已复制坐标</p>}

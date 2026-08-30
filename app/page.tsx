@@ -1,7 +1,6 @@
 'use client'
 
 import DiaryEditor from '@/components/DiaryEditor'
-import PageTransition from '@/components/PageTransition'
 import UnlockPrompt from '@/components/UnlockPrompt'
 import { useRequireUnlock } from '@/lib/client/use-require-unlock'
 
@@ -21,9 +20,5 @@ export default function HomePage() {
 
   if (state === 'need-unlock') return <UnlockPrompt onUnlock={retryUnlock} />
   if (state !== 'ready') return null
-  return (
-    <PageTransition>
-      <DiaryEditor />
-    </PageTransition>
-  )
+  return <DiaryEditor />
 }

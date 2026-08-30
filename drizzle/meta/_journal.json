@@ -50,6 +50,13 @@
       "when": 1788069538114,
       "tag": "0006_conscious_scalphunter",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788076411923,
+      "tag": "0007_flippant_beast",
+      "breakpoints": true
     }
   ]
 }

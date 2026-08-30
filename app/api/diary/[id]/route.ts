@@ -27,8 +27,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const body = diaryUpdateSchema.safeParse(await req.json().catch(() => null))
   if (!body.success) return NextResponse.json({ error: 'bad_request', details: body.error.issues }, { status: 400 })
   const patch = body.data
+  const set: Record<string, unknown> = { ...patch }
+  // 仅内容编辑（ciphertext/iv 成对出现）才更新"编辑时间"；纯元数据更新
+  // （如点击坐标补充查询地点名）不算编辑——详情页不会显示"编辑于"
+  if (patch.ciphertext !== undefined) set.updatedAt = new Date()
+  // 用户移除坐标 → 地点名一并清除（保留坐标时不重新反查，避免重复外部调用）
+  if (patch.latitude === null) set.locationName = null
   const [updated] = await db.update(diaryEntries)
-    .set({ ...patch, updatedAt: new Date() })
+    .set(set)
     .where(eq(diaryEntries.id, id))
     .returning()
   if (!updated) return NextResponse.json({ error: 'not_found' }, { status: 404 })

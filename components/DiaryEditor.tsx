@@ -8,6 +8,7 @@ import OrbitLogo from './OrbitLogo'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
+import { clientReverseGeocode } from '@/lib/client/geocode'
 import { clearLocalDraft, fetchServerDraft, loadLocalDraft, pickNewer, pushServerDraft, saveLocalDraft } from '@/lib/client/draft-sync'
 
 // 定位开关（设置页可关，默认开启）：localStorage 存储，关闭后保存不请求定位
@@ -172,6 +173,23 @@ export default function DiaryEditor() {
         }),
       })
       if (!res.ok) throw new Error('save failed')
+      // 保存成功后异步反查地点名（不阻塞保存反馈）：客户端直调 BigDataCloud → PATCH 补写。
+      // 失败静默——详情页仍显示坐标，点击坐标可再次查询
+      if (loc?.latitude != null && loc.longitude != null) {
+        const { id } = await res.json() as { id?: string }
+        void (async () => {
+          try {
+            const name = await clientReverseGeocode(loc.latitude!, loc.longitude!)
+            if (name && id) {
+              await fetch(`/api/diary/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ locationName: name }),
+              })
+            }
+          } catch { /* 反查失败静默 */ }
+        })()
+      }
       // 保存成功：取消未决防抖并作废进行中的冲刷，防止草稿"复活"
       if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }
       draftEpochRef.current++
@@ -194,16 +212,16 @@ export default function DiaryEditor() {
   return (
     // 弹性高度（body flex 布局中自动分配视口减页脚后的空间）+ 禁止滚动：
     // header/输入区/footer 全部在可视区内，输入区 flex 弹性分配剩余空间；页脚在流内不遮挡
-    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden bg-neutral-100/50 px-5 safe-pt dark:bg-neutral-900/50">
+    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5 safe-pt">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
-      <header className="py-4" style={{ viewTransitionName: 'site-header' }}>
+      <header className="py-4">
         <div className="flex items-center justify-between">
           <OrbitLogo />
           <nav className="flex items-center gap-4">
             {/* 原生路由导航（DEK 会话级持久化——重载后自动恢复，无需重复 Face ID；右滑返回原生可用）；
                 transitionTypes：前进方向滑动动画 */}
-            <Link href="/history" transitionTypes={['nav-forward']} className="text-sm text-neutral-400">历史</Link>
-            <Link href="/settings" transitionTypes={['nav-forward']} className="text-sm text-neutral-400">设置</Link>
+            <Link href="/history" className="text-sm text-neutral-400">历史</Link>
+            <Link href="/settings" className="text-sm text-neutral-400">设置</Link>
           </nav>
         </div>
         <p className="mt-1 text-sm text-neutral-400">{today}</p>
@@ -225,7 +243,9 @@ export default function DiaryEditor() {
         disabled={status === 'saving'}
       />
       {showConfetti && <ConfettiBurst />}
-      <footer className="mt-auto px-2 pb-4 pt-4 safe-pb">
+      {/* 上下 padding 均 8px（桌面端）；iPhone 底部取安全区。
+          不能用 safe-pb + pb-2 组合——.safe-pb 是 unlayered 自定义类，会覆盖 Tailwind 的 pb-2 */}
+      <footer className="mt-auto px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2">
         <p className="mb-3 text-center text-xs text-neutral-400">
           {status === 'saving' && '正在保存…'}
           {status === 'saved' && (

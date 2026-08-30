@@ -23,6 +23,7 @@ export async function POST(req: Request) {
   const body = diaryCreateSchema.safeParse(await req.json().catch(() => null))
   if (!body.success) return NextResponse.json({ error: 'bad_request', details: body.error.issues }, { status: 400 })
   const { ciphertext, iv, encryptionVersion, latitude, longitude, locationAccuracy, timezone, wordCount } = body.data
+  // 地点名由客户端反查后 PATCH 补写（保存不等待外部 API，即时返回）
   const [entry] = await db.insert(diaryEntries).values({
     ciphertext, iv, encryptionVersion,
     latitude: latitude ?? null, longitude: longitude ?? null, locationAccuracy: locationAccuracy ?? null,

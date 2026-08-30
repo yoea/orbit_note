@@ -24,6 +24,7 @@ export const diaryUpdateSchema = z
     iv: z.string().min(1).max(64).optional(),
     encryptionVersion: z.number().int().min(1).max(10).optional(),
     timezone: z.string().max(64).nullable().optional(),
+    locationName: z.string().max(255).nullable().optional(), // 客户端反查后补写
     ...locationFields,
     ...wordCountField,
   })

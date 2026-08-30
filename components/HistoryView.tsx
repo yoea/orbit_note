@@ -14,6 +14,7 @@ interface Entry {
   iv: string
   createdAt: string
   latitude: number | null
+  locationName: string | null
 }
 
 interface DecryptedItem {
@@ -23,12 +24,13 @@ interface DecryptedItem {
   preview: string // 去除标题行后的剩余正文
   wordCount: number // 解密时计算（trim 后长度，与详情页/编辑器口径一致）
   lat: number | null
+  locationName: string | null
 }
 
 interface Group {
   key: string // yyyy-mm-dd（本地时区）
   label: string // 今天 / 昨天 / 2026年8月25日 · 星期二
-  items: { id: string; time: string; title: string; preview: string; wordCount: number; lat: number | null }[]
+  items: { id: string; time: string; title: string; preview: string; wordCount: number; lat: number | null; locationName: string | null }[]
   // 组头统计（服务端全量聚合——分页只加载了部分，不能从已加载条目统计）
   statCount: number
   statWords: number
@@ -82,6 +84,7 @@ export default function HistoryView() {
           preview,
           wordCount: plain.trim().length,
           lat: e.latitude,
+          locationName: e.locationName,
         })
       } catch {
         // 单条解密失败跳过（数据损坏不阻塞列表）
@@ -148,6 +151,7 @@ export default function HistoryView() {
           preview: i.preview,
           wordCount: i.wordCount,
           lat: i.lat,
+          locationName: i.locationName,
         })),
       }
     })
@@ -155,7 +159,7 @@ export default function HistoryView() {
 
   if (error) {
     return (
-      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center bg-neutral-100/50 px-5 safe-pt safe-pb dark:bg-neutral-900/50">
+      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center px-5 safe-pt safe-pb">
         <div className="text-center">
           <p className="text-sm text-neutral-500">{error}</p>
           <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white">重试</button>
@@ -165,12 +169,12 @@ export default function HistoryView() {
   }
 
   return (
-    <main className="mx-auto h-full w-full max-w-md overflow-y-auto bg-neutral-100/50 px-5 safe-pt safe-pb dark:bg-neutral-900/50">
+    <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt safe-pb">
       {/* 电脑版与主页同宽（手机视图宽度），不随屏幕拉伸 */}
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
-      <header className="relative flex items-center justify-between py-3" style={{ viewTransitionName: 'site-header' }}>
+      <header className="relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/" aria-label="返回" transitionTypes={['nav-back']} className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+        <Link href="/" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">历史</h1>
@@ -196,7 +200,7 @@ export default function HistoryView() {
             <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
               {g.items.map((item) => (
                 <li key={item.id}>
-                  <Link href={`/entry/${item.id}`} transitionTypes={['nav-forward']} className="flex flex-col gap-1 py-3 active:opacity-60">
+                  <Link href={`/entry/${item.id}`} className="flex flex-col gap-1 py-3 active:opacity-60">
                     <span className="flex items-baseline gap-2">
                       <span className="shrink-0 text-xs tabular-nums text-neutral-400">{item.time}</span>
                       {/* 标题 = 首行加粗 */}
@@ -208,11 +212,14 @@ export default function HistoryView() {
                         {item.preview}
                       </span>
                     )}
-                    {/* 元信息：位置图标 + 字数 */}
-                    <span className="flex items-center gap-1.5 text-[10px] text-neutral-400">
-                      {item.lat != null && <span>📍</span>}
-                      <span>{item.wordCount} 字</span>
-                    </span>
+                    {/* 元信息：定位图标 + 地点名（左），字数右对齐 */}
+                    <div className="mt-0.5 flex items-baseline justify-between gap-2 text-[10px] text-neutral-400">
+                      <span className="flex min-w-0 items-center gap-1">
+                        {item.lat != null && <span>📍</span>}
+                        {item.locationName && <span className="truncate">{item.locationName}</span>}
+                      </span>
+                      <span className="shrink-0">{item.wordCount} 字</span>
+                    </div>
                   </Link>
                 </li>
               ))}

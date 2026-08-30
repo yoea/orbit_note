@@ -44,6 +44,8 @@ export const diaryEntries = pgTable('diary_entries', {
   latitude: doublePrecision('latitude'),
   longitude: doublePrecision('longitude'),
   locationAccuracy: doublePrecision('location_accuracy'),
+  // 保存时由经纬度反查的地点名（OpenStreetMap Nominatim，失败为 null 则显示原坐标）
+  locationName: text('location_name'),
   timezone: text('timezone'),
   // 解密时计算的字数（列表/统计无需解密即可显示）
   wordCount: integer('word_count').notNull().default(0),
