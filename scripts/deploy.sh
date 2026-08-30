@@ -7,12 +7,19 @@ set -e
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-/tmp/qo-prod}"
 TARBALL="${TARBALL:-/tmp/quiet-orbit-prod.tar.gz}"
-# 服务器信息通过环境变量提供（不硬编码任何主机名/用户名/路径）：
-#   export REMOTE_HOST=myserver            # ~/.ssh/config 中的主机别名
-#   export REMOTE_UPDATE=/path/to/update.sh # 服务器端更新脚本绝对路径
-REMOTE_HOST="${REMOTE_HOST:?请设置 REMOTE_HOST（ssh 主机别名，如 export REMOTE_HOST=myserver）}"
+# 服务器信息从 .env.local 读取（不提交 git，见 .env.example 注释）：
+#   REMOTE_HOST=myserver             # ~/.ssh/config 中的主机别名
+#   REMOTE_UPDATE=/path/to/update.sh # 服务器端更新脚本绝对路径
+# 也可用环境变量覆盖（export REMOTE_HOST=...）
+if [ -f "$PROJECT_DIR/.env.local" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$PROJECT_DIR/.env.local"
+  set +a
+fi
+REMOTE_HOST="${REMOTE_HOST:?请在 .env.local 中设置 REMOTE_HOST（ssh 主机别名）}"
 REMOTE_TAR="/tmp/quiet-orbit-prod.tar.gz"
-REMOTE_UPDATE="${REMOTE_UPDATE:?请设置 REMOTE_UPDATE（服务器端 update.sh 绝对路径）}"
+REMOTE_UPDATE="${REMOTE_UPDATE:?请在 .env.local 中设置 REMOTE_UPDATE（服务器端 update.sh 绝对路径）}"
 
 echo "=== [1/7] 同步代码到构建目录 ==="
 rm -rf "$BUILD_DIR"
