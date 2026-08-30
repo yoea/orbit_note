@@ -25,7 +25,7 @@ Orbit 是一款单用户私人日记应用：正文在浏览器本地加密后�
 | 后端 | Next.js API Routes / Drizzle ORM / postgres.js |
 | 数据库 | PostgreSQL |
 | 认证 | WebAuthn（@simplewebauthn）+ PRF 扩展 |
-| 部署 | PM2 + Nginx 反向代理（HTTPS） |
+| 部署 | PM2（HTTPS/反向代理由运维自行配置） |
 
 ## 安全设计
 
@@ -144,24 +144,7 @@ pm2 save && pm2 startup   # 开机自启
 psql "$DATABASE_URL" -f drizzle/0007_flippant_beast.sql
 ```
 
-### Nginx 反向代理示例
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name diary.example.com;
-
-    ssl_certificate     /path/to/fullchain.pem;
-    ssl_certificate_key /path/to/privkey.pem;
-
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
+> ⚠️ **HTTPS 提醒**：生产环境 WebAuthn（通行密钥）要求 HTTPS（localhost 除外）。证书申请、反向代理等属于运维范畴，请自行配置（如 Caddy / Nginx / 云厂商 LB）。
 
 ### 恢复密钥提示
 
