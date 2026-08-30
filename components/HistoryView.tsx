@@ -29,7 +29,9 @@ interface Group {
   key: string // yyyy-mm-dd（本地时区）
   label: string // 今天 / 昨天 / 2026年8月25日 · 星期二
   items: { id: string; time: string; title: string; preview: string; wordCount: number; lat: number | null }[]
-  totalWords: number
+  // 组头统计（服务端全量聚合——分页只加载了部分，不能从已加载条目统计）
+  statCount: number
+  statWords: number
 }
 
 // 本地日期 key（分组与"今天/昨天"判断同口径）
@@ -51,7 +53,7 @@ function dayLabel(key: string): string {
 // 历史视图（原生路由页 /history 渲染；DEK 会话级持久化，导航/重载自动恢复）
 export default function HistoryView() {
   const [items, setItems] = useState<DecryptedItem[]>([])
-  const [stats, setStats] = useState<{ count: number; days: number; byDay: Record<string, number> } | null>(null)
+  const [stats, setStats] = useState<{ count: number; days: number; byDay: Record<string, { count: number; words: number }> } | null>(null)
   const [offset, setOffset] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -122,7 +124,8 @@ export default function HistoryView() {
     }
   }
 
-  // 按本地日期分组（基于已加载条目），组头含当天篇数与总字数
+  // 按本地日期分组（基于已加载条目）；组头统计取服务端全量聚合
+  // （byDay 按笔记时区归日，与列表本地时区分组在跨时区边缘可能差一天——单用户场景忽略）。
   const groups: Group[] = (() => {
     const sorted = [...items].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
     const grouped = new Map<string, DecryptedItem[]>()
@@ -130,24 +133,29 @@ export default function HistoryView() {
       const key = dayKey(item.createdAt)
       grouped.set(key, [...(grouped.get(key) ?? []), item])
     }
-    return [...grouped.entries()].map(([key, list]) => ({
-      key,
-      label: dayLabel(key),
-      totalWords: list.reduce((s, i) => s + i.wordCount, 0),
-      items: list.map((i) => ({
-        id: i.id,
-        time: i.createdAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }),
-        title: i.title,
-        preview: i.preview,
-        wordCount: i.wordCount,
-        lat: i.lat,
-      })),
-    }))
+    return [...grouped.entries()].map(([key, list]) => {
+      // 服务端全量统计（当天所有条目，不受分页影响）；stats 未加载时退回已加载统计
+      const dayStat = stats?.byDay?.[key]
+      return {
+        key,
+        label: dayLabel(key),
+        statCount: dayStat?.count ?? list.length,
+        statWords: dayStat?.words ?? list.reduce((s, i) => s + i.wordCount, 0),
+        items: list.map((i) => ({
+          id: i.id,
+          time: i.createdAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }),
+          title: i.title,
+          preview: i.preview,
+          wordCount: i.wordCount,
+          lat: i.lat,
+        })),
+      }
+    })
   })()
 
   if (error) {
     return (
-      <main className="flex h-full items-center justify-center px-5 safe-pt safe-pb">
+      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center bg-neutral-100/50 px-5 safe-pt safe-pb dark:bg-neutral-900/50">
         <div className="text-center">
           <p className="text-sm text-neutral-500">{error}</p>
           <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white">重试</button>
@@ -157,10 +165,12 @@ export default function HistoryView() {
   }
 
   return (
-    <main className="h-full overflow-y-auto px-5 safe-pt safe-pb">
-      <header className="relative flex items-center justify-between py-3">
+    <main className="mx-auto h-full w-full max-w-md overflow-y-auto bg-neutral-100/50 px-5 safe-pt safe-pb dark:bg-neutral-900/50">
+      {/* 电脑版与主页同宽（手机视图宽度），不随屏幕拉伸 */}
+      {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
+      <header className="relative flex items-center justify-between py-3" style={{ viewTransitionName: 'site-header' }}>
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+        <Link href="/" aria-label="返回" transitionTypes={['nav-back']} className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">历史</h1>
@@ -178,22 +188,23 @@ export default function HistoryView() {
       <div className="flex flex-col gap-6 pb-10">
         {groups.map((g) => (
           <section key={g.key}>
-            {/* 组头：日期（今天/昨天人性化）+ 当天篇数 + 当天总字数 */}
+            {/* 组头：日期（今天/昨天人性化）+ 当天篇数 + 当天总字数（服务端全量聚合，
+                分页未加载完时仍显示当天全部统计） */}
             <h2 className="mb-2 text-sm font-medium text-neutral-400">
-              {g.label} · {g.items.length} 篇 · {g.totalWords} 字
+              {g.label} · {g.statCount} 篇 · {g.statWords} 字
             </h2>
             <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
               {g.items.map((item) => (
                 <li key={item.id}>
-                  <Link href={`/entry/${item.id}`} className="flex flex-col gap-1 py-3 active:opacity-60">
+                  <Link href={`/entry/${item.id}`} transitionTypes={['nav-forward']} className="flex flex-col gap-1 py-3 active:opacity-60">
                     <span className="flex items-baseline gap-2">
                       <span className="shrink-0 text-xs tabular-nums text-neutral-400">{item.time}</span>
                       {/* 标题 = 首行加粗 */}
                       <span className="line-clamp-1 font-medium text-neutral-800 dark:text-neutral-200">{item.title}</span>
                     </span>
-                    {/* 剩余正文预览（最多两行） */}
+                    {/* 剩余正文预览（单行截断；标题已单行截断） */}
                     {item.preview && (
-                      <span className="line-clamp-2 whitespace-pre-wrap text-sm text-neutral-500 dark:text-neutral-400">
+                      <span className="line-clamp-1 whitespace-pre-wrap text-sm text-neutral-500 dark:text-neutral-400">
                         {item.preview}
                       </span>
                     )}

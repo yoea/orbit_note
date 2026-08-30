@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { fetchSession, fetchWrappers } from '@/lib/client/session'
+import PageTransition from '@/components/PageTransition'
 import { createWrappedDek, unwrapWithRecoveryKey } from '@/lib/client/crypto/setup'
 import { decodeRecoveryKey, generateRecoveryKey, sha256Hex } from '@/lib/client/crypto/recovery-key'
 import { copyText } from '@/lib/client/clipboard'
@@ -61,10 +62,12 @@ export default function RecoverySettingsPage() {
   }
 
   return (
-    <main className="flex flex-1 min-h-0 flex-col px-6 safe-pt safe-pb">
-      <header className="relative flex items-center justify-between py-3">
+    <PageTransition>
+    <main className="flex flex-1 min-h-0 flex-col bg-neutral-100/50 px-6 safe-pt safe-pb dark:bg-neutral-900/50">
+      {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
+      <header className="relative flex items-center justify-between py-3" style={{ viewTransitionName: 'site-header' }}>
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+        <Link href="/settings" aria-label="返回" transitionTypes={['nav-back']} className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">重新生成恢复密钥</h1>
@@ -108,5 +111,6 @@ export default function RecoverySettingsPage() {
         </div>
       )}
     </main>
+    </PageTransition>
   )
 }

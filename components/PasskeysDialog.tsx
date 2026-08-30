@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import ConfirmDialog from './ConfirmDialog'
 
 export interface PasskeyInfo {
@@ -21,6 +22,7 @@ export default function PasskeysDialog({ initialData, onClose }: {
   initialData: PasskeyInfo[] | null
   onClose: () => void
 }) {
+  const router = useRouter()
   const [passkeys, setPasskeys] = useState<PasskeyInfo[]>(initialData ?? [])
   const [loadFailed, setLoadFailed] = useState(initialData == null)
   const [error, setError] = useState<string | null>(null)
@@ -74,10 +76,15 @@ export default function PasskeysDialog({ initialData, onClose }: {
     }
   }
 
-  // 只显示"月-日"短格式（同一列表里年份冗余）
+  // "月-日"短格式（同一列表里年份冗余）
   const fmtShort = (s: string) => {
     const d = new Date(s)
     return `${d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`
+  }
+  // "月-日 时:分"（最近使用需要精确到时间）
+  const fmtShortTime = (s: string) => {
+    const d = new Date(s)
+    return `${d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
   }
 
   return (
@@ -89,8 +96,20 @@ export default function PasskeysDialog({ initialData, onClose }: {
         aria-label="Passkey 设备"
       >
         <div className="max-h-[70dvh] overflow-y-auto px-5 py-6">
-          <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">Passkey 设备</p>
-          <p className="mt-1 text-xs text-neutral-400">管理各设备上的通行密钥</p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">Passkey 设备</p>
+              <p className="mt-1 text-xs text-neutral-400">管理各设备上的通行密钥</p>
+            </div>
+            {/* 添加新 Passkey：弱化为右上角加号，跳转注册页（带前进方向动画） */}
+            <button
+              onClick={() => router.push('/settings/passkey', { transitionTypes: ['nav-forward'] })}
+              aria-label="注册新的 Passkey"
+              className="shrink-0 text-2xl font-light leading-6 text-neutral-400 active:opacity-60"
+            >
+              ＋
+            </button>
+          </div>
           {loadFailed ? (
             <div className="flex flex-col items-center gap-2 py-6">
               <p className="text-sm text-neutral-400">加载失败</p>
@@ -117,7 +136,7 @@ export default function PasskeysDialog({ initialData, onClose }: {
                     )}
                   </p>
                   <p className="mt-0.5 text-xs tabular-nums text-neutral-400">
-                    注册于 {fmtShort(pk.createdAt)} · {pk.lastUsedAt ? `最近使用 ${fmtShort(pk.lastUsedAt)}` : '从未使用'}
+                    添加于 {fmtShort(pk.createdAt)} · {pk.lastUsedAt ? `最近使用 ${fmtShortTime(pk.lastUsedAt)}` : '从未使用'}
                     <span className="ml-1 font-mono">…{pk.credentialIdTail}</span>
                   </p>
                 </div>

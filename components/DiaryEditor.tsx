@@ -194,14 +194,16 @@ export default function DiaryEditor() {
   return (
     // 弹性高度（body flex 布局中自动分配视口减页脚后的空间）+ 禁止滚动：
     // header/输入区/footer 全部在可视区内，输入区 flex 弹性分配剩余空间；页脚在流内不遮挡
-    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5 safe-pt">
-      <header className="py-4">
+    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden bg-neutral-100/50 px-5 safe-pt dark:bg-neutral-900/50">
+      {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
+      <header className="py-4" style={{ viewTransitionName: 'site-header' }}>
         <div className="flex items-center justify-between">
           <OrbitLogo />
           <nav className="flex items-center gap-4">
-            {/* 原生路由导航（DEK 会话级持久化——重载后自动恢复，无需重复 Face ID；右滑返回原生可用） */}
-            <Link href="/history" className="text-sm text-neutral-400">历史</Link>
-            <Link href="/settings" className="text-sm text-neutral-400">设置</Link>
+            {/* 原生路由导航（DEK 会话级持久化——重载后自动恢复，无需重复 Face ID；右滑返回原生可用）；
+                transitionTypes：前进方向滑动动画 */}
+            <Link href="/history" transitionTypes={['nav-forward']} className="text-sm text-neutral-400">历史</Link>
+            <Link href="/settings" transitionTypes={['nav-forward']} className="text-sm text-neutral-400">设置</Link>
           </nav>
         </div>
         <p className="mt-1 text-sm text-neutral-400">{today}</p>
@@ -223,7 +225,7 @@ export default function DiaryEditor() {
         disabled={status === 'saving'}
       />
       {showConfetti && <ConfettiBurst />}
-      <footer className="mt-auto border-t border-neutral-100 px-2 pb-4 pt-4 safe-pb dark:border-neutral-800">
+      <footer className="mt-auto px-2 pb-4 pt-4 safe-pb">
         <p className="mb-3 text-center text-xs text-neutral-400">
           {status === 'saving' && '正在保存…'}
           {status === 'saved' && (

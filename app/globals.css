@@ -46,3 +46,64 @@ html {
   100% { transform: scale(1); opacity: 1; }
 }
 .animate-pop { animation: pop 0.4s ease-out; }
+
+/* ===== 页面切换动画（View Transitions API，React 19 内置，零依赖） ===== */
+/* 跨文档兜底：iOS PWA 整页重载导航也触发系统级过渡（Safari 18.2+） */
+@view-transition {
+  navigation: auto;
+}
+
+/* 过渡动画层不拦截点击（动画期间页面保持可交互） */
+::view-transition {
+  pointer-events: none;
+}
+
+/* 方向性滑动：前进 = 旧页左出 + 新页右入；返回 = 反向（与 iOS 手势方向一致）。
+   配合 <Link transitionTypes> 或 router.push(url, { transitionTypes }) 触发 */
+::view-transition-old(.nav-forward) {
+  --slide-offset: -60px;
+  animation: 150ms ease-in both fade reverse, 400ms ease-in-out both slide reverse;
+}
+::view-transition-new(.nav-forward) {
+  --slide-offset: 60px;
+  animation: 210ms ease-out 150ms both fade, 400ms ease-in-out both slide;
+}
+::view-transition-old(.nav-back) {
+  --slide-offset: 60px;
+  animation: 150ms ease-in both fade reverse, 400ms ease-in-out both slide reverse;
+}
+::view-transition-new(.nav-back) {
+  --slide-offset: -60px;
+  animation: 210ms ease-out 150ms both fade, 400ms ease-in-out both slide;
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide {
+  from { translate: var(--slide-offset); }
+  to { translate: 0; }
+}
+
+/* 页头锚定：切换时页头不滑动（保持空间参考点） */
+::view-transition-group(site-header) {
+  animation: none;
+  z-index: 100;
+}
+::view-transition-old(site-header) {
+  display: none;
+}
+::view-transition-new(site-header) {
+  animation: none;
+}
+
+/* 系统开启"减弱动态效果"时禁用全部过渡动画 */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
+}

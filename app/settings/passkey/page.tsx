@@ -8,8 +8,24 @@ import { detectDeviceName } from '@/lib/client/device'
 import { getDek } from '@/lib/client/session'
 import { derivePrfKek, wrapWithKek } from '@/lib/client/crypto/setup'
 import { fromBase64Url } from '@/lib/client/crypto/base64'
+import PageTransition from '@/components/PageTransition'
+import UnlockPrompt from '@/components/UnlockPrompt'
+import { useRequireUnlock } from '@/lib/client/use-require-unlock'
 
+// 页面守卫 + 解锁：与 /settings 一致——直接访问/刷新时从 sessionStorage 恢复 DEK，
+// 未解锁则显示手动解锁按钮（此前无守卫，直接访问时 getDek() 为空被跳转到 /login）
 export default function AddPasskeyPage() {
+  const { state, retryUnlock } = useRequireUnlock()
+  if (state === 'need-unlock') return <UnlockPrompt onUnlock={retryUnlock} />
+  if (state !== 'ready') return <main className="flex-1 min-h-0 px-5 safe-pt" />
+  return (
+    <PageTransition>
+      <AddPasskeyInner />
+    </PageTransition>
+  )
+}
+
+function AddPasskeyInner() {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -74,10 +90,11 @@ export default function AddPasskeyPage() {
   }
 
   return (
-    <main className="flex flex-1 min-h-0 flex-col px-6 safe-pt safe-pb">
-      <header className="relative flex items-center justify-between py-3">
+    <main className="flex flex-1 min-h-0 flex-col bg-neutral-100/50 px-6 safe-pt safe-pb dark:bg-neutral-900/50">
+      {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
+      <header className="relative flex items-center justify-between py-3" style={{ viewTransitionName: 'site-header' }}>
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+        <Link href="/settings" aria-label="返回" transitionTypes={['nav-back']} className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">添加 Passkey</h1>

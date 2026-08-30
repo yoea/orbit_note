@@ -9,13 +9,14 @@ export async function GET(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const rows = await db.execute(
     sql`SELECT (created_at AT TIME ZONE COALESCE(timezone, 'UTC'))::date::text AS day,
-               count(*)::int AS n
+               count(*)::int AS n,
+               COALESCE(sum(word_count), 0)::int AS words
         FROM diary_entries
         GROUP BY 1
         ORDER BY 1`,
-  ) as unknown as { day: string; n: number }[]
-  const byDay: Record<string, number> = {}
-  for (const r of rows) byDay[r.day] = r.n
-  const count = Object.values(byDay).reduce((a, b) => a + b, 0)
+  ) as unknown as { day: string; n: number; words: number }[]
+  const byDay: Record<string, { count: number; words: number }> = {}
+  for (const r of rows) byDay[r.day] = { count: r.n, words: r.words }
+  const count = Object.values(byDay).reduce((a, b) => a + b.count, 0)
   return NextResponse.json({ count, days: Object.keys(byDay).length, byDay })
 }

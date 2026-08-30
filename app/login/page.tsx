@@ -90,7 +90,7 @@ export default function LoginPage() {
 
   if (loadError) {
     return (
-      <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 safe-pb">
+      <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 bg-neutral-100/50 px-6 safe-pb dark:bg-neutral-900/50">
         <p className="text-sm text-neutral-500">连接失败，请检查网络后重试</p>
         <button onClick={() => window.location.reload()} className="rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900">
           重试
@@ -100,7 +100,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col px-6 safe-pb">
+    <main className="flex min-h-0 flex-1 flex-col bg-neutral-100/50 px-6 safe-pb dark:bg-neutral-900/50">
       {/* m-auto：LOGO + 按钮整体在容器中完全垂直居中（比 justify-center 更稳健） */}
       <div className="m-auto flex w-full max-w-xs flex-col items-center gap-8">
         {/* 品牌 LOGO */}

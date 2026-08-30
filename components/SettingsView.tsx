@@ -110,10 +110,12 @@ export default function SettingsView() {
   }
 
   return (
-    <main className="h-full overflow-y-auto px-5 safe-pt safe-pb">
-      <header className="relative flex items-center justify-between py-3">
+    <main className="mx-auto h-full w-full max-w-md overflow-y-auto bg-neutral-100/50 px-5 safe-pt safe-pb dark:bg-neutral-900/50">
+      {/* 电脑版与主页同宽（手机视图宽度），不随屏幕拉伸 */}
+      {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
+      <header className="relative flex items-center justify-between py-3" style={{ viewTransitionName: 'site-header' }}>
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+        <Link href="/" aria-label="返回" transitionTypes={['nav-back']} className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">设置</h1>
@@ -123,7 +125,7 @@ export default function SettingsView() {
       <p className="px-1 pb-2 pt-1 text-xs font-medium text-neutral-400">安全</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
-          {/* 点击查看各设备 Passkey，可禁用指定设备（先预取数据再打开，无加载闪烁） */}
+          {/* 点击查看各设备 Passkey，可禁用/启用指定设备、添加新设备（先预取数据再打开，无加载闪烁） */}
           <button onClick={() => void openPasskeysDialog()} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">Passkey</p>
@@ -131,15 +133,6 @@ export default function SettingsView() {
             </div>
             <span className="text-lg text-neutral-300">›</span>
           </button>
-        </li>
-        <li>
-          <Link href="/settings/passkey" className="flex items-center justify-between px-4 py-3.5 active:opacity-60">
-            <div>
-              <p className="text-neutral-800 dark:text-neutral-200">注册新的 Passkey</p>
-              <p className="mt-0.5 text-xs text-neutral-400">添加新设备，用同样方式解锁同一份日记</p>
-            </div>
-            <span className="text-lg text-neutral-300">›</span>
-          </Link>
         </li>
         <li>
           <Link href="/settings/recovery?mode=regenerate" className="flex items-center justify-between px-4 py-3.5 active:opacity-60">

@@ -24,7 +24,7 @@ export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<str
   }
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col px-6 safe-pb">
+    <main className="flex min-h-0 flex-1 flex-col bg-neutral-100/50 px-6 safe-pb dark:bg-neutral-900/50">
       {/* m-auto：LOGO + 按钮整体垂直居中 */}
       <div className="m-auto flex w-full max-w-xs flex-col items-center gap-8">
         {/* 品牌 LOGO */}

@@ -117,7 +117,7 @@ export default function EntryView({ id }: { id: string }) {
 
   if (error && !entry) {
     return (
-      <main className="flex h-full items-center justify-center px-5 safe-pt safe-pb">
+      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center bg-neutral-100/50 px-5 safe-pt safe-pb dark:bg-neutral-900/50">
         <div className="text-center">
           <p className="text-sm text-neutral-500">{error}</p>
           <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white">重试</button>
@@ -126,7 +126,7 @@ export default function EntryView({ id }: { id: string }) {
     )
   }
 
-  if (!entry) return <main className="h-full overflow-y-auto px-5 safe-pt" />
+  if (!entry) return <main className="mx-auto h-full w-full max-w-md overflow-y-auto bg-neutral-100/50 px-5 safe-pt dark:bg-neutral-900/50" />
 
   const created = new Date(entry.createdAt)
   // 编辑过（updatedAt 晚于 createdAt）→ 额外显示"编辑于"；否则只显示创建时间
@@ -135,10 +135,11 @@ export default function EntryView({ id }: { id: string }) {
   const fmtDate = (d: Date) =>
     `${d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
   return (
-    <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 safe-pt safe-pb">
-      <header className="relative flex items-center justify-between py-3">
+    <main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-y-auto bg-neutral-100/50 px-5 safe-pt safe-pb dark:bg-neutral-900/50">
+      {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
+      <header className="relative flex items-center justify-between py-3" style={{ viewTransitionName: 'site-header' }}>
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/history" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+        <Link href="/history" aria-label="返回" transitionTypes={['nav-back']} className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">日记</h1>

@@ -19,7 +19,7 @@ export async function GET(req: Request) {
       createdAt: c.createdAt,
       lastUsedAt: c.lastUsedAt,
       transports: c.transports,
-      credentialIdTail: c.credentialId.slice(-8),
+      credentialIdTail: c.credentialId.slice(-6), // 尾号后 6 位（区分设备用）
       disabled: c.disabled,
       isCurrent: currentCredId != null && c.credentialId === currentCredId,
     })),
