@@ -31,7 +31,7 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
           </p>
           <ul className="mt-4 divide-y divide-neutral-100 dark:divide-neutral-800">
             {[
-              { icon: '🔑', title: '通行密钥登录', desc: '无密码，Face ID / Windows Hello 快速解锁' },
+              { icon: '🔑', title: '通行密钥登录', desc: '无密码，指纹 / Face ID / Windows Hello 等' },
               { icon: '🛡️', title: '端到端加密', desc: '正文只在设备本地加解密，服务器仅存密文' },
               { icon: '🔐', title: '恢复密钥', desc: '通行密钥丢失，用恢复密钥仍可找回数据' },
               { icon: '📍', title: '位置记录', desc: '可选保存坐标与时区，随时可以移除' },

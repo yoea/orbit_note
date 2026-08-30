@@ -37,7 +37,8 @@ export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<str
           >
             {busy ? '正在验证…' : '使用通行密钥登录'}
           </button>
-          <p className="mt-3 text-center text-xs text-neutral-400">通过 Face ID 或 Windows Hello 快速安全登录</p>
+          <p className="mt-3 text-center text-xs text-neutral-400">通过通行密钥快速安全登录</p>
+          <p className="mt-1 text-center text-[10px] text-neutral-400/70">支持指纹、Face ID、Windows Hello 等</p>
           {error && <p className="mt-3 text-center text-sm text-red-500">{error}</p>}
         </div>
       </div>

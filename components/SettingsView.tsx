@@ -83,7 +83,7 @@ export default function SettingsView() {
           <button onClick={() => void openPasskeysDialog()} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">Passkey</p>
-              <p className="mt-0.5 text-xs text-neutral-400">Face ID / Windows Hello 快速解锁</p>
+              <p className="mt-0.5 text-xs text-neutral-400">指纹 / Face ID / Windows Hello 等</p>
             </div>
             <span className="text-lg text-neutral-300">›</span>
           </button>
