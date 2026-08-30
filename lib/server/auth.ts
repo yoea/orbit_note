@@ -3,10 +3,9 @@ import { eq } from 'drizzle-orm'
 import { db } from '@/lib/server/db'
 import { credentials } from '@/lib/server/db/schema'
 import { getSessionCredential, SESSION_COOKIE, verifySessionToken } from './session'
-import { purgeExpiredWipes } from './pending-wipe'
 
 // 从 cookie 提取 session token 并验证（不抛错，失败返回 false）。
-// 关键：会话绑定了登录时的凭证 ID——若该凭证被禁用/软删，会话同步失效
+// 关键：会话绑定了登录时的凭证 ID——若该凭证被禁用/删除，会话同步失效
 // （禁用某设备 = 该设备上已登录的会话立即被踢下线，而非只挡住下次登录）。
 // 恢复密钥登录的会话无凭证绑定（cred 为 null），不在此校验范围。
 export async function isAuthed(req: Request): Promise<boolean> {
@@ -17,14 +16,12 @@ export async function isAuthed(req: Request): Promise<boolean> {
   const credId = await getSessionCredential(req)
   if (!credId) return true
   const [cred] = await db.select().from(credentials).where(eq(credentials.credentialId, credId))
-  // 凭证不存在（已物理删除）/ 被禁用 / 软删中 → 会话失效
-  if (!cred || cred.disabled || cred.deletedAt != null) return false
+  // 凭证不存在（已物理删除）或被禁用 → 会话失效
+  if (!cred || cred.disabled) return false
   return true
 }
 
 export async function requireAuth(req: Request): Promise<boolean> {
-  // 惰性清理：登录态请求顺带物理删除冷静期已过的数据（状态在 DB，无进程依赖）
-  await purgeExpiredWipes()
   return isAuthed(req)
 }
 

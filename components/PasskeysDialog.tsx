@@ -17,10 +17,9 @@ export interface PasskeyInfo {
 // 禁用 = 软禁用（该设备无法登录，凭证保留，可随时重新启用）。
 // 数据由设置页预取后传入（initialData）——弹窗打开第一帧即完整列表，无加载闪烁；
 // 预取失败（initialData=null）时显示错误 + 重试。
-export default function PasskeysDialog({ initialData, onClose, onChanged }: {
+export default function PasskeysDialog({ initialData, onClose }: {
   initialData: PasskeyInfo[] | null
   onClose: () => void
-  onChanged: () => void
 }) {
   const [passkeys, setPasskeys] = useState<PasskeyInfo[]>(initialData ?? [])
   const [loadFailed, setLoadFailed] = useState(initialData == null)

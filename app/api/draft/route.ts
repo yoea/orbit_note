@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { drafts } from '@/lib/server/db/schema'
-import { and, eq, isNull } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { draftPutSchema } from '@/lib/server/validation'
 import { rateLimit } from '@/lib/server/ratelimit'
@@ -10,8 +10,7 @@ const DRAFT_ID = '00000000-0000-0000-0000-000000000001'
 
 export async function GET(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  // 软删过滤：冷静期内草稿不可见
-  const [draft] = await db.select().from(drafts).where(and(eq(drafts.id, DRAFT_ID), isNull(drafts.deletedAt)))
+  const [draft] = await db.select().from(drafts).where(eq(drafts.id, DRAFT_ID))
   return NextResponse.json({ draft: draft ?? null })
 }
 
@@ -34,10 +33,9 @@ export async function PUT(req: Request) {
     }
   }
   const now = new Date()
-  // 冷静期内写入新草稿：清除软删标记（旧草稿已被删除，新输入即新草稿）
   const [draft] = await db.insert(drafts)
-    .values({ id: DRAFT_ID, ciphertext, iv, encryptionVersion, deletedAt: null, updatedAt: now })
-    .onConflictDoUpdate({ target: drafts.id, set: { ciphertext, iv, encryptionVersion, deletedAt: null, updatedAt: now } })
+    .values({ id: DRAFT_ID, ciphertext, iv, encryptionVersion, updatedAt: now })
+    .onConflictDoUpdate({ target: drafts.id, set: { ciphertext, iv, encryptionVersion, updatedAt: now } })
     .returning()
   return NextResponse.json({ draft })
 }

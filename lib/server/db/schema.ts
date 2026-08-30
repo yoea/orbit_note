@@ -13,8 +13,6 @@ export const credentials = pgTable('credentials', {
   device: text('device'),
   // 软禁用标记：禁用后无法登录，可随时重新启用（不删除凭证与 PRF wrapper）
   disabled: boolean('disabled').notNull().default(false),
-  // 软删除标记（删除冷静期）：非空 = 待删除，冷静期内可撤销，超时由 purge 物理删除
-  deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
 })
@@ -29,7 +27,6 @@ export const keyWrappers = pgTable('key_wrappers', {
   encryptionVersion: integer('encryption_version').notNull().default(1),
   // 仅 recovery 行：SHA-256(recovery key) 十六进制，用于灾难恢复登录校验（Task 8 使用）
   recoveryKeyHash: text('recovery_key_hash'),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   check('key_wrappers_wrapper_type_check', sql`${t.wrapperType} in ('passkey_prf', 'recovery')`),
@@ -50,7 +47,6 @@ export const diaryEntries = pgTable('diary_entries', {
   timezone: text('timezone'),
   // 解密时计算的字数（列表/统计无需解密即可显示）
   wordCount: integer('word_count').notNull().default(0),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -64,6 +60,5 @@ export const drafts = pgTable('drafts', {
   ciphertext: text('ciphertext').notNull(),
   iv: text('iv').notNull(),
   encryptionVersion: integer('encryption_version').notNull().default(1),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })

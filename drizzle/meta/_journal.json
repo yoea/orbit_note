@@ -43,6 +43,13 @@
       "when": 1787820205465,
       "tag": "0005_careless_vertigo",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788069538114,
+      "tag": "0006_conscious_scalphunter",
+      "breakpoints": true
     }
   ]
 }

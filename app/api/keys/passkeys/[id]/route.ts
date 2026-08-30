@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { and, eq, isNull } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { db } from '@/lib/server/db'
 import { credentials } from '@/lib/server/db/schema'
 import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
@@ -15,7 +15,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   if (!assertSameOrigin(req)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 })
   const { id } = await params
   if (!parseId(id)) return NextResponse.json({ error: 'not_found' }, { status: 404 })
-  const [updated] = await db.update(credentials).set({ disabled: true }).where(and(eq(credentials.id, id), isNull(credentials.deletedAt))).returning()
+  const [updated] = await db.update(credentials).set({ disabled: true }).where(eq(credentials.id, id)).returning()
   if (!updated) return NextResponse.json({ error: 'not_found' }, { status: 404 })
   return new NextResponse(null, { status: 204 })
 }

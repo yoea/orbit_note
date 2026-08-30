@@ -1,14 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import AboutDialog from '@/components/AboutDialog'
 import InputConfirmDialog from '@/components/InputConfirmDialog'
 import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
-import { clearDek, fetchSession } from '@/lib/client/session'
+import { clearDek } from '@/lib/client/session'
 import { authenticatePasskey } from '@/lib/client/webauthn'
+import { idbClearAll } from '@/lib/client/idb'
 
 // 二次确认：通过 WebAuthn 认证（iOS 原生 Face ID 弹窗）确认用户在场。
 // 认证成功（服务端验证 assertion）才视为确认——防止误触/他人操作删除。
@@ -33,8 +34,6 @@ async function confirmWithFaceId(): Promise<boolean> {
 const LOCATION_KEY = 'qo-location-enabled'
 // 删除所有数据：必须手动输入这段文字才能通过（防误触强确认）
 const WIPE_CONFIRM_TEXT = '永久删除'
-// 删除冷静期：软删后 180 秒内可撤销（与服务器 WIPE_GRACE_MS 一致）
-const WIPE_GRACE_MS = 180_000
 
 // 设置视图（原生路由页 /settings 渲染；DEK 会话级持久化，导航/重载自动恢复）
 export default function SettingsView() {
@@ -42,15 +41,11 @@ export default function SettingsView() {
   const [locationEnabled, setLocationEnabled] = useState(true)
   const [wiping, setWiping] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
-  const [wipeConfirmStep, setWipeConfirmStep] = useState<0 | 1 | 2>(0) // 0=无确认, 1=警告确认, 2=输入文字验证
+  const [wipeConfirmStep, setWipeConfirmStep] = useState<0 | 1>(0) // 0=无确认, 1=输入文字验证
   const [showAbout, setShowAbout] = useState(false)
   const [showPasskeys, setShowPasskeys] = useState(false)
   // 预取的 Passkey 列表：点击前 fetch 完成，弹窗打开第一帧即完整列表（无加载闪烁）
   const [passkeysData, setPasskeysData] = useState<PasskeyInfo[] | null>(null)
-  // 删除冷静期：非空 = 数据软删中，显示"撤销删除 + 倒计时"
-  const [wipePending, setWipePending] = useState<{ deletedAt: string } | null>(null)
-  const [countdown, setCountdown] = useState(0)
-  const [confirmUndo, setConfirmUndo] = useState(false)
 
   // 先取数据再打开弹窗；fetch 失败也打开（弹窗内显示错误 + 重试）
   async function openPasskeysDialog() {
@@ -68,28 +63,7 @@ export default function SettingsView() {
     setShowPasskeys(true)
   }
 
-  // 刷新删除冷静期状态（初始加载、禁用设备、撤销删除后）
-  // Passkey 数量不在此显示——每个设备的状态在 Passkey 弹窗内查看
-  const refreshInfo = useCallback(() => {
-    void fetchSession().then((s) => {
-      setWipePending(s.pendingWipe ? { deletedAt: s.pendingWipe.deletedAt } : null)
-    }).catch(() => { /* 网络错误忽略 */ })
-  }, [])
-
-  // 冷静期倒计时（每秒刷新；归零后清除 pending，按钮恢复原样）
   useEffect(() => {
-    if (!wipePending) { setCountdown(0); return }
-    const compute = () => Math.max(0, Math.ceil((new Date(wipePending.deletedAt).getTime() + WIPE_GRACE_MS - Date.now()) / 1000))
-    setCountdown(compute())
-    const t = setInterval(() => setCountdown(compute()), 1000)
-    return () => clearInterval(t)
-  }, [wipePending])
-  useEffect(() => {
-    if (wipePending && countdown <= 0) setWipePending(null)
-  }, [wipePending, countdown])
-
-  useEffect(() => {
-    refreshInfo()
     // 读取定位开关（默认开启）——异步延迟 setState 避免 cascading render
     const t = setTimeout(() => {
       try {
@@ -97,7 +71,7 @@ export default function SettingsView() {
       } catch { /* localStorage 不可用则保持默认 */ }
     }, 0)
     return () => clearTimeout(t)
-  }, [refreshInfo])
+  }, [])
 
   function toggleLocation() {
     const next = !locationEnabled
@@ -116,7 +90,7 @@ export default function SettingsView() {
   async function wipe() {
     setWiping(true)
     try {
-      // 二次确认（ConfirmDialog 已通过）：Face ID 生物识别验证（认证成功才执行删除）
+      // 输入文字验证后：通行密钥生物识别验证（认证成功才执行删除）
       const ok = await confirmWithFaceId()
       if (!ok) {
         window.alert('身份验证未完成，未执行删除')
@@ -124,26 +98,12 @@ export default function SettingsView() {
       }
       const res = await fetch('/api/admin/wipe', { method: 'POST' })
       if (!res.ok) throw new Error()
-      const data = await res.json() as { deletedAt?: string }
-      // 软删除 + 冷静期：数据标记删除但保留，180 秒内可撤销（按钮变"撤销删除 + 倒计时"）
-      if (data.deletedAt) setWipePending({ deletedAt: data.deletedAt })
+      // 物理删除完成：清本地缓存与 DEK，跳转重新初始化
+      await idbClearAll()
+      clearDek()
+      router.replace('/setup')
     } catch {
       window.alert('删除失败，请重试')
-    } finally {
-      setWiping(false)
-    }
-  }
-
-  // 撤销删除（冷静期内）：清除软删标记，数据全部恢复
-  async function undoWipe() {
-    setWiping(true)
-    try {
-      const res = await fetch('/api/admin/wipe/undo', { method: 'POST' })
-      if (!res.ok) throw new Error()
-      setWipePending(null)
-      refreshInfo()
-    } catch {
-      window.alert('撤销失败，请重试')
     } finally {
       setWiping(false)
     }
@@ -233,26 +193,15 @@ export default function SettingsView() {
           </button>
         </li>
       </ul>
-      {/* 危险操作弱化入口：小字置底，防误触（真正的删除还需文字验证 + Face ID）。
-          冷静期内按钮变为"撤销删除 + 倒计时" */}
+      {/* 危险操作弱化入口：小字置底，防误触（真正的删除还需文字验证 + 通行密钥验证） */}
       <div className="pt-6 text-center">
-        {wipePending ? (
-          <button
-            onClick={() => setConfirmUndo(true)}
-            disabled={wiping}
-            className="text-xs text-neutral-400/70 disabled:opacity-50"
-          >
-            撤销删除 · {countdown}s
-          </button>
-        ) : (
-          <button
-            onClick={() => setWipeConfirmStep(1)}
-            disabled={wiping}
-            className="text-xs text-neutral-400/70 disabled:opacity-50"
-          >
-            {wiping ? '验证中…' : '删除所有数据'}
-          </button>
-        )}
+        <button
+          onClick={() => setWipeConfirmStep(1)}
+          disabled={wiping}
+          className="text-xs text-neutral-400/70 disabled:opacity-50"
+        >
+          {wiping ? '验证中…' : '删除所有数据'}
+        </button>
       </div>
       {confirmLogout && (
         <ConfirmDialog
@@ -265,20 +214,9 @@ export default function SettingsView() {
         />
       )}
       {wipeConfirmStep === 1 && (
-        <ConfirmDialog
-          title="确定删除所有数据吗？"
-          message="删除后所有日记、通行密钥与恢复密钥将永久失效。3 分钟冷静期内可撤销；冷静期结束后账号一并删除，将无法登录，只能重新初始化。"
-          confirmText="删除"
-          cancelText="取消"
-          destructive
-          onConfirm={() => setWipeConfirmStep(2)}
-          onCancel={() => setWipeConfirmStep(0)}
-        />
-      )}
-      {wipeConfirmStep === 2 && (
         <InputConfirmDialog
           title="输入验证"
-          message={`所有日记、通行密钥与恢复密钥将全部删除，3 分钟冷静期内可撤销；结束后账号一并删除，无法再登录。请输入「${WIPE_CONFIRM_TEXT}」确认，之后将通过通行密钥验证身份。`}
+          message={`所有日记、通行密钥与恢复密钥将全部删除，无法恢复，账号也将被删除。请输入「${WIPE_CONFIRM_TEXT}」确认，之后将通过通行密钥验证身份。`}
           expected={WIPE_CONFIRM_TEXT}
           placeholder={WIPE_CONFIRM_TEXT}
           confirmText="删除"
@@ -286,19 +224,9 @@ export default function SettingsView() {
           onCancel={() => setWipeConfirmStep(0)}
         />
       )}
-      {confirmUndo && (
-        <ConfirmDialog
-          title="撤销删除？"
-          message="所有日记、通行密钥与恢复密钥将恢复，删除流程中止。"
-          confirmText="撤销删除"
-          cancelText="取消"
-          onConfirm={() => { setConfirmUndo(false); void undoWipe() }}
-          onCancel={() => setConfirmUndo(false)}
-        />
-      )}
       {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
       {showPasskeys && (
-        <PasskeysDialog initialData={passkeysData} onClose={() => setShowPasskeys(false)} onChanged={refreshInfo} />
+        <PasskeysDialog initialData={passkeysData} onClose={() => setShowPasskeys(false)} />
       )}
     </main>
   )

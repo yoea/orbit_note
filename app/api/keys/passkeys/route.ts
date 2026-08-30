@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { credentials } from '@/lib/server/db/schema'
-import { desc, isNull } from 'drizzle-orm'
+import { desc } from 'drizzle-orm'
 import { requireAuth } from '@/lib/server/auth'
 import { getSessionCredential } from '@/lib/server/session'
 
@@ -11,8 +11,7 @@ import { getSessionCredential } from '@/lib/server/session'
 export async function GET(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   const currentCredId = await getSessionCredential(req)
-  // 软删过滤：冷静期内凭证不展示
-  const list = await db.select().from(credentials).where(isNull(credentials.deletedAt)).orderBy(desc(credentials.createdAt))
+  const list = await db.select().from(credentials).orderBy(desc(credentials.createdAt))
   return NextResponse.json({
     passkeys: list.map((c) => ({
       id: c.id,
