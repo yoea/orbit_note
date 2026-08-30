@@ -83,10 +83,11 @@ npm install
 cp .env.example .env.local
 # 编辑 .env.local 填写真实值（见下）
 
-# 3. 初始化数据库（按顺序执行 drizzle 目录下的迁移文件）
-psql "$DATABASE_URL" -f drizzle/0000_amused_ghost_rider.sql
-psql "$DATABASE_URL" -f drizzle/0001_safe_nighthawk.sql
-# ... 依次执行所有 000X_*.sql
+# 3. 初始化数据库：按序号依次执行 drizzle/ 下全部迁移文件（新部署从 0000 到最新）
+for f in drizzle/000*.sql; do
+  echo "==> $f"
+  psql "$DATABASE_URL" -f "$f"
+done
 
 # 4. 启动开发服务器
 npm run dev
@@ -113,7 +114,9 @@ npm run dev
 服务器无需安装构建工具链，避免构建时磁盘/内存打满。
 
 ```bash
-# 本地执行（已配置 deploy.sh 的 REMOTE_HOST 等变量）
+# 本地执行（服务器信息通过环境变量提供，不硬编码在脚本中）
+export REMOTE_HOST=myserver            # ~/.ssh/config 中的主机别名
+export REMOTE_UPDATE=/path/to/update.sh # 服务器端 update.sh 绝对路径
 bash scripts/deploy.sh
 ```
 

@@ -3,7 +3,7 @@
 export default function AppFooter() {
   return (
     <footer className="mt-auto border-t border-neutral-100 py-2 pb-safe text-center text-[10px] text-neutral-300 dark:border-neutral-800 dark:text-neutral-600" aria-hidden>
-      Orbit {process.env.NEXT_PUBLIC_VERSION ?? 'dev'} · © 2026 Ethan
+      Orbit {process.env.NEXT_PUBLIC_VERSION ?? 'dev'} · © 2026 Orbit
     </footer>
   )
 }
