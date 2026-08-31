@@ -47,3 +47,45 @@ html {
 }
 .animate-pop { animation: pop 0.4s ease-out; }
 
+
+/* 细滚动条（历史页等）：桌面 4px 细条，深色模式适配；iOS 触摸滚动平滑 */
+.thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
+  -webkit-overflow-scrolling: touch;
+}
+.thin-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 2px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+@media (prefers-color-scheme: dark) {
+  .thin-scrollbar {
+    scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  }
+  .thin-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.25);
+  }
+}
+
+/* 历史页走 window 滚动：全局隐藏 html 滚动条（iOS 状态栏点击回顶依赖 window 滚动原生行为） */
+html {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html::-webkit-scrollbar {
+  display: none;
+}
+
+/* Toast 通知：顶部滑入淡入 */
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, -12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.animate-toast { animation: toast-in 0.25s ease-out; }

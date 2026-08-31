@@ -92,7 +92,7 @@ export default function LoginPage() {
     return (
       <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 safe-pb">
         <p className="text-sm text-neutral-500">连接失败，请检查网络后重试</p>
-        <button onClick={() => window.location.reload()} className="rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900">
+        <button onClick={() => window.location.reload()} className="rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">
           重试
         </button>
       </main>
@@ -110,7 +110,7 @@ export default function LoginPage() {
           <button
             onClick={() => void handlePasskey()}
             disabled={busy}
-            className="w-full rounded-2xl bg-neutral-900 px-6 py-4 text-base font-medium text-white active:scale-[0.98] disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+            className="w-full rounded-2xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-4 text-base font-medium text-white active:scale-[0.98] disabled:opacity-50"
           >
             {busy ? '正在验证…' : '使用通行密钥登录'}
           </button>
@@ -135,7 +135,7 @@ export default function LoginPage() {
             spellCheck={false}
             className="rounded-xl border border-neutral-200 px-4 py-3 text-base outline-none focus:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
           />
-          <button type="submit" disabled={busy || !recoveryKey.trim()} className="rounded-xl bg-neutral-900 px-6 py-4 font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900">
+          <button type="submit" disabled={busy || !recoveryKey.trim()} className="rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-4 font-medium text-white disabled:opacity-50">
             {busy ? '正在解锁…' : '解锁'}
           </button>
         </form>

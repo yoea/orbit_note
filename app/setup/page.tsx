@@ -137,7 +137,7 @@ export default function SetupPage() {
     return (
       <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 safe-pb">
         <p className="text-sm text-neutral-500">连接失败，请检查网络后重试</p>
-        <button onClick={() => window.location.reload()} className="rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900">
+        <button onClick={() => window.location.reload()} className="rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">
           重试
         </button>
       </main>
@@ -150,7 +150,7 @@ export default function SetupPage() {
         <>
           <h1 className="text-2xl font-semibold">创建你的私人日记</h1>
           <p className="max-w-xs text-center text-sm text-neutral-500">日记内容将端到端加密，只有你的设备能解密。</p>
-          <button onClick={() => void start()} disabled={busy} className="w-full max-w-xs rounded-2xl bg-neutral-900 px-6 py-4 font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900">
+          <button onClick={() => void start()} disabled={busy} className="w-full max-w-xs rounded-2xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-4 font-medium text-white disabled:opacity-50">
             {busy ? '正在创建…' : '创建通行密钥'}
           </button>
           {error && <p className="text-sm text-red-500">{error}</p>}
@@ -167,7 +167,7 @@ export default function SetupPage() {
           <button onClick={() => void handleCopy()} className="text-sm text-neutral-500 underline">
             {copyState === 'copied' ? '已复制' : copyState === 'failed' ? '复制失败，请手动选择复制' : '复制恢复密钥'}
           </button>
-          <button onClick={finish} className="w-full max-w-xs rounded-2xl bg-neutral-900 px-6 py-4 font-medium text-white">我已保存，进入日记</button>
+          <button onClick={finish} className="w-full max-w-xs rounded-2xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-4 font-medium text-white">我已保存，进入日记</button>
         </>
       )}
     </main>

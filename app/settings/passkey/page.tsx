@@ -102,7 +102,7 @@ function AddPasskeyInner() {
         <button
           onClick={() => void add()}
           disabled={busy}
-          className="w-full rounded-2xl bg-neutral-900 px-6 py-4 text-base font-medium text-white active:scale-[0.98] disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+          className="w-full rounded-2xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-4 text-base font-medium text-white active:scale-[0.98] disabled:opacity-50"
         >
           {busy ? '添加中…' : '注册新的 Passkey'}
         </button>

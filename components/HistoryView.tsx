@@ -162,14 +162,16 @@ export default function HistoryView() {
       <main className="mx-auto flex h-full w-full max-w-md items-center justify-center px-5 safe-pt safe-pb">
         <div className="text-center">
           <p className="text-sm text-neutral-500">{error}</p>
-          <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white">重试</button>
+          <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">重试</button>
         </div>
       </main>
     )
   }
 
   return (
-    <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt safe-pb">
+    /* HistoryView 走 window 滚动：main 不设高度/overflow，内容撑开由 window 滚动——
+       iOS 点击状态栏原生回到顶部，桌面滚动条已全局隐藏 */
+    <main className="mx-auto w-full max-w-md px-5 safe-pt safe-pb">
       {/* 电脑版与主页同宽（手机视图宽度），不随屏幕拉伸 */}
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="relative flex items-center justify-between py-3">
@@ -182,19 +184,22 @@ export default function HistoryView() {
       </header>
       {stats && (
         <>
-          <p className="pb-2 text-xs tabular-nums text-neutral-400">
-            共 {stats.count} 篇 · 写了 {stats.days} 天
-          </p>
+          <div className="flex items-baseline justify-between gap-2 pb-2 text-xs tabular-nums text-neutral-400">
+            <span>共 {stats.count} 篇 · 写了 {stats.days} 天</span>
+            {/* 总字数：byDay 各天字数之和（千分位） */}
+            <span>共写了 {Object.values(stats.byDay ?? {}).reduce((sum, d) => sum + d.words, 0).toLocaleString()} 字</span>
+          </div>
           {/* 写作频率热力图（仅在有日记时显示） */}
           {stats.count > 0 && <ContributionHeatmap byDay={stats.byDay ?? {}} />}
         </>
       )}
       <div className="flex flex-col gap-6 pb-10">
-        {groups.map((g) => (
-          <section key={g.key}>
+        {groups.map((g, gi) => (
+          <section key={g.key} className={gi > 0 ? 'border-t border-neutral-100 pt-4 dark:border-neutral-800' : ''}>
             {/* 组头：日期（今天/昨天人性化）+ 当天篇数 + 当天总字数（服务端全量聚合，
-                分页未加载完时仍显示当天全部统计） */}
-            <h2 className="mb-2 text-sm font-medium text-neutral-400">
+                分页未加载完时仍显示当天全部统计）。全部组统一主题色渐变文字；
+                用 Tailwind 4 新类名 bg-linear-to-r（旧 bg-gradient-to-r 兼容层可能只渲染起始色） */}
+            <h2 className="mb-2 bg-linear-to-r from-orange-500 via-rose-500 to-violet-500 bg-clip-text text-sm font-medium text-transparent">
               {g.label} · {g.statCount} 篇 · {g.statWords} 字
             </h2>
             <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">

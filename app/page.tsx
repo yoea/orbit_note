@@ -11,7 +11,7 @@ export default function HomePage() {
     return (
       <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 safe-pb">
         <p className="text-sm text-neutral-500">连接失败，请检查网络后重试</p>
-        <button onClick={() => window.location.reload()} className="rounded-xl bg-neutral-900 px-6 py-3 text-sm font-medium text-white dark:bg-neutral-100 dark:text-neutral-900">
+        <button onClick={() => window.location.reload()} className="rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">
           重试
         </button>
       </main>

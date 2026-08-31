@@ -8,6 +8,7 @@ import AboutDialog from '@/components/AboutDialog'
 import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
 import RecoveryRegenerateDialog from '@/components/RecoveryRegenerateDialog'
 import { clearDek } from '@/lib/client/session'
+import { PROMPT_KEY, STREAK_KEY, WEATHER_KEY } from '@/lib/client/prefs'
 
 // 定位开关（与 DiaryEditor 的 isLocationEnabled 共用 localStorage key）
 const LOCATION_KEY = 'qo-location-enabled'
@@ -16,6 +17,9 @@ const LOCATION_KEY = 'qo-location-enabled'
 export default function SettingsView() {
   const router = useRouter()
   const [locationEnabled, setLocationEnabled] = useState(true)
+  const [showStreak, setShowStreak] = useState(true)
+  const [showPrompt, setShowPrompt] = useState(true)
+  const [saveWeather, setSaveWeather] = useState(true)
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
   const [showPasskeys, setShowPasskeys] = useState(false)
@@ -44,6 +48,9 @@ export default function SettingsView() {
     const t = setTimeout(() => {
       try {
         setLocationEnabled(localStorage.getItem(LOCATION_KEY) !== '0')
+        setShowStreak(localStorage.getItem(STREAK_KEY) !== '0')
+        setShowPrompt(localStorage.getItem(PROMPT_KEY) !== '0')
+        setSaveWeather(localStorage.getItem(WEATHER_KEY) !== '0')
       } catch { /* localStorage 不可用则保持默认 */ }
     }, 0)
     return () => clearTimeout(t)
@@ -54,6 +61,30 @@ export default function SettingsView() {
     setLocationEnabled(next)
     try {
       localStorage.setItem(LOCATION_KEY, next ? '1' : '0')
+    } catch { /* 忽略存储失败（隐私模式等） */ }
+  }
+
+  function toggleStreak() {
+    const next = !showStreak
+    setShowStreak(next)
+    try {
+      localStorage.setItem(STREAK_KEY, next ? '1' : '0')
+    } catch { /* 忽略存储失败（隐私模式等） */ }
+  }
+
+  function togglePrompt() {
+    const next = !showPrompt
+    setShowPrompt(next)
+    try {
+      localStorage.setItem(PROMPT_KEY, next ? '1' : '0')
+    } catch { /* 忽略存储失败（隐私模式等） */ }
+  }
+
+  function toggleWeather() {
+    const next = !saveWeather
+    setSaveWeather(next)
+    try {
+      localStorage.setItem(WEATHER_KEY, next ? '1' : '0')
     } catch { /* 忽略存储失败（隐私模式等） */ }
   }
 
@@ -110,10 +141,51 @@ export default function SettingsView() {
             onClick={toggleLocation}
             role="switch"
             aria-checked={locationEnabled}
-            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${locationEnabled ? 'bg-neutral-900 dark:bg-neutral-100' : 'bg-neutral-300 dark:bg-neutral-700'}`}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${locationEnabled ? 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500' : 'bg-neutral-300 dark:bg-neutral-600'}`}
           >
-            {/* 圆点：left-0.5(2px) 基础偏移 + 开启时 translate-x-5(20px) → 22+24=46px ≤ 48px 不溢出 */}
             <span className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${locationEnabled ? 'translate-x-5' : ''}`} />
+          </button>
+        </li>
+        <li className="flex items-center justify-between px-4 py-3.5">
+          <div>
+            <p className="text-neutral-800 dark:text-neutral-200">保存时记录天气</p>
+            <p className="mt-0.5 text-xs text-neutral-400">关闭后保存日记不再获取实时天气</p>
+          </div>
+          <button
+            onClick={toggleWeather}
+            role="switch"
+            aria-checked={saveWeather}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${saveWeather ? 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500' : 'bg-neutral-300 dark:bg-neutral-600'}`}
+          >
+            <span className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${saveWeather ? 'translate-x-5' : ''}`} />
+          </button>
+        </li>
+        <li className="flex items-center justify-between px-4 py-3.5">
+          <div>
+            <p className="text-neutral-800 dark:text-neutral-200">显示连续写作天数</p>
+            <p className="mt-0.5 text-xs text-neutral-400">首页日期旁显示 🔥 连续写了 N 天</p>
+          </div>
+          <button
+            onClick={toggleStreak}
+            role="switch"
+            aria-checked={showStreak}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${showStreak ? 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500' : 'bg-neutral-300 dark:bg-neutral-600'}`}
+          >
+            <span className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${showStreak ? 'translate-x-5' : ''}`} />
+          </button>
+        </li>
+        <li className="flex items-center justify-between px-4 py-3.5">
+          <div>
+            <p className="text-neutral-800 dark:text-neutral-200">显示每日提示</p>
+            <p className="mt-0.5 text-xs text-neutral-400">首页输入框上方的写作灵感提示</p>
+          </div>
+          <button
+            onClick={togglePrompt}
+            role="switch"
+            aria-checked={showPrompt}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${showPrompt ? 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500' : 'bg-neutral-300 dark:bg-neutral-600'}`}
+          >
+            <span className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${showPrompt ? 'translate-x-5' : ''}`} />
           </button>
         </li>
       </ul>

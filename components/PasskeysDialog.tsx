@@ -9,7 +9,7 @@ export interface PasskeyInfo {
   device: string | null
   createdAt: string
   lastUsedAt: string | null
-  credentialIdTail: string
+  credentialIdMasked: string
   disabled: boolean
   isCurrent?: boolean
 }
@@ -140,22 +140,24 @@ export default function PasskeysDialog({ initialData, onClose }: {
                     <span className="min-w-0 truncate text-xs tabular-nums text-neutral-400">
                       添加于 {fmtShort(pk.createdAt)} · {pk.lastUsedAt ? `最近使用 ${fmtShortTime(pk.lastUsedAt)}` : '从未使用'}
                     </span>
-                    <span className="shrink-0 font-mono text-xs text-neutral-400">…{pk.credentialIdTail}</span>
+                    <span className="shrink-0 font-mono text-xs text-neutral-400">{pk.credentialIdMasked}</span>
                   </div>
                 </div>
                 {pk.disabled ? (
+                  /* 启用：主题渐变小按钮（与全局按钮统一） */
                   <button
                     onClick={() => void enable(pk)}
                     disabled={busy}
-                    className="shrink-0 text-sm text-neutral-500 active:opacity-60 disabled:opacity-40"
+                    className="shrink-0 rounded-lg bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
                   >
                     启用
                   </button>
                 ) : (
+                  /* 禁用：红色填充小按钮（破坏性语义，样式与主题按钮统一） */
                   <button
                     onClick={() => setConfirming(pk)}
                     disabled={busy}
-                    className="shrink-0 text-sm text-red-500 active:opacity-60 disabled:opacity-40"
+                    className="shrink-0 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
                   >
                     禁用
                   </button>

@@ -4,10 +4,14 @@
 // byDay: { 'yyyy-mm-dd': { count, words } }（服务端按笔记时区归日）
 export default function ContributionHeatmap({ byDay }: { byDay: Record<string, { count: number; words: number }> }) {
 
-  // 篇数 → 色阶档位（0=无记录）
-  const levelOf = (n: number): number => (n <= 0 ? 0 : n >= 7 ? 4 : n >= 4 ? 3 : n >= 2 ? 2 : 1)
-  // 4 档紫色（品牌色系），透明度递进
-  const ALPHA = ['0.25', '0.5', '0.75', '1']
+  // 篇数 → 色阶档位（0=无记录）：1篇最浅、逐篇加深；4-5篇→4档；
+  // 6-19篇→5档（最深紫）；≥20篇→6档（近乎黑）
+  const levelOf = (n: number): number =>
+    n <= 0 ? 0 : n === 1 ? 1 : n === 2 ? 2 : n === 3 ? 3 : n <= 5 ? 4 : n <= 19 ? 5 : 6
+  // 5 档紫色（品牌色系），透明度递进（相邻档差 0.2，对比明显）
+  const ALPHA = ['0.15', '0.35', '0.55', '0.75', '1']
+  // 6 档：近乎黑色（深紫黑——深色模式下与背景仍有区分）
+  const NEAR_BLACK = '#3b0764'
 
   // 周一为一周开始（中国习惯）
   const startOfWeek = (d: Date): Date => {
@@ -23,6 +27,7 @@ export default function ContributionHeatmap({ byDay }: { byDay: Record<string, {
   // 配合 ml-auto 右对齐：打开即显示最新日期，零 JS 滚动零闪动。
   // 更早的日记在历史列表可见，不在此图范围内
   const today = new Date()
+  const todayIso = iso(today)
   const halfYearAgo = new Date(today)
   halfYearAgo.setDate(halfYearAgo.getDate() - 25 * 7)
   const start = startOfWeek(halfYearAgo)
@@ -56,6 +61,10 @@ export default function ContributionHeatmap({ byDay }: { byDay: Record<string, {
             return (
               <div key={wi} className="relative flex flex-col gap-[2px]">
                 {week.map((day) => {
+                  // 未来日期（今天之后）：不可见占位——保持列高与月份标签对齐，但不显示格子
+                  if (day > todayIso) {
+                    return <div key={day} className="invisible h-2.5 w-2.5 rounded-[3px]" />
+                  }
                   const n = byDay[day]?.count ?? 0
                   const lvl = levelOf(n)
                   return (
@@ -63,7 +72,9 @@ export default function ContributionHeatmap({ byDay }: { byDay: Record<string, {
                       key={day}
                       title={n > 0 ? `${day} · ${n} 篇` : undefined}
                       className={`h-2.5 w-2.5 rounded-[3px] ${lvl === 0 ? emptyCellClass : ''}`}
-                      style={lvl > 0 ? { background: `rgba(139, 92, 246, ${ALPHA[lvl - 1]})` } : undefined}
+                      style={lvl > 0
+                        ? { background: lvl === 6 ? NEAR_BLACK : `rgba(139, 92, 246, ${ALPHA[lvl - 1]})` }
+                        : undefined}
                     />
                   )
                 })}

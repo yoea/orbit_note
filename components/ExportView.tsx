@@ -18,6 +18,7 @@ interface Entry {
   latitude: number | null
   longitude: number | null
   locationName: string | null
+  weather: string | null
   timezone: string | null
   wordCount: number
 }
@@ -108,11 +109,12 @@ export default function ExportView() {
           e.latitude == null ? '' : String(e.latitude),
           e.longitude == null ? '' : String(e.longitude),
           e.locationName ?? '',
+          e.weather ?? '',
           e.timezone ?? '',
         ].map(csvField))
       }
       // 3. 生成 CSV（带 BOM：Excel 打开中文不乱码）
-      const header = ['id', 'created_at', 'updated_at', 'body', 'word_count', 'latitude', 'longitude', 'location_name', 'timezone'].join(',')
+      const header = ['id', 'created_at', 'updated_at', 'body', 'word_count', 'latitude', 'longitude', 'location_name', 'weather', 'timezone'].join(',')
       const csv = '﻿' + header + '\n' + rows.map((r) => r.join(',')).join('\n')
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
       const url = URL.createObjectURL(blob)
@@ -177,7 +179,7 @@ export default function ExportView() {
             <button
               onClick={() => void verifyPasskey()}
               disabled={busy}
-              className="w-full rounded-2xl bg-neutral-900 py-3.5 font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+              className="w-full rounded-2xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 py-3.5 font-medium text-white disabled:opacity-50"
             >
               {busy ? '正在验证…' : '使用通行密钥验证'}
             </button>
@@ -224,7 +226,7 @@ export default function ExportView() {
           <button
             onClick={() => void exportCsv()}
             disabled={exporting}
-            className="mt-4 w-full rounded-2xl bg-neutral-900 py-4 font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+            className="mt-4 w-full rounded-2xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 py-4 font-medium text-white disabled:opacity-50"
           >
             {exporting ? '解密导出中…' : '下载导出的文件'}
           </button>

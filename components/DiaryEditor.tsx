@@ -8,14 +8,13 @@ import OrbitLogo from './OrbitLogo'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
+import { isLocationEnabled, isPromptEnabled, isStreakEnabled, isWeatherEnabled } from '@/lib/client/prefs'
 import { clientReverseGeocode } from '@/lib/client/geocode'
+import { fetchWeather } from '@/lib/client/weather'
+import { playSaveSound } from '@/lib/client/sound'
+import { PROMPTS, randomPromptIndex, reportPromptShown } from '@/lib/client/prompts'
+import { computeStreak } from '@/lib/client/streak'
 import { clearLocalDraft, fetchServerDraft, loadLocalDraft, pickNewer, pushServerDraft, saveLocalDraft } from '@/lib/client/draft-sync'
-
-// 定位开关（设置页可关，默认开启）：localStorage 存储，关闭后保存不请求定位
-export function isLocationEnabled(): boolean {
-  if (typeof window === 'undefined') return true
-  return localStorage.getItem('qo-location-enabled') !== '0'
-}
 
 export default function DiaryEditor() {
   const [text, setText] = useState('')
@@ -23,6 +22,13 @@ export default function DiaryEditor() {
   const [savedTime, setSavedTime] = useState('')
   const [showConfetti, setShowConfetti] = useState(false)
   const [showDraftBanner, setShowDraftBanner] = useState(false)
+  const [streak, setStreak] = useState(0)
+  const [entryCount, setEntryCount] = useState<number | null>(null) // 总篇数（首进入引导用）
+  // 去年的今天：往年同月日随机一篇（解密后显示标题/预览）
+  const [onThisDay, setOnThisDay] = useState<{ id: string; ciphertext: string; iv: string; createdAt: string } | null>(null)
+  const [onThisDayPreview, setOnThisDayPreview] = useState('')
+  // 每日提示：索引初始 0（确定值，SSR/客户端一致），mount 后随机；行始终存在（占位，不跳动）
+  const [promptIdx, setPromptIdx] = useState<number>(0)
   const textRef = useRef('')
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingDraftRef = useRef<{ ciphertext: string; iv: string } | null>(null)
@@ -118,6 +124,45 @@ export default function DiaryEditor() {
     })()
   }, [])
 
+  // 每日提示：初始随机一条；每次显示（含切换）上报出现次数
+  useEffect(() => {
+    setPromptIdx(randomPromptIndex())
+  }, [])
+  useEffect(() => {
+    reportPromptShown(promptIdx)
+  }, [promptIdx])
+
+  // 连续写作天数 + 总篇数 + 去年的今天（并行获取；失败静默）
+  useEffect(() => {
+    void (async () => {
+      try {
+        const [statsRes, otdRes] = await Promise.all([
+          fetch('/api/diary/stats'),
+          fetch('/api/diary/on-this-day'),
+        ])
+        if (statsRes.ok) {
+          const data = await statsRes.json() as { count: number; byDay: Record<string, { count: number; words: number }> }
+          setEntryCount(data.count)
+          setStreak(computeStreak(data.byDay ?? {}, new Date()))
+        }
+        if (otdRes.ok) {
+          const data = await otdRes.json() as { entry: { id: string; ciphertext: string; iv: string; createdAt: string } | null }
+          if (data.entry) {
+            setOnThisDay(data.entry)
+            // 解密预览（首行标题）
+            const dek = getDek()
+            if (dek) {
+              try {
+                const plain = await decryptText(dek, data.entry.ciphertext, data.entry.iv)
+                setOnThisDayPreview(plain.split('\n').find((l) => l.trim()) ?? '')
+              } catch { /* 解密失败：卡片只显示日期 */ }
+            }
+          }
+        }
+      } catch { /* 静默 */ }
+    })()
+  }, [])
+
   // 防抖保存：输入 1000ms 后冲刷草稿（本地 IndexedDB 优先，服务器同步尽力而为）
   function onDraftChange(text: string) {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -173,21 +218,28 @@ export default function DiaryEditor() {
         }),
       })
       if (!res.ok) throw new Error('save failed')
-      // 保存成功后异步反查地点名（不阻塞保存反馈）：客户端直调 BigDataCloud → PATCH 补写。
-      // 失败静默——详情页仍显示坐标，点击坐标可再次查询
+      // 保存成功后异步补写元数据（不阻塞保存反馈）：地点名反查 + 实时天气并行 → 一次 PATCH。
+      // 注意：POST 响应结构是 { entry }，必须解构 entry.id（此前误解构为 { id } 导致 PATCH 从未执行）
+      // 失败静默——详情页仍显示坐标，点击坐标可再次查询地点
       if (loc?.latitude != null && loc.longitude != null) {
-        const { id } = await res.json() as { id?: string }
+        const { entry: savedEntry } = await res.json() as { entry?: { id?: string } }
         void (async () => {
           try {
-            const name = await clientReverseGeocode(loc.latitude!, loc.longitude!)
-            if (name && id) {
-              await fetch(`/api/diary/${id}`, {
+            const [name, weather] = await Promise.all([
+              clientReverseGeocode(loc.latitude!, loc.longitude!),
+              isWeatherEnabled() ? fetchWeather(loc.latitude!, loc.longitude!) : Promise.resolve(null),
+            ])
+            const patch: Record<string, unknown> = {}
+            if (name) patch.locationName = name
+            if (weather) patch.weather = weather
+            if (savedEntry?.id && Object.keys(patch).length > 0) {
+              await fetch(`/api/diary/${savedEntry.id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ locationName: name }),
+                body: JSON.stringify(patch),
               })
             }
-          } catch { /* 反查失败静默 */ }
+          } catch { /* 元数据补写失败静默 */ }
         })()
       }
       // 保存成功：取消未决防抖并作废进行中的冲刷，防止草稿"复活"
@@ -198,6 +250,7 @@ export default function DiaryEditor() {
       const now = new Date()
       setSavedTime(now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }))
       setStatus('saved')
+      playSaveSound() // 清脆保存音效（Web Audio 合成）
       setShowConfetti(true) // 游戏获奖式庆祝反馈
       setText(''); textRef.current = ''
       if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
@@ -224,8 +277,29 @@ export default function DiaryEditor() {
             <Link href="/settings" className="text-sm text-neutral-400">设置</Link>
           </nav>
         </div>
-        <p className="mt-1 text-sm text-neutral-400">{today}</p>
+        <div className="mt-1 flex items-center justify-between text-sm text-neutral-400">
+          <span>{today}</span>
+          {/* 连续写作天数（设置页可关；今天未写但昨天有记录不中断）。
+              invisible 占位：stats 拉取前后该元素始终存在，避免内容出现引起行跳动 */}
+          <span className={`text-xs ${streak > 0 && isStreakEnabled() ? '' : 'invisible'}`}>
+            🔥 连续写了 {Math.max(streak, 1)} 天
+          </span>
+        </div>
       </header>
+      {/* 去年的今天：往年同月日的随机一篇，点击查看详情 */}
+      {onThisDay && (
+        <Link
+          href={`/entry/${onThisDay.id}`}
+          className="mb-3 block rounded-xl border border-neutral-100 bg-neutral-50/60 px-4 py-3 active:opacity-60 dark:border-neutral-800 dark:bg-neutral-900/40"
+        >
+          <p className="text-xs font-medium text-neutral-400">
+            去年的今天 · {new Date(onThisDay.createdAt).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
+          </p>
+          {onThisDayPreview && (
+            <p className="mt-1 line-clamp-1 text-sm text-neutral-700 dark:text-neutral-300">{onThisDayPreview}</p>
+          )}
+        </Link>
+      )}
       {showDraftBanner && (
         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950">
           <p className="text-sm font-medium text-amber-800 dark:text-amber-200">发现上次未完成的日记</p>
@@ -235,10 +309,20 @@ export default function DiaryEditor() {
           </div>
         </div>
       )}
+      {/* 每日提示：随机一句，点击换一条（写作灵感） */}
+      {isPromptEnabled() && (
+        <button
+          onClick={() => setPromptIdx(randomPromptIndex(promptIdx))}
+          className="mb-2 flex items-start gap-1.5 text-left text-xs leading-relaxed text-neutral-400/70 active:opacity-60"
+        >
+          <span className="shrink-0">💭</span>
+          <span>{PROMPTS[promptIdx]}</span>
+        </button>
+      )}
       <AutoTextarea
         value={text}
         onChange={(v) => { setText(v); textRef.current = v; onDraftChange(v) }}
-        placeholder="写下此刻……"
+        placeholder={entryCount === 0 ? '写下第一篇日记吧' : '在此处输入内容...'}
         autoFocus
         disabled={status === 'saving'}
       />
@@ -252,13 +336,13 @@ export default function DiaryEditor() {
             <span className="animate-pop inline-block text-sm font-semibold text-emerald-500">✓ 已保存 · {savedTime}</span>
           )}
           {status === 'error' && '保存失败，请重试'}
-          {status === 'idle' && `共 ${text.trim().length} 字`}
+          {status === 'idle' && text.trim().length > 0 && `共 ${text.trim().length} 字`}
         </p>
         <button
           onClick={() => void save()}
           disabled={!text.trim() || status === 'saving'}
           className={`w-full rounded-2xl py-3.5 font-medium text-white transition-colors active:scale-[0.99] disabled:opacity-30 ${
-            status === 'saved' ? 'bg-emerald-500 dark:bg-emerald-500' : 'bg-neutral-900 dark:bg-neutral-100 dark:text-neutral-900'
+            status === 'saved' ? 'bg-emerald-500 dark:bg-emerald-500' : 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 text-white'
           }`}
         >
           {status === 'saving' ? '保存中…' : status === 'saved' ? '已保存 ✓' : '保存'}

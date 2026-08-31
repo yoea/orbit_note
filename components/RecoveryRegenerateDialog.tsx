@@ -82,7 +82,7 @@ export default function RecoveryRegenerateDialog({ onClose }: { onClose: () => v
               <button
                 onClick={() => void verifyAndProceed()}
                 disabled={busy || !currentKey.trim()}
-                className="mt-3 w-full rounded-xl bg-neutral-900 py-3 font-medium text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+                className="mt-3 w-full rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 py-3 font-medium text-white disabled:opacity-50"
               >
                 {busy ? '验证中…' : '验证'}
               </button>

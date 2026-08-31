@@ -44,8 +44,10 @@ export const diaryEntries = pgTable('diary_entries', {
   latitude: doublePrecision('latitude'),
   longitude: doublePrecision('longitude'),
   locationAccuracy: doublePrecision('location_accuracy'),
-  // 保存时由经纬度反查的地点名（OpenStreetMap Nominatim，失败为 null 则显示原坐标）
+  // 保存时由经纬度反查的地点名（BigDataCloud，失败为 null 则显示原坐标）
   locationName: text('location_name'),
+  // 保存时和风天气获取的实时天气文本（如"晴 25°C"，失败为 null 不显示）
+  weather: text('weather'),
   timezone: text('timezone'),
   // 解密时计算的字数（列表/统计无需解密即可显示）
   wordCount: integer('word_count').notNull().default(0),
@@ -55,6 +57,13 @@ export const diaryEntries = pgTable('diary_entries', {
   // 列表 API 按 created_at desc 排序
   index('diary_entries_created_at_idx').on(t.createdAt),
 ])
+
+// 每日提示显示统计（后续按出现频率展示用）
+export const promptStats = pgTable('prompt_stats', {
+  promptId: text('prompt_id').primaryKey(), // 提示索引 "p_0".."p_99"
+  showCount: integer('show_count').notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
 
 // 单行草稿（单用户）
 export const drafts = pgTable('drafts', {
