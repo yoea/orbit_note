@@ -10,7 +10,7 @@ export default function AppFooter() {
   if (pathname === '/history') return null
   return (
     <footer className="mt-auto border-t border-neutral-100 py-2 pb-safe text-center text-[10px] text-neutral-300 dark:border-neutral-800 dark:text-neutral-600" aria-hidden>
-      Orbit {process.env.NEXT_PUBLIC_VERSION ?? 'dev'} · © 2026 Orbit
+      Orbit {process.env.NEXT_PUBLIC_VERSION ?? 'dev'} · © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'}
     </footer>
   )
 }

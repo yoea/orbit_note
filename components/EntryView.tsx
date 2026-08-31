@@ -210,11 +210,17 @@ export default function EntryView({ id }: { id: string }) {
         <div className="mt-1">
           {/* 定位信息（左）+ 实时天气（右，同行两端对齐） */}
           <div className="flex items-baseline justify-between gap-2">
-            <span className="text-xs tabular-nums text-neutral-400">
+            {/* 点击复制精确坐标（有地址时复制坐标；无地址时同时触发地点补查） */}
+            <button
+              onClick={() => void copyCoords()}
+              className="text-xs tabular-nums text-neutral-400 active:opacity-60"
+            >
               <span className="mr-0.5 text-[10px]">📍</span>
-              {entry.locationName ? `${entry.locationName} · ${entry.latitude.toFixed(4)}, ${entry.longitude.toFixed(4)}` : `${entry.latitude.toFixed(6)}, ${entry.longitude.toFixed(6)}`}
-              {entry.locationAccuracy != null && ` · ±${Math.round(entry.locationAccuracy)} 米`}
-            </span>
+              {/* 有地址信息只显示地址；没有则只显示经纬度（不显示精度） */}
+              {entry.locationName ?? `${entry.latitude.toFixed(6)}, ${entry.longitude.toFixed(6)}`}
+              {/* 已复制提示：跟在地点名/坐标后面 */}
+              {coordsCopied && <span className="ml-1.5 text-[10px] font-medium text-emerald-500">已复制坐标</span>}
+            </button>
             {/* 保存时记录的实时天气（有则显示，右对齐） */}
             {entry.weather && (
               <span className="shrink-0 text-xs text-neutral-400">{weatherEmoji(entry.weather)}{entry.weather}</span>
@@ -225,7 +231,6 @@ export default function EntryView({ id }: { id: string }) {
               移除定位信息
             </button>
           )}
-          {coordsCopied && <p className="mt-0.5 text-xs text-neutral-400">已复制坐标</p>}
         </div>
       )}
       {removeLocation && <p className="mt-1 text-xs text-neutral-400">保存后坐标与地点名将被移除</p>}

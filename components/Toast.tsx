@@ -6,7 +6,7 @@ export default function Toast({ message }: { message: string }) {
   return (
     <div
       role="status"
-      className="animate-toast fixed left-1/2 top-10 z-[60] -translate-x-1/2 whitespace-nowrap rounded-full bg-neutral-800/90 px-4 py-2 text-sm font-medium text-white shadow-lg dark:bg-neutral-100/90 dark:text-neutral-900"
+      className="animate-toast fixed left-1/2 top-10 z-[60] -translate-x-1/2 whitespace-nowrap rounded-full bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-4 py-2 text-sm font-medium text-white shadow-lg"
     >
       {message}
     </div>

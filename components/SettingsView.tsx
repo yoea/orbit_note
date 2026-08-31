@@ -8,7 +8,7 @@ import AboutDialog from '@/components/AboutDialog'
 import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
 import RecoveryRegenerateDialog from '@/components/RecoveryRegenerateDialog'
 import { clearDek } from '@/lib/client/session'
-import { PROMPT_KEY, STREAK_KEY, WEATHER_KEY } from '@/lib/client/prefs'
+import { OTD_KEY, PROMPT_KEY, STREAK_KEY, WEATHER_KEY } from '@/lib/client/prefs'
 
 // 定位开关（与 DiaryEditor 的 isLocationEnabled 共用 localStorage key）
 const LOCATION_KEY = 'qo-location-enabled'
@@ -20,6 +20,7 @@ export default function SettingsView() {
   const [showStreak, setShowStreak] = useState(true)
   const [showPrompt, setShowPrompt] = useState(true)
   const [saveWeather, setSaveWeather] = useState(true)
+  const [showOtd, setShowOtd] = useState(true)
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
   const [showPasskeys, setShowPasskeys] = useState(false)
@@ -51,6 +52,7 @@ export default function SettingsView() {
         setShowStreak(localStorage.getItem(STREAK_KEY) !== '0')
         setShowPrompt(localStorage.getItem(PROMPT_KEY) !== '0')
         setSaveWeather(localStorage.getItem(WEATHER_KEY) !== '0')
+        setShowOtd(localStorage.getItem(OTD_KEY) !== '0')
       } catch { /* localStorage 不可用则保持默认 */ }
     }, 0)
     return () => clearTimeout(t)
@@ -85,6 +87,14 @@ export default function SettingsView() {
     setSaveWeather(next)
     try {
       localStorage.setItem(WEATHER_KEY, next ? '1' : '0')
+    } catch { /* 忽略存储失败（隐私模式等） */ }
+  }
+
+  function toggleOtd() {
+    const next = !showOtd
+    setShowOtd(next)
+    try {
+      localStorage.setItem(OTD_KEY, next ? '1' : '0')
     } catch { /* 忽略存储失败（隐私模式等） */ }
   }
 
@@ -186,6 +196,20 @@ export default function SettingsView() {
             className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${showPrompt ? 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500' : 'bg-neutral-300 dark:bg-neutral-600'}`}
           >
             <span className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${showPrompt ? 'translate-x-5' : ''}`} />
+          </button>
+        </li>
+        <li className="flex items-center justify-between px-4 py-3.5">
+          <div>
+            <p className="text-neutral-800 dark:text-neutral-200">显示去年的今天</p>
+            <p className="mt-0.5 text-xs text-neutral-400">首页顶部往年今日回忆卡片</p>
+          </div>
+          <button
+            onClick={toggleOtd}
+            role="switch"
+            aria-checked={showOtd}
+            className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${showOtd ? 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500' : 'bg-neutral-300 dark:bg-neutral-600'}`}
+          >
+            <span className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${showOtd ? 'translate-x-5' : ''}`} />
           </button>
         </li>
       </ul>

@@ -57,7 +57,6 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
               </li>
             ))}
           </ul>
-          <p className="mt-4 text-center text-[10px] text-neutral-400">© 2026 Orbit</p>
         </div>
         <div className="border-t border-neutral-200 p-3 dark:border-neutral-700">
           <button

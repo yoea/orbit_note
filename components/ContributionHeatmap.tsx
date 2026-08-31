@@ -4,13 +4,13 @@
 // byDay: { 'yyyy-mm-dd': { count, words } }（服务端按笔记时区归日）
 export default function ContributionHeatmap({ byDay }: { byDay: Record<string, { count: number; words: number }> }) {
 
-  // 篇数 → 色阶档位（0=无记录）：1篇最浅、逐篇加深；4-5篇→4档；
-  // 6-19篇→5档（最深紫）；≥20篇→6档（近乎黑）
+  // 篇数 → 色阶档位（0=无记录）：1-16 篇每篇一档（16 级渐变，明显变色）；
+  // 17-19篇→第5档（最深紫）；≥20篇→第6档（近乎黑）
   const levelOf = (n: number): number =>
-    n <= 0 ? 0 : n === 1 ? 1 : n === 2 ? 2 : n === 3 ? 3 : n <= 5 ? 4 : n <= 19 ? 5 : 6
-  // 5 档紫色（品牌色系），透明度递进（相邻档差 0.2，对比明显）
-  const ALPHA = ['0.15', '0.35', '0.55', '0.75', '1']
-  // 6 档：近乎黑色（深紫黑——深色模式下与背景仍有区分）
+    n <= 0 ? 0 : n >= 20 ? 6 : n <= 16 ? n : 5
+  // 16 档紫色（品牌色系）：alpha 0.1 → 0.95 线性递进，相邻档差约 0.057（每篇一档明显可辨）
+  const ALPHA = Array.from({ length: 16 }, (_, i) => (0.1 + (i * 0.85) / 15).toFixed(2))
+  // 5 档（17-19 篇）：最深紫；6 档（≥20 篇）：近乎黑（深紫黑，深色模式下仍可区分）
   const NEAR_BLACK = '#3b0764'
 
   // 周一为一周开始（中国习惯）
@@ -73,7 +73,7 @@ export default function ContributionHeatmap({ byDay }: { byDay: Record<string, {
                       title={n > 0 ? `${day} · ${n} 篇` : undefined}
                       className={`h-2.5 w-2.5 rounded-[3px] ${lvl === 0 ? emptyCellClass : ''}`}
                       style={lvl > 0
-                        ? { background: lvl === 6 ? NEAR_BLACK : `rgba(139, 92, 246, ${ALPHA[lvl - 1]})` }
+                        ? { background: lvl === 6 ? NEAR_BLACK : `rgba(139, 92, 246, ${lvl === 5 ? '1' : ALPHA[lvl - 1]})` }
                         : undefined}
                     />
                   )

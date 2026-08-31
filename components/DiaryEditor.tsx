@@ -8,7 +8,7 @@ import OrbitLogo from './OrbitLogo'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
-import { isLocationEnabled, isPromptEnabled, isStreakEnabled, isWeatherEnabled } from '@/lib/client/prefs'
+import { isLocationEnabled, isOnThisDayEnabled, isPromptEnabled, isStreakEnabled, isWeatherEnabled } from '@/lib/client/prefs'
 import { clientReverseGeocode } from '@/lib/client/geocode'
 import { fetchWeather } from '@/lib/client/weather'
 import { playSaveSound } from '@/lib/client/sound'
@@ -27,6 +27,9 @@ export default function DiaryEditor() {
   // 去年的今天：往年同月日随机一篇（解密后显示标题/预览）
   const [onThisDay, setOnThisDay] = useState<{ id: string; ciphertext: string; iv: string; createdAt: string } | null>(null)
   const [onThisDayPreview, setOnThisDayPreview] = useState('')
+  // 今天是否已隐藏去年今日（localStorage 按日期键控：qo-otd-hidden-YYYY-MM-DD = '1'。
+  // 按日期而非条目 id 隐藏——on-this-day 随机取篇，按 id 隐藏切回后可能随机到另一条重新显示）
+  const [otdHidden, setOtdHidden] = useState(false)
   // 每日提示：索引初始 0（确定值，SSR/客户端一致），mount 后随机；行始终存在（占位，不跳动）
   const [promptIdx, setPromptIdx] = useState<number>(0)
   const textRef = useRef('')
@@ -122,6 +125,15 @@ export default function DiaryEditor() {
         }
       } catch { /* 草稿加载失败不阻塞编辑 */ }
     })()
+  }, [])
+
+  // 去年今日隐藏状态：今天是否已隐藏（同步快，先于异步 fetch 完成）
+  useEffect(() => {
+    const d = new Date()
+    const key = `qo-otd-hidden-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    try {
+      setOtdHidden(localStorage.getItem(key) === '1')
+    } catch { /* 忽略 */ }
   }, [])
 
   // 每日提示：初始随机一条；每次显示（含切换）上报出现次数
@@ -286,19 +298,30 @@ export default function DiaryEditor() {
           </span>
         </div>
       </header>
-      {/* 去年的今天：往年同月日的随机一篇，点击查看详情 */}
-      {onThisDay && (
-        <Link
-          href={`/entry/${onThisDay.id}`}
-          className="mb-3 block rounded-xl border border-neutral-100 bg-neutral-50/60 px-4 py-3 active:opacity-60 dark:border-neutral-800 dark:bg-neutral-900/40"
-        >
-          <p className="text-xs font-medium text-neutral-400">
-            去年的今天 · {new Date(onThisDay.createdAt).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
-          </p>
-          {onThisDayPreview && (
-            <p className="mt-1 line-clamp-1 text-sm text-neutral-700 dark:text-neutral-300">{onThisDayPreview}</p>
-          )}
-        </Link>
+      {/* 去年的今天：往年同月日的随机一篇，点击查看详情；右侧 ✕ 隐藏（今天不再显示） */}
+      {isOnThisDayEnabled() && !otdHidden && onThisDay && (
+        <div className="mb-3 flex items-start gap-2 rounded-xl border border-neutral-100 bg-neutral-50/60 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/40">
+          <Link href={`/entry/${onThisDay.id}`} className="min-w-0 flex-1 active:opacity-60">
+            <p className="text-xs font-medium text-neutral-400">
+              去年的今天 · {new Date(onThisDay.createdAt).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
+            </p>
+            {onThisDayPreview && (
+              <p className="mt-1 line-clamp-1 text-sm text-neutral-700 dark:text-neutral-300">{onThisDayPreview}</p>
+            )}
+          </Link>
+          <button
+            onClick={() => {
+              setOtdHidden(true)
+              const d = new Date()
+              const key = `qo-otd-hidden-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+              try { localStorage.setItem(key, '1') } catch { /* 忽略 */ }
+            }}
+            aria-label="隐藏"
+            className="shrink-0 px-0.5 text-sm leading-5 text-neutral-300 active:opacity-60 dark:text-neutral-600"
+          >
+            ✕
+          </button>
+        </div>
       )}
       {showDraftBanner && (
         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950">
