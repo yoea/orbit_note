@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { USER_NAME_MAX, generateDefaultName, saveUserName } from '@/lib/client/profile'
+import { formatYmd, useDiaryOverview } from '@/lib/client/diary-overview'
+import { useProfile } from '@/lib/client/use-user-name'
 
 // 改名弹窗（设置页）。iOS Alert 风格，与 ConfirmDialog 保持一致。
 // 名字由 DEK 加密后存服务器——本组件只负责收集与校验。
@@ -13,6 +15,11 @@ export default function NameEditDialog({ current, onSaved, onClose }: {
   const [value, setValue] = useState(current)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 「始于」日期：优先服务端记录的注册时间；老用户（该字段为空）回退第一篇日记的日期。
+  // 卡片那行小字放不下它，故移到这里展示。
+  const { createdAt } = useProfile()
+  const overview = useDiaryOverview()
+  const startedAt = createdAt ?? overview?.firstDay ?? null
 
   const trimmed = value.trim()
   const canSave = trimmed.length > 0 && trimmed !== current && !busy
@@ -42,6 +49,9 @@ export default function NameEditDialog({ current, onSaved, onClose }: {
           <p className="mt-2 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
             名字会加密后同步到你的其他设备，服务器看不到明文
           </p>
+          {startedAt && (
+            <p className="mt-1.5 text-xs tabular-nums text-neutral-400">始于 {formatYmd(startedAt)}</p>
+          )}
           <input
             value={value}
             onChange={(e) => { setValue(e.target.value); setError(null) }}

@@ -91,7 +91,7 @@ export default function PrefsView() {
         <li className="flex items-center justify-between px-4 py-3.5">
           <div>
             <p className="text-neutral-800 dark:text-neutral-200">自动补全地点名</p>
-            <p className="mt-0.5 text-xs text-neutral-400">关闭后只显示坐标</p>
+            <p className="mt-0.5 text-xs text-neutral-400">关闭后不会自动把坐标转为地名</p>
           </div>
           <PrefSwitch enabled={autoPlaceName} ready={prefsReady} onToggle={() => toggle(GEOCODE_KEY, autoPlaceName, setAutoPlaceName)} />
         </li>

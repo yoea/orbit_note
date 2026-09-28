@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import OrbitLogo from '@/components/OrbitLogo'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import AboutDialog from '@/components/AboutDialog'
 import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
@@ -134,10 +133,11 @@ export default function SettingsView() {
           </button>
         </li>
       </ul>
-      {/* 底部品牌收尾 */}
-      <div className="flex justify-center pb-8 pt-6">
-        <OrbitLogo />
-      </div>
+      {/* 底部留白：避免最后一组卡片紧贴页脚。
+          这里原先放了一个 Orbit 字标，但它当初的作用是给「关于 Orbit」留出与页脚的间隔——
+          该行已移入「通用」分组，而页脚本身就渲染「Orbit v… · © 2026 Orbit」，
+          再放一个字标既重复、又正好压在页脚上方，故移除 */}
+      <div className="h-10" aria-hidden />
       {confirmLogout && (
         <ConfirmDialog
           title={userName ? `确定退出 ${userName} 的登录吗？` : '确定退出登录吗？'}
