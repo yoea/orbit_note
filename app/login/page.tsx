@@ -106,8 +106,15 @@ export default function LoginPage() {
     <main className="flex min-h-0 flex-1 flex-col px-6 pb-safe">
       {/* m-auto：LOGO + 按钮整体在容器中完全垂直居中（比 justify-center 更稳健） */}
       <div className="m-auto flex w-full max-w-xs flex-col items-center gap-8">
-        {/* 品牌 LOGO */}
-        <OrbitLogo size="lg" />
+        {/* 品牌标识：LOGO + 一句话说明。单独成块是为了让 tagline 与 LOGO 用 12px 间距，
+            而整块与下方按钮区仍保持父级 gap-8 的 32px 间距；文字水平居中靠
+            items-center + text-center 双重保证（宽度随内容收缩也不会偏） */}
+        <div className="flex flex-col items-center gap-3">
+          <OrbitLogo size="lg" />
+          <p className="text-center text-xs tracking-wide text-neutral-500 dark:text-neutral-400">
+            端到端加密的私人日记。
+          </p>
+        </div>
       {mode === 'passkey' ? (
         <div className="w-full max-w-xs">
           <button

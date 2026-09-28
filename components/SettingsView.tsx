@@ -108,7 +108,7 @@ export default function SettingsView() {
           <button onClick={() => setShowAbout(true)} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">关于 Orbit</p>
-              <p className="mt-0.5 text-xs text-neutral-400">端到端加密的私人日记，只为一个人服务</p>
+              <p className="mt-0.5 text-xs text-neutral-400">端到端加密的私人日记</p>
             </div>
             <span className="text-lg text-neutral-300">›</span>
           </button>

@@ -36,7 +36,7 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
             </a>
           </div>
           <p className="mt-3 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
-            端到端加密的私人日记，只为一个人服务。
+            端到端加密的私人日记。
           </p>
           <ul className="mt-4 divide-y divide-neutral-100 dark:divide-neutral-800">
             {[
