@@ -29,9 +29,6 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
               </svg>
               <p className="text-xs tabular-nums text-neutral-400">
                 版本 {process.env.NEXT_PUBLIC_VERSION ?? 'dev'}
-                {process.env.NEXT_PUBLIC_COMMIT_ID && process.env.NEXT_PUBLIC_COMMIT_ID !== 'unknown' && (
-                  <span> · {process.env.NEXT_PUBLIC_COMMIT_ID}</span>
-                )}
               </p>
             </a>
           </div>

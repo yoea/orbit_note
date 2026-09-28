@@ -18,12 +18,14 @@ export const LOGIN_ERRORS: Record<string, string> = {
   too_many_requests: '操作太频繁，请稍后再试',
 }
 
+// credentialCount / prfWrappers / hasRecoveryWrapper 仅在已认证时由服务端返回
+// （未认证响应不含这三个字段，见 /api/auth/session）；客户端当前无人读取，留作诊断。
 export interface SessionState {
   initialized: boolean
   authenticated: boolean
-  credentialCount: number
-  prfWrappers: number
-  hasRecoveryWrapper: boolean
+  credentialCount?: number
+  prfWrappers?: number
+  hasRecoveryWrapper?: boolean
 }
 
 export interface LoginResult {
