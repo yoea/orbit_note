@@ -145,7 +145,8 @@ export REMOTE_UPDATE=/path/to/update.sh # 服务器端 update.sh 绝对路径
 bash scripts/deploy.sh
 ```
 
-流程：**生产库 schema 前置检查** → 同步代码（构建目录常驻，复用 node_modules 与构建缓存）→ 注入版本号（git describe + 构建时间戳）→ 本地构建（lockfile 未变时跳过 `npm ci`）→ 打包（**只含 `.next`/`public`/配置文件，不含 node_modules**）→ scp 上传（约 10MB）→ 服务器清 `.next` + 解压 + 依赖检查（lockfile 变化才 `npm ci --omit=dev`）+ `pm2 restart` → HTTP 轮询验证。
+流程：**生产库 schema 前置检查** → 同步代码（构建目录常驻，复用 node_modules 与构建缓存）→ 注入版本号（git describe + 构建时间戳）→ 本地构建（lockfile 未变时跳过 `npm ci`）→ 打包（**只含 `.next`/`public`/配置文件，不含 node_modules**）→ scp 上传（约 6MB）→ 服务器清 `.next` + 解压 + 依赖检查（lockfile 变化才 `npm ci --omit=dev`）+ `pm2 restart` → HTTP 轮询验证。
+稳态全程约 45 秒（原来约 2 分 48 秒）；脚本每步都会打印耗时，瓶颈可直接从输出定位。
 
 > ⚠️ **迁移必须先在服务器执行**。`deploy.sh` / `update.sh` 都不跑迁移，所以 deploy 的第 1 步会对照 `drizzle/*.sql` 检查生产库 schema（表与列），**发现落后即中止**，不会白跑一次构建。
 > 紧急情况下可用 `SKIP_SCHEMA_CHECK=1 bash scripts/deploy.sh` 跳过——但只在明确知道为什么要跳过时用。
@@ -182,7 +183,8 @@ psql "$DATABASE_URL" -f drizzle/0007_flippant_beast.sql
 
 > 登录后进入的三块内容（写 / 日记 / 设置）通过**底部导航栏**切换，当前所在 tab 高亮；
 > 「写」与「设置」是 tab 目的地，页头不再放返回箭头。详情页（`/entry/*`）与
-> 子页面（`/settings/prefs` 等）保留页头返回箭头。
+> 子页面（`/settings/export`、`/settings/passkey` 等）保留页头返回箭头。
+> 偏好设置自 v1.15.2 起是弹窗而非独立路由（交互同「关于」），故无返回箭头。
 
 1. **首次访问** → 自动进入初始化：创建通行密钥（生物识别）→ 保存恢复密钥 → 完成
 2. **写日记**（「写」）→ 输入即自动保存草稿（关闭页面不丢）→ 点「保存」落库（可记录位置）
@@ -197,7 +199,7 @@ psql "$DATABASE_URL" -f drizzle/0007_flippant_beast.sql
    - 通用：「偏好设置」入口 + 「关于 Orbit」
    - 数据：导出笔记（验证身份后下载 CSV，含全部字段：正文、坐标、地点名、天气、时区等）
    - 退出登录 / 删除所有数据（需输入「永久删除」+ 生物识别）
-5. **偏好设置**（`/settings/prefs`，多端同步）→ 保存时记录位置 / 保存时记录天气 / 自动补全地点名 / 显示连续写作天数 / 显示每日提示 / 显示去年的今天
+5. **偏好设置**（设置页内弹窗，多端同步）→ 保存时记录位置 / 保存时记录天气 / 自动补全地点名 / 显示连续写作天数 / 显示每日提示 / 显示去年的今天
 
 ## 项目结构
 

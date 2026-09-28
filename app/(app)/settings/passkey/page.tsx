@@ -81,7 +81,7 @@ function AddPasskeyInner() {
   return (
     <main className="flex flex-1 min-h-0 flex-col px-6 safe-pt">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
-      <header className="relative flex items-center justify-between py-3">
+      <header className="page-header relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
         <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹

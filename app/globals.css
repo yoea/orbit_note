@@ -33,6 +33,18 @@ html {
 .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
 .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
 
+/* 页面标题栏高度（单一来源，勿在组件里各写一遍）。
+   为什么需要它：页头是 flex + items-center，而 <h1> 用绝对定位做水平居中。
+   按 CSS Flexbox 规范，绝对定位子元素的静态位置按「它是唯一的 flex item」计算，
+   即它会被 align-items 垂直居中——于是标题的纵向位置 = 页头内容盒高度的一半，
+   而内容盒高度由右侧控件撑开：/diary 有 20px 搜索图标（页头 44px）、
+   /settings 只有 0 高的空占位（页头仅 24px，标题顶到 viewport 边缘）、
+   子页返回箭头 text-2xl/3xl（48~54px）。三种高度 ⇒ 标题三个位置。
+   固定 2.75rem(44px) 后所有页面标题落在同一条基准线（取 /diary 的高度）。
+   注意：这是 unlayered 类，会覆盖 Tailwind 的同属性工具类（如 h-12）；别在元素上再加高度类。
+   它只设 height，与 py-3 的 padding 不冲突（box-sizing: border-box，内容盒 20px）。 */
+.page-header { height: 2.75rem; }
+
 /* 保存成功的庆祝粒子（游戏获奖感）：向上飘散 + 旋转 + 淡出 */
 @keyframes confetti-fall {
   0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }

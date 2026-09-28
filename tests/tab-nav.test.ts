@@ -13,13 +13,13 @@ describe('activeTab', () => {
   })
 
   it('根路径精确匹配，不吞掉其他路径', () => {
-    for (const p of ['/diary', '/settings', '/settings/prefs', '/entry/abc']) {
+    for (const p of ['/diary', '/settings', '/settings/export', '/entry/abc']) {
       expect(activeTab(p)).not.toBe('/')
     }
   })
 
   it('子路径归各自父 tab', () => {
-    expect(activeTab('/settings/prefs')).toBe('/settings')
+    // 注意：偏好设置已改为弹窗（无 /settings/prefs 路由），子页只剩 export / passkey
     expect(activeTab('/settings/export')).toBe('/settings')
     expect(activeTab('/settings/passkey')).toBe('/settings')
     expect(activeTab('/diary/anything')).toBe('/diary')
@@ -37,7 +37,7 @@ describe('activeTab', () => {
   })
 
   it('返回值必然是 TAB_HREFS 之一或 null', () => {
-    const all = ['/', '/diary', '/settings', '/settings/prefs', '/entry/x', '/login', '/setup']
+    const all = ['/', '/diary', '/settings', '/settings/export', '/entry/x', '/login', '/setup']
     for (const p of all) {
       const t = activeTab(p)
       if (t !== null) expect(TAB_HREFS).toContain(t)

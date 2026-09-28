@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import AboutDialog from '@/components/AboutDialog'
+import PrefsDialog from '@/components/PrefsDialog'
 import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
 import RecoveryRegenerateDialog from '@/components/RecoveryRegenerateDialog'
 import NameEditDialog from '@/components/NameEditDialog'
@@ -20,6 +21,7 @@ export default function SettingsView() {
   const router = useRouter()
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
+  const [showPrefs, setShowPrefs] = useState(false)
   const [showPasskeys, setShowPasskeys] = useState(false)
   const [showRecovery, setShowRecovery] = useState(false)
   const [showNameEdit, setShowNameEdit] = useState(false)
@@ -57,7 +59,7 @@ export default function SettingsView() {
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       {/* 本页是 tab 目的地之一，不再放返回箭头（回首页由 TabBar 的「写」承担）；
           标题绝对居中，这里不需要右侧控件，故 justify-end + 空占位保持行高 */}
-      <header className="relative flex items-center justify-end py-3">
+      <header className="page-header relative flex items-center justify-end py-3">
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">设置</h1>
         <span className="w-8" aria-hidden />
       </header>
@@ -92,13 +94,15 @@ export default function SettingsView() {
       <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">通用</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
-          <Link href="/settings/prefs" className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
+          {/* 偏好设置：弹窗（原先是跳转独立页 /settings/prefs——那组开关只占约 40% 页高，
+              跳页多一次导航与返回，改为弹窗后设置页一屏容纳） */}
+          <button onClick={() => setShowPrefs(true)} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">偏好设置</p>
               <p className="mt-0.5 text-xs text-neutral-400">位置、天气、地点名与各项显示开关</p>
             </div>
             <span className="text-lg text-neutral-300">›</span>
-          </Link>
+          </button>
         </li>
         <li>
           <button onClick={() => setShowAbout(true)} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
@@ -147,6 +151,7 @@ export default function SettingsView() {
         />
       )}
       {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
+      {showPrefs && <PrefsDialog onClose={() => setShowPrefs(false)} />}
       {showPasskeys && (
         <PasskeysDialog initialData={passkeysData} onClose={() => setShowPasskeys(false)} />
       )}

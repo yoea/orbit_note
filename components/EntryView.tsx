@@ -320,7 +320,7 @@ export default function EntryView({ id }: { id: string }) {
   return (
     <main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-y-auto px-5 safe-pt">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
-      <header className="relative flex items-center justify-between py-3">
+      <header className="page-header relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中。
             字号：‹ 为半角字符视觉偏小（text-3xl），＋ 为全角字符视觉偏大（text-xl）——视觉平衡 */}
         <Link href="/diary" aria-label="返回" scroll={false} className="-ml-1 px-1 text-3xl leading-none text-neutral-400">

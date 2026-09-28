@@ -254,7 +254,7 @@ export default function DiaryListView() {
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       {/* 本页是 tab 目的地之一，不再放返回箭头（回首页由 TabBar 的「写」承担）；
           标题用绝对定位居中，右侧保留搜索入口，故用 justify-end */}
-      <header className="relative flex items-center justify-end py-3">
+      <header className="page-header relative flex items-center justify-end py-3">
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">全部日记</h1>
         {/* 搜索：点击后弹出全屏搜索层（正文加密，检索只能在客户端解密后完成） */}
         <button onClick={() => setSearchOpen(true)} aria-label="搜索日记" className="-mr-1 px-1 text-neutral-400 active:opacity-60">
