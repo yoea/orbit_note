@@ -7,6 +7,7 @@ import {
   isDefaultFilters,
   matches,
   rangeStart,
+  relevanceScore,
   type SearchFilters,
 } from '@/lib/client/search'
 
@@ -47,7 +48,7 @@ describe('rangeStart', () => {
 })
 
 describe('matches', () => {
-  const entry = { createdAt: '2026-09-28T08:00:00', latitude: 25.05, locationName: '黄浦区' }
+  const entry = { createdAt: '2026-09-28T08:00:00', latitude: 25.05, locationName: '黄浦区', weather: null }
 
   it('空关键词且无其它条件 → 全部命中', () => {
     expect(matches(entry, '今天去了外滩', filters(), NOW)).toBe(true)
@@ -58,6 +59,11 @@ describe('matches', () => {
   })
   it('地点名也参与检索', () => {
     expect(matches(entry, '今天很累', filters({ query: '黄浦' }), NOW)).toBe(true)
+  })
+  it('天气也参与检索（明文字段，此前漏了——搜「小雨」找不到下雨天写的日记）', () => {
+    const rainy = { ...entry, weather: '小雨' }
+    expect(matches(rainy, '今天心情一般', filters({ query: '小雨' }), NOW)).toBe(true)
+    expect(matches(entry, '今天心情一般', filters({ query: '小雨' }), NOW)).toBe(false)
   })
   it('未命中 → false', () => {
     expect(matches(entry, '今天去了外滩', filters({ query: '陆家嘴' }), NOW)).toBe(false)
@@ -72,6 +78,36 @@ describe('matches', () => {
     const noLoc = { ...entry, latitude: null }
     expect(matches(noLoc, 'x', filters({ onlyWithLocation: true }), NOW)).toBe(false)
     expect(matches(entry, 'x', filters({ onlyWithLocation: true }), NOW)).toBe(true)
+  })
+})
+
+describe('relevanceScore', () => {
+  const entry = { createdAt: '2026-09-28T08:00:00', latitude: null, locationName: null, weather: null }
+
+  it('空关键词 → 0（无关键词时不排序，保持时间倒序）', () => {
+    expect(relevanceScore(entry, '咖啡咖啡咖啡', '')).toBe(0)
+    expect(relevanceScore(entry, '咖啡咖啡咖啡', '   ')).toBe(0)
+  })
+  it('标题（首行）命中显著高于仅正文命中', () => {
+    const titleHit = relevanceScore(entry, '咖啡日记\n今天在家休息', '咖啡')
+    const bodyOnly = relevanceScore(entry, '随意的一天\n喝了一杯咖啡', '咖啡')
+    expect(titleHit).toBeGreaterThan(bodyOnly)
+  })
+  it('正文命中次数越多分越高', () => {
+    const once = relevanceScore(entry, '开头\n咖啡', '咖啡')
+    const thrice = relevanceScore(entry, '开头\n咖啡咖啡咖啡', '咖啡')
+    expect(thrice).toBeGreaterThan(once)
+  })
+  it('地点名命中加分（正文未命中时仍有分）', () => {
+    const withLoc = { ...entry, locationName: '星巴克咖啡店' }
+    expect(relevanceScore(withLoc, '今天出门了', '咖啡')).toBeGreaterThan(0)
+    expect(relevanceScore(entry, '今天出门了', '咖啡')).toBe(0)
+  })
+  it('不重叠计数：连续重复串按不重叠次数计', () => {
+    // 'aaaa' 中找 'aa' → 2 次（不是 3 次）
+    const two = relevanceScore(entry, 'aaaa', 'aa')
+    const one = relevanceScore(entry, 'aaa', 'aa')
+    expect(two).toBeGreaterThan(one)
   })
 })
 

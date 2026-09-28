@@ -42,6 +42,7 @@ export interface FilterableEntry {
   createdAt: string
   latitude: number | null
   locationName: string | null
+  weather: string | null
 }
 
 /** 是否命中当前筛选条件。空 query 视为「不限关键词」，只看时间与位置条件。 */
@@ -56,8 +57,43 @@ export function matches(
   if (f.onlyWithLocation && entry.latitude == null) return false
   const q = f.query.trim().toLowerCase()
   if (q === '') return true
-  // 地点名也纳入检索：用户常常记得「在哪写的」而不是写了什么
-  return plain.toLowerCase().includes(q) || (entry.locationName ?? '').toLowerCase().includes(q)
+  // 正文之外的元数据也纳入检索：用户常常记得「在哪写的」「什么天气」而不是写了什么。
+  // 天气是保存时记录的明文字段（如「小雨」），不检索它就会漏掉「找下雨天写的日记」这类需求。
+  return plain.toLowerCase().includes(q)
+    || (entry.locationName ?? '').toLowerCase().includes(q)
+    || (entry.weather ?? '').toLowerCase().includes(q)
+}
+
+/** 子串出现次数（不重叠）。needle 为空时返回 0（避免死循环）。 */
+function countOccurrences(haystackLower: string, needleLower: string): number {
+  if (needleLower === '') return 0
+  let count = 0
+  let i = 0
+  while ((i = haystackLower.indexOf(needleLower, i)) !== -1) {
+    count++
+    i += needleLower.length
+  }
+  return count
+}
+
+/**
+ * 相关度评分（有关键词时才用得上）。
+ *
+ * 搜索的价值在于「把对的答案排前面」——纯粹按时间倒序会让最相关的一篇沉底。
+ * 信号按强度排序：标题（首行）命中 > 地点名命中 > 正文命中次数。
+ * 权重是刻意保守的简单加权（不上 TF-IDF 那类东西），便于理解与调整。
+ *
+ * 注意 bodyHits 计的是整篇（含标题），标题命中会同时吃到两份分——
+ * 这是有意的：标题命中本就该更重。
+ */
+export function relevanceScore(entry: FilterableEntry, plain: string, query: string): number {
+  const q = query.trim().toLowerCase()
+  if (q === '') return 0
+  const bodyLower = plain.toLowerCase()
+  const titleHits = countOccurrences(firstLine(plain).toLowerCase(), q)
+  const bodyHits = countOccurrences(bodyLower, q)
+  const locHit = (entry.locationName ?? '').toLowerCase().includes(q) ? 1 : 0
+  return titleHits * 10 + bodyHits * 2 + locHit * 3
 }
 
 const SNIPPET_BEFORE = 12

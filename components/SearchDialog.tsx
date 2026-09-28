@@ -6,20 +6,21 @@ import SearchIcon from './SearchIcon'
 import { getDek } from '@/lib/client/session'
 import { decryptEntries, fetchAllEntries } from '@/lib/client/entries'
 import {
-  DEFAULT_FILTERS,
   TIME_RANGE_LABEL,
   buildSnippet,
   firstLine,
   highlightSegments,
   isDefaultFilters,
   matches,
+  relevanceScore,
   type TimeRange,
 } from '@/lib/client/search'
 import type { DecryptedEntry } from '@/lib/client/entries'
 
 const TIME_RANGES: TimeRange[] = ['all', '7d', '30d', 'year']
-// 单次最多渲染多少条——避免上千条时一次性建 DOM
-const MAX_RENDERED = 100
+// 每次渲染的批量——结果多时先给一批，「加载更多」再递增。
+// 上限的意义是避免上千条时一次性建 DOM，而不是「只显示这么多」。
+const PAGE = 100
 
 // 命中片段的高亮渲染。用 <mark> 分段渲染，**不使用 dangerouslySetInnerHTML**（项目铁律）。
 function Highlighted({ text, query }: { text: string; query: string }) {
@@ -62,6 +63,8 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
   const [entries, setEntries] = useState<DecryptedEntry[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 当前渲染到第几条（分批递增，避免上千条时一次性建 DOM）
+  const [visibleCount, setVisibleCount] = useState(PAGE)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // 打开即聚焦，省一次点击
@@ -86,15 +89,33 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
     })()
   }
 
+  // 筛选条件变化后：把已显示条数收回初始值（否则换关键词后仍停在上次展开的深度），
+  // 并触发按需加载（首次变更时才真正拉取解密）。
+  function resetPaging() {
+    setVisibleCount(PAGE)
+    ensureLoaded()
+  }
+
   const filters = { query, range, onlyWithLocation }
   const active = !isDefaultFilters(filters)
 
   const results = useMemo(() => {
     if (!entries) return []
-    return entries.filter((e) => matches(e.entry, e.plain, filters))
+    const matched = entries.filter((e) => matches(e.entry, e.plain, filters))
+    const q = query.trim()
+    // 没有关键词时（纯筛选 = 在浏览）保持服务端的时间倒序——这才是符合直觉的顺序，
+    // 相关性在无关键词时没有意义。
+    if (q === '') return matched
+    // 有关键词时按相关度排：纯时间倒序会让最相关的一篇沉底
+    // （搜「咖啡」，通篇讲咖啡的那篇如果写得早，就排在第 79 位）。
+    // 同分回落到原顺序（服务端已是时间倒序）——用下标而非重新比较日期，省一次 Date 解析。
+    return matched
+      .map((e, i) => ({ e, i, score: relevanceScore(e.entry, e.plain, q) }))
+      .sort((a, b) => b.score - a.score || a.i - b.i)
+      .map((x) => x.e)
   }, [entries, query, range, onlyWithLocation]) // eslint-disable-line react-hooks/exhaustive-deps -- filters 每次渲染新建对象，按字段依赖更准确
 
-  const visible = results.slice(0, MAX_RENDERED)
+  const visible = results.slice(0, visibleCount)
   const trimmedQuery = query.trim()
 
   return (
@@ -107,7 +128,7 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
             <input
               ref={inputRef}
               value={query}
-              onChange={(e) => { setQuery(e.target.value); ensureLoaded() }}
+              onChange={(e) => { setQuery(e.target.value); resetPaging() }}
               placeholder="搜索日记内容"
               autoCapitalize="none"
               autoCorrect="off"
@@ -115,7 +136,7 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
               className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-neutral-400"
             />
             {query !== '' && (
-              <button onClick={() => setQuery('')} aria-label="清除" className="shrink-0 text-sm text-neutral-400 active:opacity-60">✕</button>
+              <button onClick={() => { setQuery(''); resetPaging() }} aria-label="清除" className="shrink-0 text-sm text-neutral-400 active:opacity-60">✕</button>
             )}
           </div>
           <button onClick={onClose} className="shrink-0 text-sm text-neutral-400 active:opacity-60">取消</button>
@@ -123,11 +144,11 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
         {/* 筛选条件：与关键词是「与」的关系；时间与位置都是明文元数据 */}
         <div className="flex flex-wrap items-center gap-2 pb-3">
           {TIME_RANGES.map((r) => (
-            <Chip key={r} active={range === r} onClick={() => { setRange(range === r ? 'all' : r); ensureLoaded() }}>
+            <Chip key={r} active={range === r} onClick={() => { setRange(range === r ? 'all' : r); resetPaging() }}>
               {TIME_RANGE_LABEL[r]}
             </Chip>
           ))}
-          <Chip active={onlyWithLocation} onClick={() => { setOnlyWithLocation(!onlyWithLocation); ensureLoaded() }}>
+          <Chip active={onlyWithLocation} onClick={() => { setOnlyWithLocation(!onlyWithLocation); resetPaging() }}>
             有位置
           </Chip>
         </div>
@@ -161,7 +182,8 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
           ) : (
             <>
               <p className="py-2 text-xs tabular-nums text-neutral-400">
-                找到 {results.length} 篇{results.length > MAX_RENDERED && `（仅显示前 ${MAX_RENDERED} 篇）`}
+                找到 {results.length} 篇
+                {visibleCount < results.length && `（已显示 ${visible.length}）`}
               </p>
               {/* 结果项沿用列表页的视觉：左侧时间 + 标题 + 命中片段（高亮） */}
               <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -189,6 +211,16 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
                   </li>
                 ))}
               </ul>
+              {/* 分批加载：卡片式按钮与筛选 Chip 同风格，明确告知「还有多少」——
+                  绝不静默截断（用户看到 100 条却以为是全部，比加载慢更糟） */}
+              {visibleCount < results.length && (
+                <button
+                  onClick={() => setVisibleCount((c) => c + PAGE)}
+                  className="my-4 w-full rounded-xl bg-neutral-100 py-3 text-sm font-medium text-neutral-600 active:opacity-60 dark:bg-neutral-800 dark:text-neutral-300"
+                >
+                  加载更多（还有 {results.length - visible.length} 篇）
+                </button>
+              )}
             </>
           )
         )}
