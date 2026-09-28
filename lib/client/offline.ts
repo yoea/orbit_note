@@ -179,6 +179,31 @@ export async function clearOfflineData(): Promise<void> {
   ])
 }
 
+// ---- 离线导航预热 ----
+
+// Tab 目的地页面（'/' 不需要——冷启动本身就是对它的硬导航）。
+// /entry/[id] 是动态路径、数量不可枚举，刻意不预热（离线点未访问过的详情无兜底，
+// 与「缓存兜底」哲学一致）。
+const PREWARM_PATHS = ['/diary', '/settings']
+// 与 public/sw.js 的预热分支约定同一请求头（普通 GET + 此头 ⇒ SW 网络优先并缓存 HTML 外壳）
+const PREWARM_HEADER = { 'x-qo-prewarm': '1' }
+
+// 预热离线导航外壳：对 tab 目的地页面发普通 GET（带会话 cookie），SW 拦截后把干净
+// 200 的 HTML 写进 CacheStorage（与离线硬导航兜底同一键空间）。
+// 为什么必须预热：tab 页在线时只被**软导航**访问（RSC fetch，不产生 HTML 外壳缓存）；
+// 离线点 tab 时 RSC 失败 → Next 自动 fallback 到浏览器硬导航 → 没有外壳就只能逐级
+// 回退到 '/' 外壳（表现为「图标高亮但显示主页」，v1.16.0-rc3 真机事故）。
+// 幂等（在线时每次调用都拿最新页覆盖旧外壳，顺带解决部署后外壳陈旧问题）；
+// 离线/失败静默——下次 online 事件由 initOfflineSync 重试。
+export async function prewarmOfflineShells(): Promise<void> {
+  if (!isOfflineCacheEnabled()) return
+  for (const p of PREWARM_PATHS) {
+    try {
+      await fetch(p, { headers: PREWARM_HEADER })
+    } catch { /* 离线/网络失败：跳过，下次 online 再试 */ }
+  }
+}
+
 // 申请持久化存储：iOS WKWebView 在存储压力下可能回收 IndexedDB，缓存会悄悄消失。
 // 申请成功后系统不再自动清除（配额仍有限但优先保住）。失败静默——最坏情况等于没有缓存。
 export async function requestPersistentStorage(): Promise<void> {
@@ -188,10 +213,16 @@ export async function requestPersistentStorage(): Promise<void> {
 }
 
 // 模块级单例：注册 online 监听 + 启动时冲刷一次队列。在 (app) layout 解锁完成后调用。
+// online 时除冲刷队列外还重跑导航外壳预热：网络恢复的瞬间正是补种缓存的机会
+// （上次启动若离线，预热是失败的）。
 let syncInited = false
 export function initOfflineSync(): void {
   if (syncInited || typeof window === 'undefined') return
   syncInited = true
-  window.addEventListener('online', () => { void flushOfflineQueue() })
+  window.addEventListener('online', () => {
+    void flushOfflineQueue()
+    void prewarmOfflineShells()
+  })
   void flushOfflineQueue()
+  void prewarmOfflineShells()
 }

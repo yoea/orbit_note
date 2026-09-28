@@ -17,8 +17,17 @@
 //     干净 200 导航响应（不止固定清单），离线硬导航/冷启动可精确命中任意在线访问过的页面。
 //     预取请求（next-router-prefetch / next-router-segment-prefetch 头）不介入：
 //     其载荷是部分内容，缓存了会污染完整导航载荷。
-const CACHE = 'qo-static-v6'
-const RSC_CACHE = 'qo-rsc-v6'
+// v7：修「v6 的 RSC 兜底在真机不生效」。真机实测链路：离线点 tab → RSC fetch 失败 →
+//     Next 自动 fallback 到**浏览器硬导航**（router chunk 内置行为）→ 但 tab 页在线时
+//     只被软导航访问、HTML 外壳从未入缓存 → navigate 兜底逐级回退到 '/' 外壳 →
+//     表现为「图标高亮但显示主页」。RSC 缓存载荷不可依赖（router 对载荷有 state tree
+//     等内部校验），可靠路径是让硬导航 fallback 命中完整 HTML：新增「预热」机制——
+//     客户端解锁后/联网恢复时对 tab 目的地发带 x-qo-prewarm 头的普通 GET，
+//     SW 拦截该头走网络优先并把干净 200 的 HTML 外壳写入 CACHE（与硬导航同一键空间）。
+//     离线点 tab：RSC 失败 → Next 硬导航 → SW navigate 命中预热外壳 → 整页加载
+//     （JS chunk 走 cache-first，页面数据走 IndexedDB 兜底）→ 完整离线体验。
+const CACHE = 'qo-static-v7'
+const RSC_CACHE = 'qo-rsc-v7'
 const KEEP_CACHES = [CACHE, RSC_CACHE]
 const STATIC = ['/manifest.webmanifest', '/icons/icon-180.png', '/icons/icon-192.png', '/icons/icon-512.png']
 // 离线兜底外壳（冷启动离线时至少能给出应用壳）。
@@ -95,8 +104,28 @@ self.addEventListener('fetch', (e) => {
     return
   }
 
+  // 预热请求（客户端解锁后/联网恢复时主动发的普通 GET，带 x-qo-prewarm 头）：
+  // 网络优先（reload 绕 HTTP 缓存——no-cache 页面协商出的 304 不是 ok，写不进缓存），
+  // 成功时把 HTML 外壳写进 CACHE（与 navigate 兜底同一键空间，键 = pathname）。
+  // 失败（离线）返回网络错误——预热是后台行为，客户端静默忽略，下次 online 再试。
+  // 这是「离线点 tab」的关键通路：RSC 失败后 Next 自动 fallback 硬导航，命中这里种下的外壳。
+  if (headers.get('x-qo-prewarm') === '1') {
+    e.respondWith((async () => {
+      try {
+        const res = await fetch(e.request, { cache: 'reload' })
+        await cachePut(CACHE, url.pathname, res.clone())
+        return res
+      } catch {
+        return Response.error()
+      }
+    })())
+    return
+  }
+
   // RSC 软导航请求（客户端路由 fetch，带 RSC:1 头）：同样网络优先、缓存兜底。
   // 预取请求（部分载荷）不介入，避免污染完整导航载荷缓存。
+  // 注意：真机上 router 对缓存载荷有 state tree 等内部校验，兜底未必被接受——
+  // 接受则软导航直接成功；拒绝则 Next 自动 fallback 硬导航，由 navigate 分支的外壳兜底（v7）。
   if (headers.get('rsc') === '1' && !headers.has('next-router-prefetch') && !headers.has('next-router-segment-prefetch')) {
     e.respondWith((async () => {
       try {
