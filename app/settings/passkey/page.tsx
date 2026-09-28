@@ -37,7 +37,7 @@ function AddPasskeyInner() {
       const loginOptsRes = await fetch('/api/auth/login/options')
       if (!loginOptsRes.ok) throw new Error('网络错误，请重试')
       const { prfEval } = await loginOptsRes.json()
-      if (!prfEval) throw new Error('未找到现有 Passkey 包装，请先在主设备完成初始化')
+      if (!prfEval) throw new Error('未找到现有通行密钥包装，请先在主设备完成初始化')
       const prfEvalBytes = fromBase64Url(prfEval)
 
       // 2. 注册新 Passkey（注入同一个 S，绝不生成新的）
@@ -45,7 +45,7 @@ function AddPasskeyInner() {
       if (!optsRes.ok) throw new Error('网络错误，请重试')
       const { token, options } = await optsRes.json()
       const { registration, prfEnabled } = await registerPasskey(options, prfEvalBytes)
-      if (!prfEnabled) throw new Error('此设备不支持 PRF，无法添加 Passkey 解锁')
+      if (!prfEnabled) throw new Error('此设备不支持 PRF，无法添加通行密钥解锁')
 
       const regResp = await fetch('/api/auth/register', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -94,7 +94,7 @@ function AddPasskeyInner() {
         <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
         </Link>
-        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">添加 Passkey</h1>
+        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">添加通行密钥</h1>
         <span className="w-8" />
       </header>
       {/* m-auto：按钮整体垂直居中；描述文字在按钮下方 */}
@@ -104,9 +104,9 @@ function AddPasskeyInner() {
           disabled={busy}
           className="w-full rounded-2xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-4 text-base font-medium text-white active:scale-[0.98] disabled:opacity-50"
         >
-          {busy ? '添加中…' : '注册新的 Passkey'}
+          {busy ? '添加中…' : '注册新的通行密钥'}
         </button>
-        <p className="text-center text-xs text-neutral-400">新增一个Passkey后，将可以用它解锁同一份日记</p>
+        <p className="text-center text-xs text-neutral-400">新增一个通行密钥后，将可以用它解锁同一份日记</p>
         {error && <p className="text-center text-sm text-red-500">{error}</p>}
       </div>
     </main>

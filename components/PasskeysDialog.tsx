@@ -93,18 +93,18 @@ export default function PasskeysDialog({ initialData, onClose }: {
         className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-neutral-800"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label="Passkey 设备"
+        aria-label="通行密钥设备"
       >
         <div className="max-h-[70dvh] overflow-y-auto px-5 py-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">Passkey 设备</p>
+              <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">通行密钥设备</p>
               <p className="mt-1 text-xs text-neutral-400">管理各设备上的通行密钥</p>
             </div>
             {/* 添加新 Passkey：弱化为右上角加号，跳转注册页（带前进方向动画） */}
             <button
               onClick={() => router.push('/settings/passkey')}
-              aria-label="注册新的 Passkey"
+              aria-label="注册新的通行密钥"
               className="shrink-0 text-2xl font-light leading-6 text-neutral-400 active:opacity-60"
             >
               ＋

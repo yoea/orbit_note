@@ -85,7 +85,7 @@ export default function SetupPage() {
               encryptionVersion: 1,
             }),
           })
-          if (!wrapP.ok) throw new Error('保存 Passkey 包装失败')
+          if (!wrapP.ok) throw new Error('保存通行密钥包装失败')
         }
       } catch (e) {
         // 用户取消认证弹窗（NotAllowedError）最常见；其余错误也降级但告知用户
