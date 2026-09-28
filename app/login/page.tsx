@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { LOGIN_ERRORS, PRF_UNAVAILABLE, fetchSession, getDek, loginWithPasskey, unlockWithRecoveryKey } from '@/lib/client/session'
+import { LOGIN_ERRORS, PRF_UNAVAILABLE, fetchSession, getDek, unlockWithRecoveryKey, unlockWithPasskeyAuto } from '@/lib/client/session'
+import { isOfflineUnlockAvailable } from '@/lib/client/offline'
 import OrbitLogo from '@/components/OrbitLogo'
 
 export default function LoginPage() {
@@ -26,7 +27,9 @@ export default function LoginPage() {
         // 本页保持手动入口（未认证/PRF 降级恢复密钥时使用）。
         if (s.authenticated && getDek()) { router.replace('/'); return }
       } catch {
-        // 网络/服务错误：绝不走初始化分支，停留在本页提示
+        // 网络不可达：离线解锁缓存可用则停留本页（按钮走本地 PRF 解锁），
+        // 不可用才提示连接错误（与无离线能力时行为一致）
+        if (await isOfflineUnlockAvailable()) return
         setLoadError(true)
       }
     })()
@@ -41,7 +44,8 @@ export default function LoginPage() {
   async function handlePasskey() {
     setBusy(true); setError(null)
     try {
-      const result = await loginWithPasskey()
+      // unlockWithPasskeyAuto：在线优先，网络不可达且离线缓存可用时回退本地 PRF 解锁
+      const result = await unlockWithPasskeyAuto()
       if (result.ok) {
         // 防御：DEK 未真正载入内存时禁止跳转（否则目标页守卫会踢回形成循环）
         if (!getDek()) { setError('解锁未完成，请重试'); return }

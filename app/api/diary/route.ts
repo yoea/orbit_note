@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { diaryEntries } from '@/lib/server/db/schema'
-import { desc } from 'drizzle-orm'
+import { desc, eq } from 'drizzle-orm'
 import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { diaryCreateSchema } from '@/lib/server/validation'
 import { rateLimit } from '@/lib/server/ratelimit'
@@ -22,9 +22,16 @@ export async function POST(req: Request) {
   if (!rateLimit('diary-create', 30, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
   const body = diaryCreateSchema.safeParse(await req.json().catch(() => null))
   if (!body.success) return NextResponse.json({ error: 'bad_request', details: body.error.issues }, { status: 400 })
-  const { ciphertext, iv, encryptionVersion, latitude, longitude, locationAccuracy, timezone, wordCount } = body.data
+  const { id, ciphertext, iv, encryptionVersion, latitude, longitude, locationAccuracy, timezone, wordCount } = body.data
+  // 客户端 id（离线写队列）：重复 POST 同 id = 网络抖动后的不确定重传，返回已有条目（200）
+  // 而非报错——幂等保证离线日记不重复入库。created_at 仍由服务器决定（客户端时钟不可信）。
+  if (id) {
+    const [existing] = await db.select().from(diaryEntries).where(eq(diaryEntries.id, id)).limit(1)
+    if (existing) return NextResponse.json({ entry: existing }, { status: 200 })
+  }
   // 地点名由客户端反查后 PATCH 补写（保存不等待外部 API，即时返回）
   const [entry] = await db.insert(diaryEntries).values({
+    ...(id ? { id } : {}),
     ciphertext, iv, encryptionVersion,
     latitude: latitude ?? null, longitude: longitude ?? null, locationAccuracy: locationAccuracy ?? null,
     timezone: timezone ?? null,

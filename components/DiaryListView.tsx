@@ -5,19 +5,28 @@ import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
 import { useUserName } from '@/lib/client/use-user-name'
+import { cacheEntriesPage, cacheStats, getCachedEntries, getCachedStats } from '@/lib/client/offline'
 import SearchDialog from './SearchDialog'
 import SearchIcon from './SearchIcon'
 import ContributionHeatmap from './ContributionHeatmap'
 
 const PAGE_SIZE = 10
 
+// 行结构 = 服务端整行的超集需求（wordCount/updatedAt 等字段列表页不直接用，
+// 但离线缓存按整行存取——与 EncryptedEntry 同构）
 interface Entry {
   id: string
   ciphertext: string
   iv: string
   createdAt: string
+  updatedAt: string
+  wordCount: number
   latitude: number | null
+  longitude: number | null
+  locationAccuracy: number | null
   locationName: string | null
+  weather: string | null
+  timezone: string | null
 }
 
 interface DecryptedItem {
@@ -127,13 +136,21 @@ export default function DiaryListView() {
     } catch { /* 忽略 */ }
   }, [items, stats])
 
-  // 请求一页（offset 起 10 条）并解密
+  // 请求一页（offset 起 10 条）并解密。离线兜底：请求不可达时切本地缓存的同位置切片。
   const fetchPage = useCallback(async (pageOffset: number): Promise<DecryptedItem[]> => {
     const dek = getDek()
     if (!dek) return []
-    const res = await fetch(`/api/diary?limit=${PAGE_SIZE}&offset=${pageOffset}`)
-    if (!res.ok) throw new Error('加载失败')
-    const { entries } = await res.json() as { entries: Entry[] }
+    let entries: Entry[]
+    const res = await fetch(`/api/diary?limit=${PAGE_SIZE}&offset=${pageOffset}`).catch(() => null)
+    if (res) {
+      if (!res.ok) throw new Error('加载失败')
+      entries = ((await res.json()) as { entries: Entry[] }).entries
+      void cacheEntriesPage(entries) // 在线成功顺手缓存（密文，异步不阻塞）
+    } else {
+      // 网络不可达：读缓存（getCachedEntries 已按 createdAt 倒序，切片语义与分页一致）
+      entries = (await getCachedEntries()).slice(pageOffset, pageOffset + PAGE_SIZE)
+      if (!entries.length) throw new Error('加载失败')
+    }
     const decrypted: DecryptedItem[] = []
     for (const e of entries) {
       try {
@@ -160,14 +177,19 @@ export default function DiaryListView() {
   }, [])
 
   // 初始加载：统计 + 第一页（有滚动恢复状态时循环加载到上次的深度）
+  // 统计离线兜底：请求失败（.catch → null）时回退缓存值。
   useEffect(() => {
     void (async () => {
       try {
         const restore = readScrollState()
         const [statsRes, firstPage] = await Promise.all([
-          fetch('/api/diary/stats').then((r) => (r.ok ? r.json() : null)),
+          fetch('/api/diary/stats')
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null),
           fetchPage(0),
         ])
+        const stats = statsRes ?? (await getCachedStats())
+        if (statsRes) void cacheStats(statsRes)
         let loaded = firstPage
         if (restore && restore.count > firstPage.length) {
           // 继续加载直到覆盖上次浏览深度（分页循环）
@@ -177,7 +199,7 @@ export default function DiaryListView() {
             loaded = loaded.concat(more)
           }
         }
-        if (statsRes) setStats(statsRes)
+        if (stats) setStats(stats)
         setItems(loaded)
         setOffset(loaded.length)
         setHasMore(loaded.length % PAGE_SIZE === 0 && loaded.length > 0)

@@ -11,6 +11,10 @@ export const OTD_KEY = 'qo-show-on-this-day'
 // （保存时反查 + 打开详情页自动反查）。关闭后不再自动外发坐标，
 // 但点击坐标仍可手动查询一次。
 export const GEOCODE_KEY = 'qo-auto-place-name'
+// 离线缓存：断网时仍可用（本地 PRF 解锁 + 密文缓存读写）。
+// 刻意不加入 ALL_KEYS（不与服务器同步）：缓存是设备本地属性——
+// 手机可能开着、电脑可能关着，跨端同步开关反而会互相覆盖出错误状态。
+export const OFFLINE_KEY = 'qo-offline-cache'
 
 const ALL_KEYS = [LOCATION_KEY, WEATHER_KEY, STREAK_KEY, PROMPT_KEY, OTD_KEY, GEOCODE_KEY]
 
@@ -61,4 +65,9 @@ export function isOnThisDayEnabled(): boolean {
 }
 export function isAutoPlaceNameEnabled(): boolean {
   return get(GEOCODE_KEY)
+}
+// 离线缓存开关（设备本地，默认开启——与其它偏好相反：这是能力开关而非隐私外发开关，
+// 默认给能力；不想要的用户可在偏好里关掉并一键清除本地数据）
+export function isOfflineCacheEnabled(): boolean {
+  return get(OFFLINE_KEY)
 }

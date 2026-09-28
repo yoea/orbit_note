@@ -15,9 +15,11 @@ const encryptedPayload = {
 // 字数（解密时计算，明文数字——列表/统计无需解密即可显示）
 const wordCountField = { wordCount: z.number().int().min(0).max(1_000_000).optional() }
 
-// 明确拒绝客户端传 id/created_at/updated_at（strict 模式会拒绝未知键）
+// 明确拒绝客户端传 created_at/updated_at（strict 模式会拒绝未知键）。
+// id 例外：离线写队列重传时由客户端生成 UUID 做幂等（重复 POST 同 id 返回已有条目，
+// 网络抖动下的「不确定上次是否成功」重传不会重复入库）
 export const diaryCreateSchema = z
-  .strictObject({ ...encryptedPayload, timezone: z.string().max(64).nullable().optional(), ...locationFields, ...wordCountField })
+  .strictObject({ id: z.string().uuid().optional(), ...encryptedPayload, timezone: z.string().max(64).nullable().optional(), ...locationFields, ...wordCountField })
 export const diaryUpdateSchema = z
   .strictObject({
     ciphertext: z.string().min(1).max(300_000).optional(),

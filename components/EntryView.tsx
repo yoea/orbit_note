@@ -10,17 +10,21 @@ import { copyText } from '@/lib/client/clipboard'
 import { clientReverseGeocode } from '@/lib/client/geocode'
 import { getPosition, parseCoords } from '@/lib/client/location'
 import { isAutoPlaceNameEnabled } from '@/lib/client/prefs'
+import { cacheEntriesPage, getCachedEntryById } from '@/lib/client/offline'
 import { weatherEmoji } from '@/lib/client/weather'
 import { playSaveSound } from '@/lib/client/sound'
 import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import Toast from './Toast'
 
+// 行结构 = 服务端整行（含密文）；与 EncryptedEntry 同构（wordCount 为明文计数字段，
+// 详情页虽不用，但列表缓存/离线兜底按整行存取）
 interface Entry {
   id: string
   ciphertext: string
   iv: string
   createdAt: string
   updatedAt: string
+  wordCount: number
   latitude: number | null
   longitude: number | null
   locationAccuracy: number | null
@@ -184,11 +188,26 @@ export default function EntryView({ id }: { id: string }) {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await fetch(`/api/diary/${id}`)
+        const res = await fetch(`/api/diary/${id}`).catch(() => null)
+        if (res === null) {
+          // 网络不可达：回退本地密文缓存（在线成功时每篇都会顺手缓存）
+          const cached = await getCachedEntryById(id)
+          if (!cached) throw new Error('加载失败')
+          setEntry(cached)
+          try {
+            setPlain(await decryptText(getDek()!, cached.ciphertext, cached.iv))
+            setDecryptFailed(false)
+          } catch {
+            setPlain('(解密失败，数据可能已损坏)')
+            setDecryptFailed(true)
+          }
+          return
+        }
         if (res.status === 404) { router.replace('/diary'); return }
         if (!res.ok) throw new Error('加载失败')
         const { entry } = await res.json() as { entry: Entry }
         setEntry(entry)
+        void cacheEntriesPage([entry]) // 在线成功顺手缓存单条（密文）
         try {
           setPlain(await decryptText(getDek()!, entry.ciphertext, entry.iv))
           setDecryptFailed(false)

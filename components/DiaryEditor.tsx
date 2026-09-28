@@ -16,11 +16,15 @@ import { PROMPTS, nextPromptIndex, reportPromptShown } from '@/lib/client/prompt
 import { computeStreak } from '@/lib/client/streak'
 import { clearLocalDraft, fetchServerDraft, loadLocalDraft, pickNewer, pushServerDraft, saveLocalDraft } from '@/lib/client/draft-sync'
 import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
+import { cacheOnThisDay, cacheStats, enqueueOfflineEntry, flushOfflineQueue, getCachedOnThisDay, getCachedStats } from '@/lib/client/offline'
+import { isOfflineCacheEnabled } from '@/lib/client/prefs'
 
 export default function DiaryEditor() {
   const [text, setText] = useState('')
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [savedTime, setSavedTime] = useState('')
+  // 离线保存标记：saved 态下区分「已落库」与「已入离线队列待同步」的文案
+  const [savedOffline, setSavedOffline] = useState(false)
   const [showConfetti, setShowConfetti] = useState(false)
   const [showDraftBanner, setShowDraftBanner] = useState(false)
   const [streak, setStreak] = useState(0)
@@ -151,36 +155,46 @@ export default function DiaryEditor() {
     reportPromptShown(promptIdx)
   }, [promptIdx])
 
-  // 连续写作天数 + 总篇数 + 去年的今天（并行获取；失败静默）
+  // 连续写作天数 + 总篇数 + 去年的今天（并行获取；失败静默）。
+  // 离线兜底：请求不可达时回退缓存（统计/去年今日各一份密文缓存；OTD 只回放当天的）。
   useEffect(() => {
     void (async () => {
       try {
         const [statsRes, otdRes] = await Promise.all([
-          fetch('/api/diary/stats'),
-          fetch('/api/diary/on-this-day'),
+          fetch('/api/diary/stats').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch('/api/diary/on-this-day').then((r) => (r.ok ? r.json() : null)).catch(() => null),
         ])
-        if (statsRes.ok) {
-          const data = await statsRes.json() as { count: number; byDay: Record<string, { count: number; words: number }> }
-          setEntryCount(data.count)
-          setStreak(computeStreak(data.byDay ?? {}, new Date()))
+        const stats = (statsRes as { count: number; byDay: Record<string, { count: number; words: number }> } | null)
+          ?? (await getCachedStats())
+        if (stats) {
+          if (statsRes) void cacheStats(statsRes)
+          setEntryCount(stats.count)
+          setStreak(computeStreak(stats.byDay ?? {}, new Date()))
         }
-        if (otdRes.ok) {
-          const data = await otdRes.json() as { entry: { id: string; ciphertext: string; iv: string; createdAt: string } | null }
-          if (data.entry) {
-            setOnThisDay(data.entry)
-            // 解密预览（首行标题）
-            const dek = getDek()
-            if (dek) {
-              try {
-                const plain = await decryptText(dek, data.entry.ciphertext, data.entry.iv)
-                setOnThisDayPreview(plain.split('\n').find((l) => l.trim()) ?? '')
-              } catch { /* 解密失败：卡片只显示日期 */ }
-            }
+        let otdEntry: { id: string; ciphertext: string; iv: string; createdAt: string } | null = null
+        if (otdRes?.entry) {
+          otdEntry = otdRes.entry
+          void cacheOnThisDay(otdRes.entry)
+        } else if (!otdRes) {
+          otdEntry = await getCachedOnThisDay()
+        }
+        if (otdEntry) {
+          setOnThisDay(otdEntry)
+          // 解密预览（首行标题）
+          const dek = getDek()
+          if (dek) {
+            try {
+              const plain = await decryptText(dek, otdEntry.ciphertext, otdEntry.iv)
+              setOnThisDayPreview(plain.split('\n').find((l) => l.trim()) ?? '')
+            } catch { /* 解密失败：卡片只显示日期 */ }
           }
         }
       } catch { /* 静默 */ }
     })()
   }, [])
+
+  // 进入写页即尝试冲刷离线写队列（上次离线保存的日记，联网后自动补传）
+  useEffect(() => { void flushOfflineQueue() }, [])
 
   // 防抖保存：输入 1000ms 后冲刷草稿（本地 IndexedDB 优先，服务器同步尽力而为）
   function onDraftChange(text: string) {
@@ -265,7 +279,32 @@ export default function DiaryEditor() {
           locationAccuracy: null,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
-      })
+      }).catch(() => null)
+      // 离线（请求不可达）：入本地队列待同步，体验等同保存成功（联网后自动补传）。
+      // 队列项带客户端 UUID——重传走服务端幂等插入，不会重复入库。
+      if (res === null) {
+        if (!isOfflineCacheEnabled()) throw new Error('save failed')
+        await enqueueOfflineEntry({
+          id: crypto.randomUUID(),
+          ciphertext, iv,
+          wordCount: body.length,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          queuedAt: Date.now(),
+        })
+        if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }
+        draftEpochRef.current++
+        await clearLocalDraft()
+        const now = new Date()
+        setSavedTime(now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }))
+        setSavedOffline(true)
+        setStatus('saved')
+        playSaveSound()
+        setShowConfetti(true)
+        setText(''); textRef.current = ''
+        if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
+        statusTimeoutRef.current = setTimeout(() => { setStatus('idle'); setSavedOffline(false) }, 2600)
+        return
+      }
       if (!res.ok) throw new Error('save failed')
       // POST 响应结构是 { entry }，这里是补写定位所必需的 entry.id
       const { entry: savedEntry } = await res.json() as { entry?: { id?: string } }
@@ -276,6 +315,7 @@ export default function DiaryEditor() {
       await clearLocalDraft()
       const now = new Date()
       setSavedTime(now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }))
+      setSavedOffline(false) // 在线路径必重置（前一次离线保存的标记可能尚未超时清除）
       setStatus('saved')
       playSaveSound() // 清脆保存音效（Web Audio 合成）
       setShowConfetti(true) // 游戏获奖式庆祝反馈
@@ -396,7 +436,9 @@ export default function DiaryEditor() {
         <p className="mb-3 text-center text-xs text-neutral-400">
           {status === 'saving' && '正在保存…'}
           {status === 'saved' && (
-            <span className="animate-pop inline-block text-sm font-semibold text-emerald-500">✓ 已保存 · {savedTime}</span>
+            <span className="animate-pop inline-block text-sm font-semibold text-emerald-500">
+              {savedOffline ? `✓ 已离线保存 · 联网后自动同步` : `✓ 已保存 · ${savedTime}`}
+            </span>
           )}
           {status === 'error' && '保存失败，请重试'}
           {status === 'idle' && text.trim().length > 0 && `共 ${text.trim().length} 字`}

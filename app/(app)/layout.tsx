@@ -1,8 +1,11 @@
 'use client'
 
+import { useEffect } from 'react'
 import UnlockPrompt from '@/components/UnlockPrompt'
 import TabBar from '@/components/TabBar'
+import OfflineBadge from '@/components/OfflineBadge'
 import { useRequireUnlock } from '@/lib/client/use-require-unlock'
+import { initOfflineSync } from '@/lib/client/offline'
 
 // 主应用区（登录后可访问的页面）共享布局：
 //
@@ -17,6 +20,11 @@ import { useRequireUnlock } from '@/lib/client/use-require-unlock'
 // 不遮挡内容，也不需要给每个页面补偿 padding。
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { state, retryUnlock } = useRequireUnlock()
+
+  // 解锁完成 → 初始化离线同步（注册 online 监听 + 冲刷上次离线保存的队列；模块级单例）
+  useEffect(() => {
+    if (state === 'ready') initOfflineSync()
+  }, [state])
 
   // 连接失败：原先只有 `/` 页面处理这个状态，/diary 与 /settings 会静默显示空白占位。
   // 收敛到 layout 后三个页面都能给出提示。
@@ -40,6 +48,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      {/* 离线指示：断网时顶部小胶囊（在线时不渲染） */}
+      <OfflineBadge />
       <div className="flex min-h-0 flex-1 flex-col">{children}</div>
       <TabBar />
     </>

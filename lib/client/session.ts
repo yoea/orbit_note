@@ -39,7 +39,8 @@ export interface LoginResult {
 // 被迫重复 Face ID——sessionStorage 在导航/重载后保留（同标签页会话），DEK 自动恢复。
 // 安全权衡（用户确认）：sessionStorage 为会话级（关闭标签页清除、不落盘），
 // XSS 威胁模型下与内存持有等价（脚本均可访问）。
-import { fromBase64, toBase64 } from './crypto/base64'
+import { fromBase64, toBase64, toBase64Url } from './crypto/base64'
+import { cacheWrappersForOffline, getCachedWrappers, isOfflineUnlockAvailable, requestPersistentStorage } from './offline'
 
 const DEK_KEY = '__orbit_dek__'
 const DEK_SESSION_KEY = 'qo_dek'
@@ -131,6 +132,9 @@ export async function loginWithPasskey(): Promise<LoginResult> {
           const kek = await derivePrfKek(prfResult, prfWrapper.salt)
           setDek(await unwrapDekFromWrapper(kek, prfWrapper.encryptedDek))
           await persistDek() // 会话级持久化（PWA 导航重载后自动恢复，无需重复 Face ID）
+          // 离线缓存：wrappers 是密文（与服务器存的一致），缓存后断网时也能本地解锁
+          await cacheWrappersForOffline(wrappers)
+          void requestPersistentStorage() // 防 iOS 存储压力下回收 IndexedDB
           void syncPrefsFromServer() // 登录成功：数据库偏好 → localStorage（多端同步）
           return { ok: true, via: 'prf' }
         } catch {
@@ -161,6 +165,19 @@ export async function unlockWithRecoveryKey(recoveryKey: string): Promise<LoginR
     try {
       wrappers = await fetchWrappers()
     } catch {
+      // 网络失败：先试离线缓存的 recovery wrapper——恢复密钥解包全程本地（PRF 不涉及），
+      // 有缓存即可离线解锁。无缓存才走在线 recovery-login（其失败原样返回错误）。
+      const cached = (await getCachedWrappers())?.find((w) => w.wrapperType === 'recovery')
+      if (cached) {
+        try {
+          setDek(await unwrapWithRecoveryKey(cached.encryptedDek, cached.salt, recoveryKey))
+          await persistDek()
+          void requestPersistentStorage()
+          return { ok: true, via: 'recovery' }
+        } catch {
+          return { ok: false, error: '恢复密钥解密失败', via: null }
+        }
+      }
       const res = await fetch('/api/auth/recovery-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -174,6 +191,8 @@ export async function unlockWithRecoveryKey(recoveryKey: string): Promise<LoginR
     try {
       setDek(await unwrapWithRecoveryKey(recWrapper.encryptedDek, recWrapper.salt, recoveryKey))
       await persistDek() // 会话级持久化
+      await cacheWrappersForOffline(wrappers) // 离线缓存（含 recovery wrapper：恢复密钥也可离线解锁）
+      void requestPersistentStorage()
       void syncPrefsFromServer() // 登录成功：数据库偏好 → localStorage（多端同步）
       return { ok: true, via: 'recovery' }
     } catch {
@@ -182,4 +201,60 @@ export async function unlockWithRecoveryKey(recoveryKey: string): Promise<LoginR
   } catch {
     return { ok: false, error: '解锁失败', via: null }
   }
+}
+
+// 离线解锁（飞行模式 / 服务器不可达时的本地 PRF 流程）：
+// WebAuthn 的 PRF 输出派生与 DEK 解包全程本地，无需服务器验签。本地生成随机 challenge
+// 只为驱动 authenticator 产出 PRF 输出——assertion 不被任何一方验证（离线本就没有验证方），
+// 安全性来自「物理 possession + 生物识别」这道门本身。
+// 契约与 loginWithPasskey 相同：绝不 throw，失败以 LoginResult.error 返回。
+export async function offlineUnlockWithPasskey(): Promise<LoginResult> {
+  try {
+    const wrappers = (await getCachedWrappers())?.filter((w) => w.wrapperType === 'passkey_prf') ?? []
+    if (!wrappers.length) return { ok: false, error: '离线解锁数据不可用，请联网后重试', via: null }
+    // PRF eval 输入 S 对所有 passkey 一致（注册时复用同一 S 的不变量），取任一 wrapper 的 salt
+    const salt = wrappers[0].salt
+    const options = {
+      challenge: toBase64Url(crypto.getRandomValues(new Uint8Array(32))),
+      rpId: window.location.hostname,
+      userVerification: 'preferred',
+      timeout: 60_000,
+    }
+    const { assertion, prfResult } = await authenticatePasskey(options, salt)
+    if (!prfResult) return { ok: false, error: PRF_UNAVAILABLE, via: null }
+    // PRF 输出按凭证隔离：必须用「与本次认证凭证匹配」的 wrapper 解包（同在线流程）
+    const assertionId = typeof assertion.id === 'string' ? assertion.id : null
+    const prfWrapper = wrappers.find((w) => w.credentialId === assertionId)
+    if (!prfWrapper) return { ok: false, error: '此通行密钥不支持离线解锁', via: null }
+    try {
+      const kek = await derivePrfKek(prfResult, prfWrapper.salt)
+      setDek(await unwrapDekFromWrapper(kek, prfWrapper.encryptedDek))
+      await persistDek()
+      void requestPersistentStorage()
+      return { ok: true, via: 'prf' }
+    } catch {
+      return { ok: false, error: '解锁失败', via: null }
+    }
+  } catch (e) {
+    if (e instanceof Error && e.name === 'NotAllowedError') {
+      return { ok: false, error: '已取消认证', via: null }
+    }
+    return { ok: false, error: e instanceof Error ? `认证失败：${e.message}` : '解锁失败', via: null }
+  }
+}
+
+// 统一解锁入口（登录页与守卫都用这个）：在线优先，拿不到登录选项（网络不可达）且
+// 离线缓存可用时回退离线解锁。在线路径行为不变——只有原会立刻失败的网络分支多一次回退。
+export async function unlockWithPasskeyAuto(): Promise<LoginResult> {
+  const online = typeof navigator === 'undefined' || navigator.onLine
+  if (!online) {
+    return (await isOfflineUnlockAvailable()) ? offlineUnlockWithPasskey() : loginWithPasskey()
+  }
+  const result = await loginWithPasskey()
+  if (result.ok) return result
+  // 「获取登录选项失败」= login/options 请求本身没到达（网络断/服务器不可达）
+  if (result.error === '获取登录选项失败' && (await isOfflineUnlockAvailable())) {
+    return offlineUnlockWithPasskey()
+  }
+  return result
 }

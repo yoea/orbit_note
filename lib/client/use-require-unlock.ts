@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { PRF_UNAVAILABLE, fetchSession, getDek, initDek, loginWithPasskey } from './session'
+import { PRF_UNAVAILABLE, fetchSession, getDek, initDek, unlockWithPasskeyAuto } from './session'
+import { isOfflineUnlockAvailable } from './offline'
 
 export type UnlockState = 'loading' | 'ready' | 'need-unlock' | 'error'
 
@@ -12,6 +13,8 @@ export type UnlockState = 'loading' | 'ready' | 'need-unlock' | 'error'
 //    不做无手势自动 WebAuthn 调用——iOS PWA 冷启动时会被拦截（弹了 Face ID 也失败，
 //    造成"识别了却没登录"的困惑）；用户点击一次（有手势）即成功。
 // 3. 未认证 → /login；PRF 不可用（解锁时返回）→ /login（恢复密钥模式）
+// 4. 网络失败（离线）：DEK 已恢复 → 直接 ready；否则若离线解锁缓存可用 → need-unlock
+//    （按钮走本地 PRF 解锁）；两者皆无 → error（与无离线能力时的行为一致）
 export function useRequireUnlock(): { state: UnlockState; retryUnlock: () => Promise<string | null> } {
   const router = useRouter()
   const [state, setState] = useState<UnlockState>('loading')
@@ -25,9 +28,16 @@ export function useRequireUnlock(): { state: UnlockState; retryUnlock: () => Pro
       try {
         // 会话级恢复（导航/重载后 DEK 自动回来）
         await initDek()
-        const s = await fetchSession()
-        if (!s.initialized) { router.replace('/setup'); return }
-        if (!s.authenticated) { router.replace('/login'); return }
+        try {
+          const s = await fetchSession()
+          if (!s.initialized) { router.replace('/setup'); return }
+          if (!s.authenticated) { router.replace('/login'); return }
+        } catch {
+          // 离线（session 请求不可达）：有 DEK 即可用；无 DEK 但有离线解锁缓存 → 手动解锁
+          if (getDek()) { if (!cancelled) setState('ready'); return }
+          if (await isOfflineUnlockAvailable()) { if (!cancelled) setState('need-unlock'); return }
+          throw new Error('offline')
+        }
         if (getDek()) { setState('ready'); return }
         // 无 DEK：手动解锁（一次点击，Face ID 正常）
         setState('need-unlock')
@@ -40,11 +50,12 @@ export function useRequireUnlock(): { state: UnlockState; retryUnlock: () => Pro
 
   // 手动解锁（用户手势下 WebAuthn 正常）：成功 → ready；PRF 不可用 → 登录页（恢复密钥）；
   // 失败 → 自动重试一次（iOS PWA 首次 get 偶发失败），仍失败返回错误信息。
+  // unlockWithPasskeyAuto：在线优先，网络不可达且缓存可用时回退本地 PRF 解锁。
   // 递归体抽成内部函数：避免在 useCallback 初始化器里引用 retryUnlock 自身
   // （react-hooks/immutability 会判定为「未声明先使用」）。
   const retryUnlock = useCallback(async (): Promise<string | null> => {
     async function attempt(isRetry: boolean): Promise<string | null> {
-      const result = await loginWithPasskey()
+      const result = await unlockWithPasskeyAuto()
       if (result.ok && getDek()) { setState('ready'); return null }
       if (result.error === PRF_UNAVAILABLE) { router.replace('/login'); return null }
       if (!isRetry) {
