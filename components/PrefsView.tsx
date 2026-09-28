@@ -70,7 +70,7 @@ export default function PrefsView() {
   }
 
   return (
-    <main className="animate-fade-in mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt safe-pb">
+    <main className="animate-fade-in mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="relative flex items-center justify-between py-3">
         <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">

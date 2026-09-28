@@ -20,7 +20,10 @@ function collectPageRoutes(dir: string, prefix = ''): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === 'api' || entry.name.startsWith('_')) continue
     if (entry.isDirectory()) {
-      routes.push(...collectPageRoutes(join(dir, entry.name), `${prefix}/${entry.name}`))
+      // route group `(name)` 只做布局分组，不产生 URL 段（app/(app)/diary → /diary）。
+      // 若把它当普通目录拼进路径，会得到 /(app)/diary 这种永不匹配 matcher 的假路由。
+      const segment = /^\(.+\)$/.test(entry.name) ? '' : `/${entry.name}`
+      routes.push(...collectPageRoutes(join(dir, entry.name), `${prefix}${segment}`))
     } else if (entry.name === 'page.tsx') {
       routes.push(prefix === '' ? '/' : prefix)
     }

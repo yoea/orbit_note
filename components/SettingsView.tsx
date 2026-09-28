@@ -52,16 +52,14 @@ export default function SettingsView() {
   }
 
   return (
-    <main className="animate-fade-in mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt safe-pb">
+    <main className="animate-fade-in mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt">
       {/* 电脑版与主页同宽（手机视图宽度），不随屏幕拉伸 */}
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
-      <header className="relative flex items-center justify-between py-3">
-        {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
-          ‹
-        </Link>
+      {/* 本页是 tab 目的地之一，不再放返回箭头（回首页由 TabBar 的「写」承担）；
+          标题绝对居中，这里不需要右侧控件，故 justify-end + 空占位保持行高 */}
+      <header className="relative flex items-center justify-end py-3">
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">设置</h1>
-        <span className="w-8" />
+        <span className="w-8" aria-hidden />
       </header>
       {/* 个人信息卡片：生成式头像 + 名字 + 一行统计；点开改名。
           不设分组标题——卡片本身已足够表意，省掉一个只配一行的标题 */}
@@ -133,10 +131,10 @@ export default function SettingsView() {
           </button>
         </li>
       </ul>
-      {/* 底部留白：避免最后一组卡片紧贴页脚。
+      {/* 底部留白：避免最后一组卡片紧贴 TabBar。
           这里原先放了一个 Orbit 字标，但它当初的作用是给「关于 Orbit」留出与页脚的间隔——
-          该行已移入「通用」分组，而页脚本身就渲染「Orbit v… · © 2026 Orbit」，
-          再放一个字标既重复、又正好压在页脚上方，故移除 */}
+          该行已移入「通用」分组，而全局页脚已由 TabBar 取代（版本号与版权在「关于」弹窗里本来就有），
+          再放一个字标既重复、又正好压在 TabBar 上方，故移除 */}
       <div className="h-10" aria-hidden />
       {confirmLogout && (
         <ConfirmDialog

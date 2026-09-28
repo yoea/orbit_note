@@ -295,7 +295,7 @@ export default function EntryView({ id }: { id: string }) {
 
   if (error && !entry) {
     return (
-      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center px-5 safe-pt safe-pb">
+      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center px-5 safe-pt">
         <div className="text-center">
           <p className="text-sm text-neutral-500">{error}</p>
           <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">重试</button>
@@ -318,7 +318,7 @@ export default function EntryView({ id }: { id: string }) {
   const displayCoords = entryLat != null && entryLon != null ? `${entryLat.toFixed(6)}, ${entryLon.toFixed(6)}` : ''
   const locationBusy = locating || savingLocation
   return (
-    <main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-y-auto px-5 safe-pt safe-pb">
+    <main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-y-auto px-5 safe-pt">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中。

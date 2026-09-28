@@ -8,18 +8,10 @@ import { detectDeviceName } from '@/lib/client/device'
 import { getDek } from '@/lib/client/session'
 import { derivePrfKek, wrapWithKek } from '@/lib/client/crypto/setup'
 import { fromBase64Url } from '@/lib/client/crypto/base64'
-import UnlockPrompt from '@/components/UnlockPrompt'
-import { useRequireUnlock } from '@/lib/client/use-require-unlock'
 
-// 页面守卫 + 解锁：与 /settings 一致——直接访问/刷新时从 sessionStorage 恢复 DEK，
-// 未解锁则显示手动解锁按钮（此前无守卫，直接访问时 getDek() 为空被跳转到 /login）
+// 解锁守卫统一在 (app)/layout.tsx 处理。
 export default function AddPasskeyPage() {
-  const { state, retryUnlock } = useRequireUnlock()
-  if (state === 'need-unlock') return <UnlockPrompt onUnlock={retryUnlock} />
-  if (state !== 'ready') return <main className="flex-1 min-h-0 px-5 safe-pt" />
-  return (
-      <AddPasskeyInner />
-  )
+  return <AddPasskeyInner />
 }
 
 function AddPasskeyInner() {
@@ -87,7 +79,7 @@ function AddPasskeyInner() {
   }
 
   return (
-    <main className="flex flex-1 min-h-0 flex-col px-6 safe-pt safe-pb">
+    <main className="flex flex-1 min-h-0 flex-col px-6 safe-pt">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}

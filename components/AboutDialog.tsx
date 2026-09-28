@@ -62,6 +62,10 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
               调用时坐标会发送给对应服务
             </p>
           </div>
+          {/* 版权行从原全局页脚搬来：页脚已由底部 TabBar 取代，版权声明不能随之丢失 */}
+          <p className="mt-4 text-center text-[10px] text-neutral-300 dark:text-neutral-600">
+            © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'}
+          </p>
         </div>
         <div className="border-t border-neutral-200 p-3 dark:border-neutral-700">
           <button

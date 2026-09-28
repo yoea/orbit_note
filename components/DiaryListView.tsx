@@ -70,6 +70,8 @@ export default function DiaryListView() {
   const SCROLL_KEY = 'qo-diary-scroll'
   const restoredScrollRef = useRef(false)
   const itemsRef = useRef<DecryptedItem[]>([])
+  // 滚动容器（本页是容器滚动，见下方 main 的注释）
+  const scrollRef = useRef<HTMLElement | null>(null)
 
   // 同步给 ref：itemsRef 只被「滚动保存」回调异步读取，因此在 effect 里赋值。
   // 不要写回渲染期赋值（itemsRef.current = items）——渲染期写 ref 会在并发渲染下读到
@@ -88,22 +90,25 @@ export default function DiaryListView() {
   }
 
   // 保存滚动位置：滚动防抖写入 sessionStorage；页面隐藏/卸载时兜底保存
+  // （监听对象是容器元素而非 window——本页已改为容器滚动）
   useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
     let t: ReturnType<typeof setTimeout> | null = null
     const save = () => {
       try {
-        sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ y: window.scrollY, count: itemsRef.current.length }))
+        sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ y: el.scrollTop, count: itemsRef.current.length }))
       } catch { /* 忽略 */ }
     }
     const onScroll = () => {
       if (t) clearTimeout(t)
       t = setTimeout(save, 150)
     }
-    window.addEventListener('scroll', onScroll, { passive: true })
+    el.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('pagehide', save)
     return () => {
       if (t) clearTimeout(t)
-      window.removeEventListener('scroll', onScroll)
+      el.removeEventListener('scroll', onScroll)
       window.removeEventListener('pagehide', save)
       save() // 卸载前保存（进入详情页时）
     }
@@ -117,7 +122,7 @@ export default function DiaryListView() {
     try {
       const state = readScrollState()
       if (state && state.y > 0) {
-        requestAnimationFrame(() => window.scrollTo(0, state.y))
+        requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = state.y })
       }
     } catch { /* 忽略 */ }
   }, [items, stats])
@@ -230,7 +235,7 @@ export default function DiaryListView() {
 
   if (error) {
     return (
-      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center px-5 safe-pt safe-pb">
+      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center px-5 safe-pt">
         <div className="text-center">
           <p className="text-sm text-neutral-500">{error}</p>
           <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">重试</button>
@@ -240,16 +245,16 @@ export default function DiaryListView() {
   }
 
   return (
-    /* 本页走 window 滚动：main 不设高度/overflow，内容撑开由 window 滚动——
-       iOS 点击状态栏原生回到顶部 */
-    <main className="animate-fade-in mx-auto w-full max-w-md px-5 safe-pt safe-pb">
+    /* 容器滚动（main 自身 overflow-y-auto，高度 = 可用高度）：底部 TabBar 是流内元素，
+       若继续用 window 滚动，列表内容会把 TabBar 挤到文档末尾——必须滚动到底才能看到它。
+       代价：失去 iOS「点状态栏回到顶部」的原生行为（那作用于 window 滚动），
+       换来与其余页面（/settings、/entry、/settings/*）一致的滚动模型。 */
+    <main ref={scrollRef} className="animate-fade-in mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt">
       {/* 电脑版与主页同宽（手机视图宽度），不随屏幕拉伸 */}
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
-      <header className="relative flex items-center justify-between py-3">
-        {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
-          ‹
-        </Link>
+      {/* 本页是 tab 目的地之一，不再放返回箭头（回首页由 TabBar 的「写」承担）；
+          标题用绝对定位居中，右侧保留搜索入口，故用 justify-end */}
+      <header className="relative flex items-center justify-end py-3">
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">全部日记</h1>
         {/* 搜索：点击后弹出全屏搜索层（正文加密，检索只能在客户端解密后完成） */}
         <button onClick={() => setSearchOpen(true)} aria-label="搜索日记" className="-mr-1 px-1 text-neutral-400 active:opacity-60">

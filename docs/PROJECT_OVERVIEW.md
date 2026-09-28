@@ -18,6 +18,7 @@
 | 记录 | 可选保存坐标（自动反查地点名）、保存时自动记录实时天气 |
 | 习惯 | 连续写作天数（Streak）、每日提示、往年的今天回忆卡、保存音效 |
 | 回顾 | 写作频率热力图、按日分组时间线、篇数/天数/总字数统计 |
+| 导航 | 底部 tab bar（写 / 日记 / 设置）+ 组共享布局；详情/子页保留返回箭头 |
 | 导出 | 验证身份（通行密钥或恢复密钥）后解密导出全部日记为 CSV |
 | 数据主权 | 删除全部数据需输入文字 + 生物识别双重确认 |
 
@@ -73,14 +74,16 @@ DEK（256-bit CSPRNG，首次初始化生成，仅存浏览器内存，sessionSt
 
 ```
 app/                    Next.js 路由与页面
-  api/                  服务端接口（auth / diary / draft / keys / prefs / prompts / weather / admin）
-  setup|login|diary|history|entry/[id]|settings|settings/passkey|settings/export
-components/             React 组件（编辑器、列表、热力图、各种弹窗）
+  api/                  服务端接口（auth / diary / draft / keys / prefs / profile / prompts / weather / admin）
+  (app)/                登录后区（route group，不产生 URL 段）：共享 layout 统一做解锁守卫 +
+                        渲染底部 TabBar；组内页面 = 首页 / diary / entry/[id] / settings 及其子页
+  login|setup|history   组外：认证流程与旧路由重定向（/history → /diary）
+components/             React 组件（编辑器、列表、热力图、TabBar、各种弹窗）
 lib/client/             客户端逻辑：crypto/（加密/KDF/PRF/恢复密钥/包装）、webauthn、session、
                         idb、draft-sync、location、geocode、weather、sound、streak、prefs、prompts
 lib/server/             服务端逻辑：auth、session、webauthn、validation、ratelimit、
                         security-headers、proxy-guard、weather、db/（schema + 连接）
-drizzle/                SQL 迁移文件（0000 ~ 0010）
+drizzle/                SQL 迁移文件（0000 ~ 0012）
 proxy.ts                Next 16 middleware（安全头 + 粗粒度路由保护）
 scripts/                deploy.sh（一键部署）、generate-icons.js
 docs/                   设计文档、安全审计、手动测试清单、部署示例
@@ -122,7 +125,8 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
 - **CSRF**：SameSite=Lax + Origin 校验双保险。
 - **限流**：单实例内存滑动窗口（登录 / 注册 / 写日记 / wipe 等）。
 - **安全头**（`lib/server/security-headers.ts`）：CSP（生产 `default-src 'self'`）、`nosniff`、`no-referrer`、`X-Frame-Options: DENY`、`Permissions-Policy` 收紧位置/摄像头/麦克风等。
-- **proxy.ts（Next 16 middleware）**：为所有页面响应注入安全头，并对 `/`、`/history`、`/entry/*`、`/settings/*` 做单向粗粒度重定向。**不做**「已登录 → /login」跳转，因为 DEK 仅在内存、刷新即失，`/login` 必须恒可达（否则死循环）；已登录跳转由客户端守卫负责。
+- **proxy.ts（Next 16 middleware）**：为所有页面响应注入安全头，并对 `/`、`/diary`、`/history`、`/entry/*`、`/settings/*` 做单向粗粒度重定向。**不做**「已登录 → /login」跳转，因为 DEK 仅在内存、刷新即失，`/login` 必须恒可达（否则死循环）；已登录跳转由客户端守卫负责。
+  > route group `(app)` 不改变 URL，因此新增组内页面时 matcher 与 `proxy-guard.ts` 的 `protectedPaths` 都不需要改；但**新增/改名的真实路径两处都必须登记**，`tests/proxy-matcher-coverage.test.ts` 会守住这条（它已能正确跳过 `(app)` 这类分组目录）。
 - **零日志**：全项目无 `console` 输出，请求体 / 密钥 / PRF 输出不落日志。
 - **第三方数据流向**：
 
@@ -173,10 +177,13 @@ bash scripts/deploy.sh
 
 ## 快速使用
 
+> 登录后的三块内容由**底部导航栏**切换（当前 tab 高亮）；「写」「设置」是 tab 目的地、
+> 页头无返回箭头，`/entry/*` 与 `/settings/*` 子页保留返回箭头。
+
 1. **首次访问** → 初始化：创建通行密钥 → 保存恢复密钥 → 完成。
-2. **写日记** → 输入即自动存草稿 → 点「保存」落库（可记录位置/天气）。
-3. **历史** → 热力图 + 按日分组列表 → 点条目进详情（可编辑 / 删除 / 复制坐标）。
-4. **设置** → 管理 Passkey、重生成恢复密钥、偏好开关、导出 CSV、退出登录、删除全部数据。
+2. **写**（首页）→ 输入即自动存草稿 → 点「保存」落库（可记录位置/天气）。
+3. **日记** → 热力图 + 按日分组列表 → 点条目进详情（可编辑 / 删除 / 复制坐标）；右上角 🔍 搜索。
+4. **设置** → 个人信息与名字、通行密钥管理、重生成恢复密钥、偏好设置、导出 CSV、退出登录、删除全部数据。
 
 ## 许可证
 

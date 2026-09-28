@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import SwRegister from "@/components/SwRegister";
 import SecureContextCheck from "@/components/SecureContextCheck";
-import AppFooter from "@/components/AppFooter";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -31,12 +30,14 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="zh-CN" suppressHydrationWarning>
-      {/* flex 纵向布局：页面 flex-1 弹性分配，页脚在流内吸底（不遮挡任何内容） */}
+      {/* flex 纵向布局：页面 flex-1 弹性分配（高度链 html/body 100% → wrapper flex-1、min-h-0）
+          原全局页脚已由 (app)/layout.tsx 的 TabBar 取代；登录/初始化等组外页面各自吸底。
+          ——不能加 mt-auto 页脚：它会让「容器高度 − 页脚」成为页面可视高度，而 TabBar 也在流内，
+          两者叠加会把 (app) 页面压得比预期更矮。 */}
       <body className="flex h-full flex-col bg-white text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100">
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>
         <SwRegister />
         <SecureContextCheck />
-        <AppFooter />
       </body>
     </html>
   );

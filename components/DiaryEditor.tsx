@@ -389,9 +389,10 @@ export default function DiaryEditor() {
         </div>
       )}
       {showConfetti && <ConfettiBurst />}
-      {/* 上下 padding 均 8px（桌面端）；iPhone 底部取安全区。
-          不能用 safe-pb + pb-2 组合——.safe-pb 是 unlayered 自定义类，会覆盖 Tailwind 的 pb-2 */}
-      <footer className="mt-auto px-2 pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2">
+      {/* 上下 padding 均 8px。底部安全区不再由这里承担——(app)/layout 的 TabBar 已经
+          自带 pb-safe，此处若再加 env(safe-area-inset-bottom) 会叠出一段空白。
+          也不能用 safe-pb + pb-2 组合——.safe-pb 是 unlayered 自定义类，会覆盖 Tailwind 的 pb-2 */}
+      <footer className="mt-auto px-2 pb-2 pt-2">
         <p className="mb-3 text-center text-xs text-neutral-400">
           {status === 'saving' && '正在保存…'}
           {status === 'saved' && (
