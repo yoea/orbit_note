@@ -198,7 +198,7 @@ export default function SettingsView() {
         <li className="flex items-center justify-between px-4 py-3.5">
           <div>
             <p className="text-neutral-800 dark:text-neutral-200">自动补全地点名</p>
-            <p className="mt-0.5 text-xs text-neutral-400">保存与查看时自动把坐标换成地点名；关闭后只显示坐标（点击坐标仍可手动查询）</p>
+            <p className="mt-0.5 text-xs text-neutral-400">关闭后只显示坐标</p>
           </div>
           <PrefSwitch enabled={autoPlaceName} ready={prefsReady} onToggle={toggleAutoPlaceName} />
         </li>
