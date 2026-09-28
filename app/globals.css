@@ -39,8 +39,12 @@ html {
    window 滚动（(app) 组内页面是容器滚动，登录/初始化页把内容垂直居中），所以底部
    工具栏始终可见，于是紧贴容器底边的元素（登录页的版本页脚、TabBar）正好落在被系统
    覆盖的那一条里 ⇒ 桌面上正常、iPhone Safari 与 PWA 里「不显示」。
-   100dvh = 随浏览器工具栏实时变化的动态视口高度，即真正可见的高度（Safari 15.4+，
-   其余现代内核均支持）；不支持的旧内核退回 100%（= 改动前的行为，不会塌成 0）。
+   100dvh = 随浏览器工具栏实时变化的动态视口高度，即真正可见的高度。浏览器下限：
+   Safari 15.4+ / Chrome 108+ / Firefox 101+——本项目本就在此之上（登录依赖 WebAuthn PRF，
+   即 iOS 18 / Safari 18+），而且对话框的 max-h-[60dvh] 早已依赖 dvh，因此不写 height:100%
+   兜底。★ 写了也没用：Lightning CSS 会把同一条规则里被后一行覆盖的 height:100% 直接删掉
+   （实测线上产物只剩 .app-height{height:100dvh}），想留真兜底得用
+   @supports not (height:100dvh) 单独成块。
    注意：dvh 只排除浏览器 UI，不排除刘海/home indicator 那圈系统安全区——
    所以 .safe-pt / .pb-safe 仍然必须存在。★ 这是 unlayered 类，会覆盖 Tailwind 的
    高度工具类，元素上不要再写 h-full / h-dvh。 */
