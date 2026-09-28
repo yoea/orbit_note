@@ -5,6 +5,7 @@ import Link from 'next/link'
 import SearchIcon from './SearchIcon'
 import { getDek } from '@/lib/client/session'
 import { decryptEntries, fetchAllEntries } from '@/lib/client/entries'
+import { weatherEmoji } from '@/lib/client/weather'
 import {
   TIME_RANGE_LABEL,
   buildSnippet,
@@ -201,10 +202,28 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
                       <span className="line-clamp-2 whitespace-pre-wrap text-sm text-neutral-500 dark:text-neutral-400">
                         <Highlighted text={buildSnippet(plain, trimmedQuery)} query={trimmedQuery} />
                       </span>
-                      {entry.locationName && (
-                        <span className="text-xs text-neutral-400">
-                          <span className="mr-0.5 text-[10px]">📍</span>
-                          <Highlighted text={entry.locationName} query={trimmedQuery} />
+                      {/* 元信息行：左下角定位，右下角天气。
+                          天气必须显示——天气是检索字段之一（搜「小雨」能命中天气），
+                          不展示的话命中了也看不出为什么命中；用 Highlighted 渲染，
+                          关键词命中天气时会像正文一样高亮。 */}
+                      {(entry.locationName || entry.weather) && (
+                        <span className="flex items-baseline justify-between gap-2 text-xs text-neutral-400">
+                          {/* 左：地点名（无定位时留空，天气仍靠右对齐） */}
+                          <span className="min-w-0 truncate">
+                            {entry.locationName && (
+                              <>
+                                <span className="mr-0.5 text-[10px]">📍</span>
+                                <Highlighted text={entry.locationName} query={trimmedQuery} />
+                              </>
+                            )}
+                          </span>
+                          {/* 右：天气（emoji + 文本，与详情页同款展示） */}
+                          {entry.weather && (
+                            <span className="shrink-0">
+                              <span className="mr-0.5 text-[10px]">{weatherEmoji(entry.weather)}</span>
+                              <Highlighted text={entry.weather} query={trimmedQuery} />
+                            </span>
+                          )}
                         </span>
                       )}
                     </Link>

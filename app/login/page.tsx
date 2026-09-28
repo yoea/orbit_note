@@ -90,11 +90,14 @@ export default function LoginPage() {
 
   if (loadError) {
     return (
-      <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 safe-pb">
-        <p className="text-sm text-neutral-500">连接失败，请检查网络后重试</p>
-        <button onClick={() => window.location.reload()} className="rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">
-          重试
-        </button>
+      <main className="flex min-h-0 flex-1 flex-col px-6 safe-pb">
+        <div className="m-auto flex flex-col items-center gap-4">
+          <p className="text-sm text-neutral-500">连接失败，请检查网络后重试</p>
+          <button onClick={() => window.location.reload()} className="rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">
+            重试
+          </button>
+        </div>
+        <VersionFooter />
       </main>
     )
   }
@@ -152,6 +155,18 @@ export default function LoginPage() {
         </button>
       )}
       </div>
+      <VersionFooter />
     </main>
+  )
+}
+
+// 页脚：版本号 + 版权（原全局页脚的登录页形态——全局页脚已由 TabBar 取代，
+// 但登录页在组外、不渲染 TabBar，值得公开的版本/版权信息在这里展示；
+// 完整的「关于」内容仍在应用内的关于弹窗）
+function VersionFooter() {
+  return (
+    <footer className="pb-1 text-center text-[10px] text-neutral-300 dark:text-neutral-600" aria-hidden>
+      Orbit {process.env.NEXT_PUBLIC_VERSION ?? 'dev'} · © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'}
+    </footer>
   )
 }
