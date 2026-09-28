@@ -36,7 +36,10 @@ echo "版本：$VERSION"
 
 echo "=== [3/7] 安装依赖 + 生产构建 ==="
 cd "$BUILD_DIR"
-npm ci --no-audit --no-fund 2>&1 | tail -1
+# --ignore-scripts：跳过依赖的 postinstall。带脚本的包（esbuild / fsevents /
+# unrs-resolver 等）全部是 dev 或平台相关，生产运行与 next build 都不需要它们；
+# 而 esbuild 的 install.js 在 Windows 上会因杀毒软件锁文件报 spawnSync EBUSY。
+npm ci --no-audit --no-fund --ignore-scripts 2>&1 | tail -1
 cp "$PROJECT_DIR/.env.local" .env
 npm run build 2>&1 | tail -3
 # 构建产物硬校验：缺 BUILD_ID 说明 build 实际失败，立即中止，不要上传半成品
