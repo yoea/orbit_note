@@ -29,7 +29,11 @@ function PrefSwitch({ enabled, ready, onToggle }: { enabled: boolean; ready: boo
 // 这组开关原先是一整页（/settings/prefs），但只占约 40% 页高，跳页反而多一次导航与
 // 一次返回；改弹窗后设置页一屏容纳，开关写完直接关闭，不用来回跳。
 //
-// 高度限制：列表区 max-h-[60dvh] 并内部滚动——开关以后还会增加，
+// 层级刻意压平：遮罩 → 卡片 →（标题 / 开关列表 / 完成按钮），开关行直接落在卡片上。
+// 此前列表外还套了一层「灰底圆角」容器，在白色卡片里形成「卡中卡」，既无信息量又
+// 让左右缩进多出 16px；现改为分隔线 + 整行触达区，与 ConfirmDialog 的底部按钮同一风格。
+//
+// 高度限制：列表自身 max-h-[60dvh] 并内部滚动（不再多一层滚动容器）——开关以后还会增加，
 // 限高让「完成」按钮始终留在视口内（否则内容一多，按钮会被挤出屏幕且无法滚动到）。
 // 状态与首帧读取机制从原页面原样搬来（防两处不同步，设置页不保留任何偏好 state）。
 export default function PrefsDialog({ onClose }: { onClose: () => void }) {
@@ -72,6 +76,17 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
     } catch { /* 忽略存储失败（隐私模式等） */ }
   }
 
+  // 开关行清单：文案、落盘键与状态并排一处，省掉 6 段几乎相同的 JSX。
+  // 新增开关只需在此加一行（键与文案不会在复制粘贴中走样）。
+  const rows = [
+    { key: LOCATION_KEY, label: '保存时记录位置', hint: '关闭后保存日记不再请求定位', enabled: locationEnabled, setEnabled: setLocationEnabled },
+    { key: WEATHER_KEY, label: '保存时记录天气', hint: '关闭后保存日记不再获取实时天气', enabled: saveWeather, setEnabled: setSaveWeather },
+    { key: GEOCODE_KEY, label: '自动补全地点名', hint: '关闭后不会自动把坐标转为地名', enabled: autoPlaceName, setEnabled: setAutoPlaceName },
+    { key: STREAK_KEY, label: '显示连续写作天数', hint: '首页日期旁显示连续写了 N 天', enabled: showStreak, setEnabled: setShowStreak },
+    { key: PROMPT_KEY, label: '显示每日提示', hint: '首页输入框上方的写作灵感提示', enabled: showPrompt, setEnabled: setShowPrompt },
+    { key: OTD_KEY, label: '显示去年的今天', hint: '首页顶部往年今日回忆卡片', enabled: showOtd, setEnabled: setShowOtd },
+  ]
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={onClose}>
       <div
@@ -81,63 +96,26 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
         aria-modal="true"
         aria-label="偏好设置"
       >
-        <h2 className="shrink-0 px-5 pb-3 pt-5 text-center text-base font-semibold">偏好设置</h2>
-        {/* 唯一的滚动区：限高后内容再多也只在内部滚动，标题与「完成」始终可见。
+        <h2 className="shrink-0 px-5 pb-1 pt-5 text-center text-base font-semibold">偏好设置</h2>
+        {/* 唯一的滚动区就是列表自身：限高后内容再多也只在内部滚动，标题与「完成」始终可见。
             桌面端用项目自带的细滚动条（thin-scrollbar） */}
-        <div className="thin-scrollbar max-h-[60dvh] overflow-y-auto px-5 pb-5">
-          <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
-            <li className="flex items-center justify-between px-4 py-3.5">
+        <ul className="thin-scrollbar max-h-[60dvh] overflow-y-auto px-5 py-2">
+          {rows.map((row) => (
+            <li key={row.key} className="flex items-center justify-between gap-4 border-b border-neutral-100 py-3.5 last:border-b-0 dark:border-neutral-700">
               <div>
-                <p className="text-neutral-800 dark:text-neutral-200">保存时记录位置</p>
-                <p className="mt-0.5 text-xs text-neutral-400">关闭后保存日记不再请求定位</p>
+                <p className="text-neutral-800 dark:text-neutral-200">{row.label}</p>
+                <p className="mt-0.5 text-xs text-neutral-400">{row.hint}</p>
               </div>
-              <PrefSwitch enabled={locationEnabled} ready={prefsReady} onToggle={() => toggle(LOCATION_KEY, locationEnabled, setLocationEnabled)} />
+              <PrefSwitch enabled={row.enabled} ready={prefsReady} onToggle={() => toggle(row.key, row.enabled, row.setEnabled)} />
             </li>
-            <li className="flex items-center justify-between px-4 py-3.5">
-              <div>
-                <p className="text-neutral-800 dark:text-neutral-200">保存时记录天气</p>
-                <p className="mt-0.5 text-xs text-neutral-400">关闭后保存日记不再获取实时天气</p>
-              </div>
-              <PrefSwitch enabled={saveWeather} ready={prefsReady} onToggle={() => toggle(WEATHER_KEY, saveWeather, setSaveWeather)} />
-            </li>
-            <li className="flex items-center justify-between px-4 py-3.5">
-              <div>
-                <p className="text-neutral-800 dark:text-neutral-200">自动补全地点名</p>
-                <p className="mt-0.5 text-xs text-neutral-400">关闭后不会自动把坐标转为地名</p>
-              </div>
-              <PrefSwitch enabled={autoPlaceName} ready={prefsReady} onToggle={() => toggle(GEOCODE_KEY, autoPlaceName, setAutoPlaceName)} />
-            </li>
-            <li className="flex items-center justify-between px-4 py-3.5">
-              <div>
-                <p className="text-neutral-800 dark:text-neutral-200">显示连续写作天数</p>
-                <p className="mt-0.5 text-xs text-neutral-400">首页日期旁显示连续写了 N 天</p>
-              </div>
-              <PrefSwitch enabled={showStreak} ready={prefsReady} onToggle={() => toggle(STREAK_KEY, showStreak, setShowStreak)} />
-            </li>
-            <li className="flex items-center justify-between px-4 py-3.5">
-              <div>
-                <p className="text-neutral-800 dark:text-neutral-200">显示每日提示</p>
-                <p className="mt-0.5 text-xs text-neutral-400">首页输入框上方的写作灵感提示</p>
-              </div>
-              <PrefSwitch enabled={showPrompt} ready={prefsReady} onToggle={() => toggle(PROMPT_KEY, showPrompt, setShowPrompt)} />
-            </li>
-            <li className="flex items-center justify-between px-4 py-3.5">
-              <div>
-                <p className="text-neutral-800 dark:text-neutral-200">显示去年的今天</p>
-                <p className="mt-0.5 text-xs text-neutral-400">首页顶部往年今日回忆卡片</p>
-              </div>
-              <PrefSwitch enabled={showOtd} ready={prefsReady} onToggle={() => toggle(OTD_KEY, showOtd, setShowOtd)} />
-            </li>
-          </ul>
-        </div>
-        <div className="shrink-0 border-t border-neutral-200 p-3 dark:border-neutral-700">
-          <button
-            onClick={onClose}
-            className="w-full rounded-xl py-2.5 text-base font-medium text-neutral-500 active:bg-neutral-100 dark:active:bg-neutral-700"
-          >
-            完成
-          </button>
-        </div>
+          ))}
+        </ul>
+        <button
+          onClick={onClose}
+          className="shrink-0 border-t border-neutral-200 py-3.5 text-base font-medium text-neutral-500 active:bg-neutral-100 dark:border-neutral-700 dark:active:bg-neutral-700"
+        >
+          完成
+        </button>
       </div>
     </div>
   )
