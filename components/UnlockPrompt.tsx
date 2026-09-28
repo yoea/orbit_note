@@ -24,11 +24,19 @@ export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<str
   }
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col px-6 safe-pb">
-      {/* m-auto：LOGO + 按钮整体垂直居中 */}
+    <main className="flex min-h-0 flex-1 flex-col px-6 pb-safe">
+      {/* m-auto：LOGO + 按钮整体垂直居中。底部留白用 .pb-safe（= max(env, 1rem)）：
+          登录页 v1.15.5 换掉 .safe-pb 时这里漏了——safe-pb 在无 home indicator 的
+          环境里算出来是 0，内容会贴到容器底边、落进 iOS 工具栏覆盖区。 */}
       <div className="m-auto flex w-full max-w-xs flex-col items-center gap-8">
-        {/* 品牌 LOGO */}
-        <OrbitLogo size="lg" />
+        {/* 品牌标识：与登录页逐字相同（LOGO + 一句话，12px 内距 / 与按钮区 32px），
+            结构说明见 app/login/page.tsx 同一块的注释 */}
+        <div className="flex flex-col items-center gap-3">
+          <OrbitLogo size="lg" />
+          <p className="text-center text-xs tracking-wide text-neutral-500 dark:text-neutral-400">
+            端到端加密的私人日记。
+          </p>
+        </div>
         <div className="w-full">
           <button
             onClick={() => void handleUnlock()}

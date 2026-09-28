@@ -128,9 +128,12 @@ export default function LoginPage() {
               已删除：按钮文案本身完整，再啰嗦一遍信息增量为零；且那两行是浅灰小字
               （neutral-400 浅色下 2.5:1，第二行叠加 /70 后仅 1.8:1），本就低于 WCAG AA、
               在手机上几乎看不清。通行密钥的能力说明已归位到「关于」弹窗与设置页功能列表。 */}
-          {/* 恢复密钥入口：仅在通行密钥登录失败后出现（小字、居中、无下划线、淡色） */}
+          {/* 恢复密钥入口：仅在通行密钥登录失败后出现（小字、居中、无下划线、淡色）。
+              配色必须 500/400 这一对（浅 4.7:1 / 深 7.6:1，过 AA）——这是「通行密钥失败
+              后的唯一出路」，恰恰最需要看得清；曾用 neutral-400/70（浅色 1.8:1），
+              被删的那两行说明修完后它成了全站最差的一处对比度，已改。 */}
           {passkeyFailed && (
-            <button onClick={() => setMode('recovery')} className="mt-3 text-center text-xs text-neutral-400/70">
+            <button onClick={() => setMode('recovery')} className="mt-3 text-center text-xs text-neutral-500 dark:text-neutral-400">
               使用恢复密钥登录
             </button>
           )}
