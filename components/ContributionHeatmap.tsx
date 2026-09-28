@@ -71,7 +71,7 @@ export default function ContributionHeatmap({ byDay }: { byDay: Record<string, {
                     <div
                       key={day}
                       title={n > 0 ? `${day} · ${n} 篇` : undefined}
-                      className={`h-2.5 w-2.5 rounded-[3px] ${lvl === 0 ? emptyCellClass : ''}`}
+                      className={`h-2.5 w-2.5 rounded-[3px] ${lvl === 0 ? emptyCellClass : ''} ${day === todayIso ? 'ring-1 ring-amber-400' : ''}`}
                       style={lvl > 0
                         ? { background: lvl === 6 ? NEAR_BLACK : `rgba(139, 92, 246, ${lvl === 5 ? '1' : ALPHA[lvl - 1]})` }
                         : undefined}

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit 数据库结构报告</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    margin: 0; padding: 32px 20px; line-height: 1.7;
+    background: #fafafa; color: #1c1c1e;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #111113; color: #ececee; }
+    .card { background: #1c1c1f; border-color: #333 !important; }
+    th { background: #26262a !important; }
+    tr:nth-child(even) td { background: #1f1f23; }
+    code, .pill, .mig { background: #26262a !important; color: #9ad1ff !important; }
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  .sub { color: #8e8e93; font-size: 14px; margin-bottom: 28px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; margin-right: 6px; }
+  .b-green { background: #d1fae5; color: #065f46; }
+  .b-blue { background: #dbeafe; color: #1e40af; }
+  @media (prefers-color-scheme: dark) { .b-green { background:#064e3b; color:#6ee7b7; } .b-blue { background:#1e3a8a; color:#93c5fd; } }
+  h2 { font-size: 18px; margin: 36px 0 12px; padding-left: 10px; border-left: 4px solid #f43f5e; }
+  .card {
+    background: #fff; border: 1px solid #e5e5ea; border-radius: 14px;
+    padding: 18px 22px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  }
+  .table-name { font-size: 17px; font-weight: 700; }
+  .table-desc { font-size: 13px; color: #8e8e93; margin-top: 2px; }
+  .stat { font-size: 12px; color: #34c759; margin-left: 8px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13.5px; }
+  th { text-align: left; background: #f2f2f7; padding: 7px 10px; font-size: 12px; color: #8e8e93; font-weight: 600; }
+  td { padding: 7px 10px; border-top: 1px solid #eee; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafafa; }
+  code { background: #f2f2f7; border-radius: 4px; padding: 1px 6px; font-size: 12px; }
+  .pk { color: #d97706; font-weight: 700; }
+  .fk { color: #7c3aed; }
+  .flow { font-size: 14px; }
+  .flow .step { display: flex; gap: 10px; margin: 6px 0; }
+  .flow .n { background: linear-gradient(135deg,#f97316,#e11d48,#7c3aed); color:#fff; width:22px; height:22px; border-radius:50%; font-size:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:2px; }
+  .mig { background:#f2f2f7; border-radius:8px; padding:10px 16px; font-size:13px; font-family: ui-monospace, monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📦 Orbit 数据库结构报告</h1>
+  <p class="sub">私人日记 PWA · PostgreSQL · Drizzle ORM · 生成于 2026-09-01 · 数据为生产库实时统计</p>
+  <span class="badge b-green">6 张表</span><span class="badge b-blue">11 个迁移（0000–0010）</span>
+
+  <h2>一、数据全景</h2>
+  <div class="card">
+    <table>
+      <tr><th>表</th><th>行数</th><th>一句话</th></tr>
+      <tr><td><b>diary_entries</b></td><td>35</td><td>日记正文（密文）+ 元数据 —— 全库核心</td></tr>
+      <tr><td><b>credentials</b></td><td>2</td><td>通行密钥凭证（iPhone / Windows 各一）</td></tr>
+      <tr><td><b>key_wrappers</b></td><td>3</td><td>DEK 的「钥匙套」：2 个 PRF + 1 个恢复密钥</td></tr>
+      <tr><td><b>prompt_stats</b></td><td>145</td><td>每日提示显示次数（为频率推荐积累数据）</td></tr>
+      <tr><td><b>user_prefs</b></td><td>5</td><td>设置页开关（多端同步）</td></tr>
+      <tr><td><b>drafts</b></td><td>0</td><td>未完成草稿（单行）</td></tr>
+    </table>
+  </div>
+
+  <h2>二、加密模型（理解全库的钥匙）</h2>
+  <div class="card flow">
+    <p class="table-desc">服务器只存「密文 + 盐 + 哈希」，永远没有 DEK。解密只能发生在用户设备。</p>
+    <div class="step"><span class="n">1</span><span><b>DEK</b>（正文密钥）—— 只在浏览器内存/sessionStorage，服务器永无</span></div>
+    <div class="step"><span class="n">2</span><span><b>diary_entries.ciphertext</b> = AES-256-GCM(正文, DEK, IV)，每篇独立 IV</span></div>
+    <div class="step"><span class="n">3</span><span><b>key_wrappers</b> 存 DEK 的加密副本（encrypted_dek）+ 盐 —— 两把「套」：<br>
+      · <code>passkey_prf</code>：用设备指纹解锁（PRF 输出 → HKDF → KEK → 解出 DEK）<br>
+      · <code>recovery</code>：用恢复密钥解锁（仅存 SHA-256 哈希，可验证不可反推）</span></div>
+    <div class="step"><span class="n">4</span><span><b>credentials</b> 存 WebAuthn 公钥 —— 登录时验证签名、给 PRF 授权</span></div>
+  </div>
+
+  <h2>三、表详情</h2>
+
+  <div class="card">
+    <div class="table-name">diary_entries <span class="badge b-blue">核心业务表</span><span class="stat">▍35 行</span></div>
+    <div class="table-desc">每行一篇日记。正文加密存储，元数据明文（供列表/统计/热力图免解密使用）。</div>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr>
+      <tr><td>id</td><td>uuid</td><td class="pk">PK</td><td>主键，客户端 <code>/entry/[id]</code> 路由</td></tr>
+      <tr><td>ciphertext</td><td>text</td><td>非空</td><td>正文密文（AES-256-GCM）——服务器不可读</td></tr>
+      <tr><td>iv</td><td>text</td><td>非空</td><td>每篇独立的初始向量</td></tr>
+      <tr><td>encryption_version</td><td>int</td><td>默认 1</td><td>加密方案版本（未来升级用）</td></tr>
+      <tr><td>latitude / longitude</td><td>float8</td><td>可空</td><td>保存时定位坐标（WGS-84），可开关/移除</td></tr>
+      <tr><td>location_accuracy</td><td>float8</td><td>可空</td><td>定位精度 ±米（当前界面已不展示，保留数据）</td></tr>
+      <tr><td>location_name</td><td>text</td><td>可空</td><td>地点名（BigDataCloud 反查，如「黄浦区 上海市」）</td></tr>
+      <tr><td>weather</td><td>text</td><td>可空</td><td>保存时实时天气（和风天气，如「晴 32°C」）</td></tr>
+      <tr><td>timezone</td><td>text</td><td>可空</td><td>写作时区（热力图/统计按此归日）</td></tr>
+      <tr><td>word_count</td><td>int</td><td>默认 0</td><td>解密时计算的字数（列表免解密统计）</td></tr>
+      <tr><td>created_at / updated_at</td><td>timestamptz</td><td>非空</td><td>创建/编辑时间（「编辑于」判断 = 两者不同）</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="table-name">credentials <span class="stat">▍2 行</span></div>
+    <div class="table-desc">注册的通行密钥。登录时服务器用它验证签名（私钥永在设备安全硬件内）。</div>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr>
+      <tr><td>id</td><td>uuid</td><td class="pk">PK</td><td>内部 ID</td></tr>
+      <tr><td>credential_id</td><td>text</td><td class="pk">唯一</td><td>WebAuthn 凭证 ID（base64url），认证时匹配</td></tr>
+      <tr><td>public_key</td><td>text</td><td>非空</td><td>凭证公钥（base64url），验签用</td></tr>
+      <tr><td>counter</td><td>bigint</td><td>默认 0</td><td>签名计数器（防重放/克隆检测）</td></tr>
+      <tr><td>transports</td><td>jsonb</td><td>默认 []</td><td>认证传输方式（internal/hybrid…）</td></tr>
+      <tr><td>device</td><td>text</td><td>可空</td><td>注册设备名（iPhone / Windows Edge…，登录自动补标）</td></tr>
+      <tr><td>disabled</td><td>boolean</td><td>默认 false</td><td>软禁用：禁用 = 拒绝认证 + 踢下线已登录会话；可随时启用</td></tr>
+      <tr><td>created_at / last_used_at</td><td>timestamptz</td><td>—</td><td>注册时间 / 最近登录时间</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="table-name">key_wrappers <span class="stat">▍3 行</span></div>
+    <div class="table-desc">DEK 的「钥匙套」。每把通行密钥一个 PRF 套（2 行），加一个恢复密钥套（1 行）。</div>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr>
+      <tr><td>id</td><td>uuid</td><td class="pk">PK</td><td>内部 ID</td></tr>
+      <tr><td>wrapper_type</td><td>text</td><td>check</td><td><code>passkey_prf</code>（设备指纹解锁）或 <code>recovery</code>（密钥解锁）</td></tr>
+      <tr><td>credential_id</td><td>text</td><td>可空</td><td>PRF 套绑定凭证（<span class="fk">→ credentials</span>）；recovery 为 NULL</td></tr>
+      <tr><td>encrypted_dek</td><td>text</td><td>非空</td><td>DEK 的加密副本（用本套 KEK 包裹）</td></tr>
+      <tr><td>salt</td><td>text</td><td>非空</td><td>派生盐：PRF 套 = 全局共享的 S；recovery = 随机 salt</td></tr>
+      <tr><td>recovery_key_hash</td><td>text</td><td>可空</td><td>仅 recovery：SHA-256(恢复密钥)——可验证不可反推</td></tr>
+      <tr><td>encryption_version / created_at</td><td>int / tstz</td><td>—</td><td>版本与创建时间</td></tr>
+    </table>
+    <p class="table-desc" style="margin-top:10px">🔒 约束：PRF 套按 (type, credential_id) 唯一——每把钥匙恰好一个套；recovery 全库唯一一行。</p>
+  </div>
+
+  <div class="card">
+    <div class="table-name">user_prefs <span class="stat">▍5 行</span></div>
+    <div class="table-desc">设置页偏好（key-value）。日常读 localStorage，登录时从本表拉取同步，改动异步回写（多端同步）。</div>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+      <tr><td>key</td><td>text <span class="pk">PK</span></td><td>偏好键（白名单：qo-location-enabled / qo-save-weather / qo-show-streak / qo-show-prompt / qo-show-on-this-day）</td></tr>
+      <tr><td>value</td><td>text</td><td>'1' 或 '0'（开关状态）</td></tr>
+      <tr><td>updated_at</td><td>timestamptz</td><td>最后修改时间</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="table-name">prompt_stats <span class="stat">▍145 行</span></div>
+    <div class="table-desc">365 条每日提示的显示次数统计——为「按出现频率推荐提示」积累数据（功能预留）。</div>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+      <tr><td>prompt_id</td><td>text <span class="pk">PK</span></td><td>提示索引（p_0 … p_364）</td></tr>
+      <tr><td>show_count</td><td>int</td><td>累计显示次数（每次展示/切换上报 +1）</td></tr>
+      <tr><td>updated_at</td><td>timestamptz</td><td>最后展示时间</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="table-name">drafts <span class="stat">▍0 行</span></div>
+    <div class="table-desc">单行草稿（固定 ID 00000000-…-0001）。本地 IndexedDB 优先，服务器为同步副本。</div>
+    <table>
+      <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+      <tr><td>id</td><td>uuid <span class="pk">PK</span></td><td>固定单行 ID</td></tr>
+      <tr><td>ciphertext / iv</td><td>text</td><td>草稿正文密文（同样 E2EE）</td></tr>
+      <tr><td>encryption_version / updated_at</td><td>int / tstz</td><td>版本与最后编辑时间（冲突决策用）</td></tr>
+    </table>
+  </div>
+
+  <h2>四、表间关系</h2>
+  <div class="card flow">
+    <div class="step"><span class="n">→</span><span><b>key_wrappers.credential_id → credentials.credential_id</b>：每把通行密钥对应一个 PRF 钥匙套；禁用/删除凭证时同步清理其套</span></div>
+    <div class="step"><span class="n">→</span><span><b>key_wrappers.recovery_key_hash ↔ credentials</b>：无外键——恢复密钥登录独立于任何设备凭证（灾难恢复通道）</span></div>
+    <div class="step"><span class="n">→</span><span><b>diary_entries / drafts</b>：与密钥体系无直接外键——正文解密靠「客户端 DEK + 服务器盐」，由加密协议而非外键连接</span></div>
+    <div class="step"><span class="n">→</span><span><b>user_prefs / prompt_stats</b>：独立工具表，无关联</span></div>
+  </div>
+
+  <h2>五、业务数据流速览</h2>
+  <div class="card flow">
+    <div class="step"><span class="n">✍️</span><span><b>写一篇日记</b>：定位/天气可选 → 客户端 AES 加密 → <code>diary_entries</code> 插入密文 → 异步反查地点名/天气补写</span></div>
+    <div class="step"><span class="n">🔓</span><span><b>解锁</b>：通行密钥认证（验 <code>credentials</code> 签名）→ PRF 输出 + salt → KEK → 解开 <code>key_wrappers</code> → DEK 进内存 → 本地解密 <code>diary_entries</code></span></div>
+    <div class="step"><span class="n">📊</span><span><b>热力图/统计</b>：只读元数据（created_at/timezone/word_count）——免解密、毫秒级</span></div>
+    <div class="step"><span class="n">🗂️</span><span><b>设置</b>：偏好读 <code>user_prefs</code> → 写 localStorage → 改动回写；Passkey 管理操作 <code>credentials</code> + <code>key_wrappers</code></span></div>
+  </div>
+
+  <h2>六、迁移历史（drizzle/0000–0010）</h2>
+  <div class="card">
+    <div class="mig">0000  initial schema（credentials / key_wrappers / diary_entries / drafts）
+0001  WebAuthn 会话与凭证完善
+0002  diary_entries.word_count（字数统计）
+0003  credentials.device（设备名打标）
+0004  credentials.disabled（软禁用）
+0005  删除冷静期列（soft-delete 方案回滚）
+0006  删除冷静期列清理
+0007  diary_entries.location_name（地点名）
+0008  prompt_stats（每日提示统计）
+0009  diary_entries.weather（实时天气）
+0010  user_prefs（设置页偏好多端同步）</div>
+  </div>
+
+  <p class="sub" style="margin-top:24px">本报告为静态快照 · 生成工具：手写 HTML · 数据源：生产库实时查询</p>
+</div>
+</body>
+</html>

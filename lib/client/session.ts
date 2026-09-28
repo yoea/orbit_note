@@ -1,5 +1,6 @@
 import { authenticatePasskey } from './webauthn'
 import { detectDeviceName } from './device'
+import { syncPrefsFromServer } from './prefs'
 import { derivePrfKek, unwrapWithRecoveryKey } from './crypto/setup'
 import { unwrapDekFromWrapper } from './crypto/encryption'
 import type { WrappedKeyRow } from './types'
@@ -128,6 +129,7 @@ export async function loginWithPasskey(): Promise<LoginResult> {
           const kek = await derivePrfKek(prfResult, prfWrapper.salt)
           setDek(await unwrapDekFromWrapper(kek, prfWrapper.encryptedDek))
           await persistDek() // 会话级持久化（PWA 导航重载后自动恢复，无需重复 Face ID）
+          void syncPrefsFromServer() // 登录成功：数据库偏好 → localStorage（多端同步）
           return { ok: true, via: 'prf' }
         } catch {
           return { ok: false, error: '解锁失败', via: null }
@@ -170,6 +172,7 @@ export async function unlockWithRecoveryKey(recoveryKey: string): Promise<LoginR
     try {
       setDek(await unwrapWithRecoveryKey(recWrapper.encryptedDek, recWrapper.salt, recoveryKey))
       await persistDek() // 会话级持久化
+      void syncPrefsFromServer() // 登录成功：数据库偏好 → localStorage（多端同步）
       return { ok: true, via: 'recovery' }
     } catch {
       return { ok: false, error: '恢复密钥解密失败', via: null }

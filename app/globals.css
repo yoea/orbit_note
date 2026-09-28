@@ -82,3 +82,10 @@ html {
   to { opacity: 1; translate: -50% 0; }
 }
 .animate-toast { animation: toast-in 0.25s ease-out; }
+
+/* 内容淡入微过渡（页面加载完成时柔和出现，纯 CSS 无副作用） */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in { animation: fade-in 0.3s ease-out; }

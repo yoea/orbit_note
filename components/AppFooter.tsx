@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation'
 // 历史页走 window 滚动，页脚会出现在内容末尾影响浏览，故隐藏。
 export default function AppFooter() {
   const pathname = usePathname()
-  if (pathname === '/history') return null
+  if (pathname === '/diary') return null
   return (
     <footer className="mt-auto border-t border-neutral-100 py-2 pb-safe text-center text-[10px] text-neutral-300 dark:border-neutral-800 dark:text-neutral-600" aria-hidden>
       Orbit {process.env.NEXT_PUBLIC_VERSION ?? 'dev'} · © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'}

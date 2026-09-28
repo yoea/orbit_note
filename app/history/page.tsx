@@ -1,13 +1,6 @@
-'use client'
+import { redirect } from 'next/navigation'
 
-import HistoryView from '@/components/HistoryView'
-import UnlockPrompt from '@/components/UnlockPrompt'
-import { useRequireUnlock } from '@/lib/client/use-require-unlock'
-
-export default function HistoryPage() {
-  const { state, retryUnlock } = useRequireUnlock()
-
-  if (state === 'need-unlock') return <UnlockPrompt onUnlock={retryUnlock} />
-  if (state !== 'ready') return <main className="flex-1 min-h-0 px-5 safe-pt" />
-  return <HistoryView />
+// 旧路由兼容：/history → /diary（页面已重构为「全部日记」）
+export default function HistoryRedirectPage() {
+  redirect('/diary')
 }

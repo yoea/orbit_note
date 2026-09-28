@@ -71,6 +71,13 @@
       "when": 1788160960685,
       "tag": "0009_ambitious_goblin_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788263260974,
+      "tag": "0010_worthless_franklin_storm",
+      "breakpoints": true
     }
   ]
 }

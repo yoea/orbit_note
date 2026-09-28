@@ -12,7 +12,7 @@ import { isLocationEnabled, isOnThisDayEnabled, isPromptEnabled, isStreakEnabled
 import { clientReverseGeocode } from '@/lib/client/geocode'
 import { fetchWeather } from '@/lib/client/weather'
 import { playSaveSound } from '@/lib/client/sound'
-import { PROMPTS, randomPromptIndex, reportPromptShown } from '@/lib/client/prompts'
+import { PROMPTS, nextPromptIndex, reportPromptShown } from '@/lib/client/prompts'
 import { computeStreak } from '@/lib/client/streak'
 import { clearLocalDraft, fetchServerDraft, loadLocalDraft, pickNewer, pushServerDraft, saveLocalDraft } from '@/lib/client/draft-sync'
 
@@ -138,7 +138,7 @@ export default function DiaryEditor() {
 
   // 每日提示：初始随机一条；每次显示（含切换）上报出现次数
   useEffect(() => {
-    setPromptIdx(randomPromptIndex())
+    setPromptIdx(nextPromptIndex())
   }, [])
   useEffect(() => {
     reportPromptShown(promptIdx)
@@ -277,7 +277,7 @@ export default function DiaryEditor() {
   return (
     // 弹性高度（body flex 布局中自动分配视口减页脚后的空间）+ 禁止滚动：
     // header/输入区/footer 全部在可视区内，输入区 flex 弹性分配剩余空间；页脚在流内不遮挡
-    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5 safe-pt">
+    <div className="animate-fade-in mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5 safe-pt">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="py-4">
         <div className="flex items-center justify-between">
@@ -285,12 +285,26 @@ export default function DiaryEditor() {
           <nav className="flex items-center gap-4">
             {/* 原生路由导航（DEK 会话级持久化——重载后自动恢复，无需重复 Face ID；右滑返回原生可用）；
                 transitionTypes：前进方向滑动动画 */}
-            <Link href="/history" className="text-sm text-neutral-400">历史</Link>
-            <Link href="/settings" className="text-sm text-neutral-400">设置</Link>
+            <Link href="/diary" aria-label="全部日记" className="text-neutral-400 active:opacity-60">
+              {/* 全部日记：翻开的书本 */}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <path d="M12 7v14" />
+                <path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" />
+              </svg>
+            </Link>
+            <Link href="/settings" aria-label="设置" className="text-neutral-400 active:opacity-60">
+              {/* 设置：齿轮 */}
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </Link>
           </nav>
         </div>
         <div className="mt-1 flex items-center justify-between text-sm text-neutral-400">
-          <span>{today}</span>
+          <span className="bg-linear-to-r from-orange-500 via-rose-400 to-violet-500 bg-clip-text font-medium text-transparent">
+            {today}
+          </span>
           {/* 连续写作天数（设置页可关；今天未写但昨天有记录不中断）。
               invisible 占位：stats 拉取前后该元素始终存在，避免内容出现引起行跳动 */}
           <span className={`text-xs ${streak > 0 && isStreakEnabled() ? '' : 'invisible'}`}>
@@ -335,7 +349,7 @@ export default function DiaryEditor() {
       {/* 每日提示：随机一句，点击换一条（写作灵感） */}
       {isPromptEnabled() && (
         <button
-          onClick={() => setPromptIdx(randomPromptIndex(promptIdx))}
+          onClick={() => setPromptIdx(nextPromptIndex(promptIdx))}
           className="mb-2 flex items-start gap-1.5 text-left text-xs leading-relaxed text-neutral-400/70 active:opacity-60"
         >
           <span className="shrink-0">💭</span>
@@ -349,6 +363,15 @@ export default function DiaryEditor() {
         autoFocus
         disabled={status === 'saving'}
       />
+      {/* 空状态引导：首次（无任何日记）时显示柔和渐变引导 */}
+      {entryCount === 0 && (
+        <div className="flex flex-col items-center gap-2 py-5">
+          <span className="text-2xl">🌱</span>
+          <p className="bg-linear-to-r from-orange-500 via-rose-400 to-violet-500 bg-clip-text text-sm font-medium text-transparent">
+            写下第一篇日记，开始属于你的 Orbit
+          </p>
+        </div>
+      )}
       {showConfetti && <ConfettiBurst />}
       {/* 上下 padding 均 8px（桌面端）；iPhone 底部取安全区。
           不能用 safe-pb + pb-2 组合——.safe-pb 是 unlayered 自定义类，会覆盖 Tailwind 的 pb-2 */}

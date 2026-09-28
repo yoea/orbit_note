@@ -78,7 +78,7 @@ export default function EntryView({ id }: { id: string }) {
     void (async () => {
       try {
         const res = await fetch(`/api/diary/${id}`)
-        if (res.status === 404) { router.replace('/history'); return }
+        if (res.status === 404) { router.replace('/diary'); return }
         if (!res.ok) throw new Error('加载失败')
         const { entry } = await res.json() as { entry: Entry }
         setEntry(entry)
@@ -140,7 +140,7 @@ export default function EntryView({ id }: { id: string }) {
       if (res.status === 401) { router.replace('/login'); return }
       if (res.ok) {
         // IDB 只存草稿（无条目缓存），删除无需清本地
-        router.replace('/history')
+        router.replace('/diary')
         return
       }
       setError('删除失败，请重试')
@@ -175,7 +175,7 @@ export default function EntryView({ id }: { id: string }) {
       <header className="relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中。
             字号：‹ 为半角字符视觉偏小（text-3xl），＋ 为全角字符视觉偏大（text-xl）——视觉平衡 */}
-        <Link href="/history" aria-label="返回" className="-ml-1 px-1 text-3xl leading-none text-neutral-400">
+        <Link href="/diary" aria-label="返回" scroll={false} className="-ml-1 px-1 text-3xl leading-none text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">日记</h1>

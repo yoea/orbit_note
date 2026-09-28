@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import InputConfirmDialog from '@/components/InputConfirmDialog'
@@ -45,6 +45,8 @@ export default function ExportView() {
   const [error, setError] = useState<string | null>(null)
   const [wipeConfirmStep, setWipeConfirmStep] = useState<0 | 1>(0)
   const [wiping, setWiping] = useState(false)
+  // 导出成功后的返回倒计时（明文文件已下载，提示谨慎保存并自动返回设置页释放内存）
+  const [countdown, setCountdown] = useState(0)
 
   // 文件名（本地日期，与下载一致）
   const now = new Date()
@@ -76,6 +78,23 @@ export default function ExportView() {
       setBusy(false)
     }
   }
+
+  // 导出成功后：10 秒倒计时自动返回设置页（组件卸载 → 解密数据与页面状态全部释放）
+  useEffect(() => {
+    if (exported == null) return
+    setCountdown(10)
+    const t = setInterval(() => {
+      setCountdown((c) => {
+        if (c <= 1) {
+          clearInterval(t)
+          router.replace('/settings')
+          return 0
+        }
+        return c - 1
+      })
+    }, 1000)
+    return () => clearInterval(t)
+  }, [exported, router])
 
   // 拉取全部条目（分页循环）→ 解密 → 组装 CSV → 下载
   async function exportCsv() {
@@ -231,9 +250,25 @@ export default function ExportView() {
             {exporting ? '解密导出中…' : '下载导出的文件'}
           </button>
           {exported != null && (
-            <p className="mt-2 text-center text-sm text-emerald-600 dark:text-emerald-400">
-              已导出 {exported} 篇日记，文件已开始下载
-            </p>
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                已导出 {exported} 篇，文件已开始下载
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+                文件为解密后的明文内容，请谨慎保存，避免在公共设备上保留。
+              </p>
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
+                {countdown} 秒后自动返回设置页
+              </p>
+            </div>
+          )}
+          {exported != null && (
+            <button
+              onClick={() => router.replace('/settings')}
+              className="mt-3 w-full rounded-2xl border border-neutral-200 py-3.5 text-sm font-medium text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
+            >
+              立即返回设置
+            </button>
           )}
           {error && <p className="mt-2 text-center text-sm text-red-500">{error}</p>}
         </>

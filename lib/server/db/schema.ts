@@ -58,6 +58,13 @@ export const diaryEntries = pgTable('diary_entries', {
   index('diary_entries_created_at_idx').on(t.createdAt),
 ])
 
+// 用户偏好（设置页开关，存数据库而非 localStorage——多端同步）
+export const userPrefs = pgTable('user_prefs', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 // 每日提示显示统计（后续按出现频率展示用）
 export const promptStats = pgTable('prompt_stats', {
   promptId: text('prompt_id').primaryKey(), // 提示索引 "p_0".."p_99"

@@ -38,15 +38,12 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
           <p className="mt-3 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
             端到端加密的私人日记，只为一个人服务。
           </p>
-          <p className="mt-1 text-xs leading-relaxed text-neutral-400">
-            数据只属于你——服务器永远看不到你的文字。
-          </p>
           <ul className="mt-4 divide-y divide-neutral-100 dark:divide-neutral-800">
             {[
               { icon: '🔑', title: '通行密钥登录', desc: '无密码，指纹 / Face ID / Windows Hello 等' },
-              { icon: '🛡️', title: '端到端加密', desc: '正文只在设备本地加解密，服务器仅存密文' },
-              { icon: '🔐', title: '恢复密钥', desc: '通行密钥丢失，用恢复密钥仍可找回数据' },
-              { icon: '📍', title: '位置记录', desc: '可选保存坐标与时区，随时可以移除' },
+              { icon: '🔐', title: '恢复密钥', desc: '通行密钥丢失时找回数据' },
+              { icon: '✍️', title: '随手即写', desc: '无格式、无标题，打开就写' },
+              { icon: '🔥', title: '习惯养成', desc: '连续天数、每日提示、去年今日' },
             ].map((f) => (
               <li key={f.title} className="flex items-start gap-3 py-2.5 first:pt-1 last:pb-1">
                 <span className="mt-px text-base leading-5">{f.icon}</span>
@@ -57,6 +54,14 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
               </li>
             ))}
           </ul>
+          {/* 第三方服务：数据流向透明（定位是浏览器原生能力，不列第三方） */}
+          <div className="mt-4 rounded-xl bg-neutral-50/60 px-3 py-2.5 dark:bg-neutral-900/40">
+            <p className="text-[10px] font-medium text-neutral-400">第三方服务</p>
+            <p className="mt-1 text-[10px] leading-relaxed text-neutral-400">
+              BigDataCloud（地点名）· 和风天气（实时天气）<br />
+              调用时坐标会发送给对应服务
+            </p>
+          </div>
         </div>
         <div className="border-t border-neutral-200 p-3 dark:border-neutral-700">
           <button

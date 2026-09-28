@@ -9,7 +9,11 @@ export const metadata: Metadata = {
   description: "Orbit",
   appleWebApp: { capable: true, title: "Orbit", statusBarStyle: "default" },
   manifest: "/manifest.webmanifest",
-  icons: { apple: [{ url: "/icons/icon-180.png", sizes: "180x180" }] },
+  // favicon 与桌面/PWA 图标同源（移除 Next 默认 favicon.ico）
+  icons: {
+    icon: "/icons/icon-192.png",
+    apple: [{ url: "/icons/icon-180.png", sizes: "180x180" }],
+  },
 };
 
 export const viewport: Viewport = {

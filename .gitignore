@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ai agent workspace（本地记忆/工具数据，勿提交）
+.workbuddy/

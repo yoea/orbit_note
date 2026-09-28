@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
@@ -52,14 +52,67 @@ function dayLabel(key: string): string {
   return `${d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })} · ${d.toLocaleDateString('zh-CN', { weekday: 'long' })}`
 }
 
-// 历史视图（原生路由页 /history 渲染；DEK 会话级持久化，导航/重载自动恢复）
-export default function HistoryView() {
+// 全部日记视图（原生路由页 /diary 渲染；DEK 会话级持久化，导航/重载自动恢复）
+export default function DiaryListView() {
   const [items, setItems] = useState<DecryptedItem[]>([])
   const [stats, setStats] = useState<{ count: number; days: number; byDay: Record<string, { count: number; words: number }> } | null>(null)
   const [offset, setOffset] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 滚动位置保持：sessionStorage 存 { y: 滚动值, count: 已加载条数 }
+  // ——返回时先加载到足够深度再恢复滚动（否则内容高度不足被钳制）
+  const SCROLL_KEY = 'qo-diary-scroll'
+  const restoredScrollRef = useRef(false)
+  const itemsRef = useRef<DecryptedItem[]>([])
+
+  itemsRef.current = items
+
+  // 读取恢复状态：{ y, count } 或 null
+  const readScrollState = (): { y: number; count: number } | null => {
+    try {
+      const raw = sessionStorage.getItem(SCROLL_KEY)
+      if (!raw) return null
+      const d = JSON.parse(raw) as { y?: unknown; count?: unknown }
+      if (typeof d.y === 'number' && Number.isFinite(d.y) && typeof d.count === 'number') return { y: d.y, count: d.count }
+    } catch { /* 忽略 */ }
+    return null
+  }
+
+  // 保存滚动位置：滚动防抖写入 sessionStorage；页面隐藏/卸载时兜底保存
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | null = null
+    const save = () => {
+      try {
+        sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ y: window.scrollY, count: itemsRef.current.length }))
+      } catch { /* 忽略 */ }
+    }
+    const onScroll = () => {
+      if (t) clearTimeout(t)
+      t = setTimeout(save, 150)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('pagehide', save)
+    return () => {
+      if (t) clearTimeout(t)
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('pagehide', save)
+      save() // 卸载前保存（进入详情页时）
+    }
+  }, [])
+
+  // 内容加载完成后恢复滚动位置（仅首次；数据异步解密完成后再滚动，否则高度未定）
+  useEffect(() => {
+    if (restoredScrollRef.current) return
+    if (items.length === 0 && (stats == null || (stats && stats.count === 0))) return
+    restoredScrollRef.current = true
+    try {
+      const state = readScrollState()
+      if (state && state.y > 0) {
+        requestAnimationFrame(() => window.scrollTo(0, state.y))
+      }
+    } catch { /* 忽略 */ }
+  }, [items, stats])
 
   // 请求一页（offset 起 10 条）并解密
   const fetchPage = useCallback(async (pageOffset: number): Promise<DecryptedItem[]> => {
@@ -93,18 +146,28 @@ export default function HistoryView() {
     return decrypted
   }, [])
 
-  // 初始加载：统计 + 第一页
+  // 初始加载：统计 + 第一页（有滚动恢复状态时循环加载到上次的深度）
   useEffect(() => {
     void (async () => {
       try {
+        const restore = readScrollState()
         const [statsRes, firstPage] = await Promise.all([
           fetch('/api/diary/stats').then((r) => (r.ok ? r.json() : null)),
           fetchPage(0),
         ])
+        let loaded = firstPage
+        if (restore && restore.count > firstPage.length) {
+          // 继续加载直到覆盖上次浏览深度（分页循环）
+          while (loaded.length < restore.count) {
+            const more = await fetchPage(loaded.length)
+            if (more.length === 0) break
+            loaded = loaded.concat(more)
+          }
+        }
         if (statsRes) setStats(statsRes)
-        setItems(firstPage)
-        setOffset(PAGE_SIZE)
-        setHasMore(firstPage.length === PAGE_SIZE) // 满页才可能还有更多
+        setItems(loaded)
+        setOffset(loaded.length)
+        setHasMore(loaded.length % PAGE_SIZE === 0 && loaded.length > 0)
       } catch {
         setError('连接失败，请检查网络后重试')
       }
@@ -169,9 +232,9 @@ export default function HistoryView() {
   }
 
   return (
-    /* HistoryView 走 window 滚动：main 不设高度/overflow，内容撑开由 window 滚动——
-       iOS 点击状态栏原生回到顶部，桌面滚动条已全局隐藏 */
-    <main className="mx-auto w-full max-w-md px-5 safe-pt safe-pb">
+    /* 本页走 window 滚动：main 不设高度/overflow，内容撑开由 window 滚动——
+       iOS 点击状态栏原生回到顶部 */
+    <main className="animate-fade-in mx-auto w-full max-w-md px-5 safe-pt safe-pb">
       {/* 电脑版与主页同宽（手机视图宽度），不随屏幕拉伸 */}
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="relative flex items-center justify-between py-3">
@@ -179,7 +242,7 @@ export default function HistoryView() {
         <Link href="/" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
           ‹
         </Link>
-        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">历史</h1>
+        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">全部日记</h1>
         <span className="w-8" />
       </header>
       {stats && (
