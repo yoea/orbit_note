@@ -1,6 +1,9 @@
 // Service Worker：仅缓存「带内容指纹或极少变化」的静态资源，绝不缓存日记密文（日记数据走 IndexedDB）
-// v3：收窄缓存优先范围（见 CACHE_FIRST 注释）
-const CACHE = 'qo-static-v3'
+// v4：导航请求 fetch 加 cache:'reload'（绕过 HTTP 缓存）——WKWebView（iOS PWA）的 HTTP
+//     缓存对无新鲜度信息的页面会启发式缓存且杀进程不清除，部署新版后 PWA 一直吐旧页
+//     （真实事故：v1.15.11 的 no-cache 头 Safari 生效但 PWA 仍陈旧，因为旧缓存副本里
+//     存的还是旧头）。SW 的 fetch 用 cache:'reload' 可强制绕过。
+const CACHE = 'qo-static-v4'
 const STATIC = ['/', '/manifest.webmanifest', '/icons/icon-180.png', '/icons/icon-192.png', '/icons/icon-512.png']
 
 // 缓存优先的白名单。**不能对所有同源 GET 都缓存优先**：
@@ -28,9 +31,11 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return
   if (url.pathname.startsWith('/api/')) return // API 永不缓存
   if (url.origin !== self.location.origin) return
-  // 导航请求：网络优先，失败回退缓存（离线可打开）
+  // 导航请求：网络优先（cache:'reload' 绕过 HTTP 缓存——HTML 体积小且带 ETag 协商，
+  // 但 WKWebView 对启发式缓存的旧副本连协商都不发，必须在 SW 层强制走网络），
+  // 失败回退缓存（离线可打开）
   if (e.request.mode === 'navigate') {
-    e.respondWith(fetch(e.request).catch(() => caches.match('/')))
+    e.respondWith(fetch(e.request, { cache: 'reload' }).catch(() => caches.match('/')))
     return
   }
   // 其余同源 GET（含 RSC 软导航请求）一律不介入，交给浏览器按 HTTP 缓存语义处理
