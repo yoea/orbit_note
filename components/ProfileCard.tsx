@@ -5,7 +5,8 @@ import { useProfile } from '@/lib/client/use-user-name'
 
 // 个人信息卡片：生成式头像（名字首字符 + 品牌渐变）+ 名字 + 一行统计。
 // 点击进入弹窗改名（注册时间也放在那个弹窗里——小字放不下，见下）。
-export default function ProfileCard({ onEditName }: { onEditName: () => void }) {
+// disabled：离线置灰（改名是服务器写操作，离线时点击由上层守卫弹提示）。
+export default function ProfileCard({ onEditName, disabled = false }: { onEditName: () => void; disabled?: boolean }) {
   const { name } = useProfile()
   const stats = useDiaryOverview()
 
@@ -24,7 +25,7 @@ export default function ProfileCard({ onEditName }: { onEditName: () => void }) 
   return (
     <button
       onClick={onEditName}
-      className="mt-2 flex w-full items-center gap-3 rounded-2xl bg-neutral-50/60 px-4 py-3.5 text-left active:opacity-60 dark:bg-neutral-900/40"
+      className={`mt-2 flex w-full items-center gap-3 rounded-2xl bg-neutral-50/60 px-4 py-3.5 text-left active:opacity-60 dark:bg-neutral-900/40 ${disabled ? 'opacity-50' : ''}`}
     >
       <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 via-rose-400 to-violet-500 text-lg font-semibold text-white">
         {initial}

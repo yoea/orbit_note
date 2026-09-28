@@ -26,6 +26,24 @@ const ENTRIES_KEY = 'offline:entries'
 const STATS_KEY = 'offline:stats'
 const OTD_KEY = 'offline:on-this-day'
 const QUEUE_KEY = 'offline:queue'
+const PROFILE_KEY = 'offline:profile'
+
+// 用户名密文缓存：/api/profile 成功时顺手写入（与服务器存的字节相同——名字本就
+// 是 DEK 加密后才上送的）。网络不可达时兜底解密显示，否则设置页离线永远「加载中…」。
+export interface CachedProfile {
+  nameCiphertext: string
+  nameIv: string
+  createdAt: string | null
+}
+
+export async function cacheProfile(profile: CachedProfile): Promise<void> {
+  if (!isOfflineCacheEnabled()) return
+  await idbSet(PROFILE_KEY, profile)
+}
+
+export async function getCachedProfile(): Promise<CachedProfile | null> {
+  return (await idbGet<CachedProfile>(PROFILE_KEY)) ?? null
+}
 
 export interface CachedStats {
   count: number
@@ -233,6 +251,7 @@ export async function clearOfflineData(): Promise<void> {
     idbDelete(STATS_KEY),
     idbDelete(OTD_KEY),
     idbDelete(QUEUE_KEY),
+    idbDelete(PROFILE_KEY),
   ])
 }
 

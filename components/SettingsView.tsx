@@ -20,9 +20,12 @@ import { useOffline } from '@/lib/client/use-offline'
 // 偏好开关已独立到 /settings/prefs，本页只保留一个入口——那一组占页高约 40%，
 // 移出后本页一屏即可放下，不再需要滚动。
 //
-// 离线权限：导出 / 改昵称 / 改恢复密钥 / 改通行密钥 / 改偏好设置都依赖服务器写操作
-// 或需拉取服务器数据，离线时置灰并提示「该功能离线模式暂不可用」——与其让用户点进去
-// 撞一次「保存失败」，不如入口处就说明白。「关于」「退出登录」不受限（纯本地/只读操作）。
+// 离线权限：导出 / 改昵称 / 改恢复密钥 / 改通行密钥 / 改偏好设置 / 退出登录都依赖
+// 服务器写操作或需拉取服务器数据，离线时置灰并提示「该功能离线模式暂不可用」——
+// 与其让用户点进去撞一次「保存失败」，不如入口处就说明白。「关于」不受限（纯本地只读）。
+// 退出登录为何也禁：其本质是撤销服务器会话（POST /api/auth/logout），离线发不出去；
+// 且退出后的 router.replace('/login') 软导航离线必失败，会误触发根级错误页「页面出错了」
+// （真机实测）。要离开应用直接划掉即可——DEK 只在内存，重开自然回到解锁态。
 export default function SettingsView() {
   const router = useRouter()
   const offline = useOffline()
@@ -97,7 +100,7 @@ export default function SettingsView() {
       </header>
       {/* 个人信息卡片：生成式头像 + 名字 + 一行统计；点开改名。
           不设分组标题——卡片本身已足够表意，省掉一个只配一行的标题 */}
-      <ProfileCard onEditName={guard(() => setShowNameEdit(true))} />
+      <ProfileCard onEditName={guard(() => setShowNameEdit(true))} disabled={offline} />
       <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">安全</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
@@ -165,7 +168,8 @@ export default function SettingsView() {
           </Link>
         </li>
         <li>
-          <button onClick={() => setConfirmLogout(true)} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
+          {/* 退出登录：离线禁用（见文件头注释——服务器会话撤不掉，且导航离线必失败） */}
+          <button onClick={guard(() => setConfirmLogout(true))} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">退出登录</p>
               <p className="mt-0.5 text-xs text-neutral-400">退出后需重新验证通行密钥才能解锁</p>

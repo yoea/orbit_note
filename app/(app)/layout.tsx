@@ -5,6 +5,7 @@ import UnlockPrompt from '@/components/UnlockPrompt'
 import TabBar from '@/components/TabBar'
 import OfflineBadge from '@/components/OfflineBadge'
 import { useRequireUnlock } from '@/lib/client/use-require-unlock'
+import { useOffline } from '@/lib/client/use-offline'
 import { initOfflineSync } from '@/lib/client/offline'
 
 // 主应用区（登录后可访问的页面）共享布局：
@@ -20,6 +21,7 @@ import { initOfflineSync } from '@/lib/client/offline'
 // 不遮挡内容，也不需要给每个页面补偿 padding。
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { state, retryUnlock } = useRequireUnlock()
+  const offline = useOffline()
 
   // 解锁完成 → 初始化离线同步（注册 online 监听 + 冲刷上次离线保存的队列；模块级单例）
   useEffect(() => {
@@ -48,9 +50,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      {/* 离线指示：断网时顶部小胶囊（在线时不渲染） */}
+      {/* 离线指示：断网时顶部居中的琥珀色 wifi-off 圆标（在线时不渲染）。
+          qo-offline 类（globals.css）：把页面内容的 .safe-pt 顶部再推 32px，
+          给固定定位的徽标让出空档——正好在居中页标题（如「全部日记」）的上方，不压标题 */}
       <OfflineBadge />
-      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+      <div className={`flex min-h-0 flex-1 flex-col ${offline ? 'qo-offline' : ''}`}>{children}</div>
       <TabBar />
     </>
   )

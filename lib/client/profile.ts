@@ -7,6 +7,7 @@
 // 本功能上线之前注册的老用户为 null，界面回退为「第一篇日记」的日期。
 import { decryptText, encryptText } from './crypto/encryption'
 import { getDek } from './session'
+import { cacheProfile, getCachedProfile } from './offline'
 
 // 名字长度上限（与展示布局、API 上限保持一致）
 export const USER_NAME_MAX = 20
@@ -53,7 +54,7 @@ export function clearUserNameCache(): void {
   setCached(null)
 }
 
-async function putName(dek: CryptoKey, name: string): Promise<void> {
+async function putName(dek: CryptoKey, name: string): Promise<{ ciphertext: string; iv: string }> {
   const { ciphertext, iv } = await encryptText(dek, name)
   const res = await fetch('/api/profile', {
     method: 'PUT',
@@ -61,14 +62,30 @@ async function putName(dek: CryptoKey, name: string): Promise<void> {
     body: JSON.stringify({ nameCiphertext: ciphertext, nameIv: iv }),
   })
   if (!res.ok) throw new Error('保存名字失败')
+  return { ciphertext, iv }
 }
 
 // 读取资料；库里没有名字则生成默认名并落库。需要 DEK（未解锁时抛错）。
+// 网络不可达时回退本地密文缓存（离线时设置页的名字靠它显示，而非永远「加载中」）。
 export async function loadUserName(): Promise<string> {
   if (cached) return cached.name
   const dek = getDek()
   if (!dek) throw new Error('未解锁')
-  const res = await fetch('/api/profile')
+  const res = await fetch('/api/profile').catch(() => null)
+  if (res === null) {
+    // 网络不可达：解密本地缓存的密文名字（无缓存/解密失败则照常抛错，界面按无名字降级）
+    const offlineProfile = await getCachedProfile()
+    if (offlineProfile) {
+      try {
+        const name = await decryptText(dek, offlineProfile.nameCiphertext, offlineProfile.nameIv)
+        if (name) {
+          setCached({ name, createdAt: offlineProfile.createdAt })
+          return name
+        }
+      } catch { /* 缓存解密失败（换过 DEK）→ 视为无兜底 */ }
+    }
+    throw new Error('读取名字失败')
+  }
   if (!res.ok) throw new Error('读取名字失败')
   const data = await res.json() as {
     profile: { nameCiphertext: string; nameIv: string } | null
@@ -78,12 +95,18 @@ export async function loadUserName(): Promise<string> {
   if (data.profile) {
     try {
       const name = await decryptText(dek, data.profile.nameCiphertext, data.profile.nameIv)
-      if (name) { setCached({ name, createdAt }); return name }
+      if (name) {
+        setCached({ name, createdAt })
+        // 在线成功顺手缓存密文（离线兜底用），异步不阻塞
+        void cacheProfile({ nameCiphertext: data.profile.nameCiphertext, nameIv: data.profile.nameIv, createdAt })
+        return name
+      }
     } catch { /* 解密失败（如换过 DEK）→ 视为未设置，重建默认名 */ }
   }
   const name = generateDefaultName()
-  await putName(dek, name)
+  const { ciphertext, iv } = await putName(dek, name)
   setCached({ name, createdAt })
+  void cacheProfile({ nameCiphertext: ciphertext, nameIv: iv, createdAt })
   return name
 }
 
@@ -93,6 +116,8 @@ export async function saveUserName(name: string): Promise<void> {
   if (!dek) throw new Error('未解锁')
   const trimmed = name.trim().slice(0, USER_NAME_MAX)
   if (!trimmed) throw new Error('名字不能为空')
-  await putName(dek, trimmed)
-  setCached({ name: trimmed, createdAt: cached?.createdAt ?? null })
+  const { ciphertext, iv } = await putName(dek, trimmed)
+  const createdAt = cached?.createdAt ?? null
+  setCached({ name: trimmed, createdAt })
+  void cacheProfile({ nameCiphertext: ciphertext, nameIv: iv, createdAt })
 }
