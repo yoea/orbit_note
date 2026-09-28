@@ -5,7 +5,10 @@
 // 因此这里只做单向保护：无 cookie 访问受保护路径 → /login。
 
 export function decideLoginRedirect(pathname: string, hasSessionCookie: boolean): boolean {
-  const protectedPaths = ['/', '/history', '/entry', '/settings']
+  // '/diary' 是日记列表页（原 '/history' 改名而来）；两个都保留——'/history' 仅作重定向兼容页。
+  // 注意：任何新增页面路由都要同时加进这里与 proxy.ts 的 matcher，
+  // 否则该页面拿不到安全头且失去未登录重定向。
+  const protectedPaths = ['/', '/diary', '/history', '/entry', '/settings']
   const isProtected = protectedPaths.some((p) => pathname === p || pathname.startsWith(p + '/'))
   return isProtected && !hasSessionCookie
 }

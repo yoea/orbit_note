@@ -32,6 +32,9 @@ export const config = {
     { source: '/', missing: [{ type: 'header', key: 'purpose', value: 'prefetch' }] },
     { source: '/login', missing: [{ type: 'header', key: 'purpose', value: 'prefetch' }] },
     { source: '/setup', missing: [{ type: 'header', key: 'purpose', value: 'prefetch' }] },
+    // /diary：路由由 /history 改名而来，必须显式加入——遗漏会导致该页面既没有安全头
+    // （CSP / X-Frame-Options 等），也失去未登录重定向。tests/proxy-matcher-coverage.test.ts 会守住这一条
+    { source: '/diary', missing: [{ type: 'header', key: 'purpose', value: 'prefetch' }] },
     { source: '/history', missing: [{ type: 'header', key: 'purpose', value: 'prefetch' }] },
     { source: '/entry/:path*', missing: [{ type: 'header', key: 'purpose', value: 'prefetch' }] },
     { source: '/settings/:path*', missing: [{ type: 'header', key: 'purpose', value: 'prefetch' }] },
