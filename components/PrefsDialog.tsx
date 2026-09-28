@@ -45,9 +45,8 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
   const [showOtd, setShowOtd] = useState(true)
   const [autoPlaceName, setAutoPlaceName] = useState(true)
   const [offlineCache, setOfflineCache] = useState(true)
-  // 「清除离线数据」的反馈：清除后短暂显示「已清除」；打开弹窗时顺带读队列条数（有待同步
-  // 条目时提醒用户：清除会丢弃这些未上传的离线日记）
-  const [cleared, setCleared] = useState(false)
+  // 打开弹窗时顺带读队列条数：有待同步条目时在「离线缓存」开关的说明里提醒
+  // （关闭开关会连同队列一起清除 = 丢弃这些未上传的离线日记）
   const [queuedCount, setQueuedCount] = useState(0)
   // 偏好加载完成前渲染中性占位（避免「默认开启→真实状态」的闪烁）
   const [prefsReady, setPrefsReady] = useState(false)
@@ -75,7 +74,9 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // 先写 localStorage（立即生效），再异步同步数据库（多端）。
-  // OFFLINE_KEY 是设备本地开关（不同步服务器——缓存本身是设备属性）；关闭时立即清除本地数据。
+  // OFFLINE_KEY 是设备本地开关（不同步服务器——缓存本身是设备属性）；关闭即清除本机
+  // 离线数据（密文缓存 + 待同步队列）——因此不设单独的「清除离线数据」动作行，
+  // 关开关本身就是清除操作。
   function toggle(key: string, current: boolean, set: (v: boolean) => void) {
     const next = !current
     set(next)
@@ -89,7 +90,7 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
   // 开关行清单：文案、落盘键与状态并排一处，省掉 6 段几乎相同的 JSX。
   // 新增开关只需在此加一行（键与文案不会在复制粘贴中走样）。
   const rows = [
-    { key: OFFLINE_KEY, label: '离线缓存', hint: '断网时仍可解锁并查看已缓存的日记', enabled: offlineCache, setEnabled: setOfflineCache },
+    { key: OFFLINE_KEY, label: '离线缓存', hint: queuedCount > 0 ? `有 ${queuedCount} 篇待同步日记，关闭开关将丢弃` : '断网时仍可解锁并查看已缓存的日记，关闭即清除本机缓存', enabled: offlineCache, setEnabled: setOfflineCache },
     { key: LOCATION_KEY, label: '保存时记录位置', hint: '关闭后保存日记不再请求定位', enabled: locationEnabled, setEnabled: setLocationEnabled },
     { key: WEATHER_KEY, label: '保存时记录天气', hint: '关闭后保存日记不再获取实时天气', enabled: saveWeather, setEnabled: setSaveWeather },
     { key: GEOCODE_KEY, label: '自动补全地点名', hint: '关闭后不会自动把坐标转为地名', enabled: autoPlaceName, setEnabled: setAutoPlaceName },
@@ -120,22 +121,6 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
               <PrefSwitch enabled={row.enabled} ready={prefsReady} onToggle={() => toggle(row.key, row.enabled, row.setEnabled)} />
             </li>
           ))}
-          {/* 清除离线数据：动作行（非开关）。清除的是 IndexedDB 里的密文缓存与待同步队列——
-              有待同步条目时特别提醒（清除即丢弃这些离线日记）。 */}
-          <li className="flex items-center justify-between gap-4 py-3.5">
-            <div>
-              <p className="text-neutral-800 dark:text-neutral-200">清除离线数据</p>
-              <p className="mt-0.5 text-xs text-neutral-400">
-                {cleared ? '已清除' : queuedCount > 0 ? `含 ${queuedCount} 篇待同步的离线日记，清除后将丢失` : '删除本设备缓存的日记密文与解锁数据'}
-              </p>
-            </div>
-            <button
-              onClick={() => { void clearOfflineData().then(() => { setQueuedCount(0); setCleared(true) }) }}
-              className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium text-red-500 active:opacity-60"
-            >
-              清除
-            </button>
-          </li>
         </ul>
         <button
           onClick={onClose}

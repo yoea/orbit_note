@@ -9,42 +9,49 @@
 //     ① 安装期只缓存干净 200（res.ok && !res.redirected），逐个缓存、单个失败不拖垮安装；
 //     ② 在线导航成功时运行时补缓存外壳页；
 //     ③ 离线兜底逐级回退：精确匹配 → '/' 外壳 → '/login' 外壳 → 网络错误。
-const CACHE = 'qo-static-v5'
+// v6：修「离线时底部 TabBar 点了高亮但页面不切」。根因：App Router 客户端软导航是
+//     RSC:1 请求头的 fetch（非 navigate 模式），此前一律不介入 ⇒ 离线直接失败。
+//     改为对 RSC 导航请求同样「网络优先、缓存兜底」：在线成功时把载荷缓存进独立的
+//     RSC_CACHE（键 = pathname；HTML 外壳与 RSC 载荷同键会互相污染，必须分库），
+//     离线时回退缓存载荷 ⇒ 软导航照常工作。同时 HTML 外壳改为运行时缓存**所有**
+//     干净 200 导航响应（不止固定清单），离线硬导航/冷启动可精确命中任意在线访问过的页面。
+//     预取请求（next-router-prefetch / next-router-segment-prefetch 头）不介入：
+//     其载荷是部分内容，缓存了会污染完整导航载荷。
+const CACHE = 'qo-static-v6'
+const RSC_CACHE = 'qo-rsc-v6'
+const KEEP_CACHES = [CACHE, RSC_CACHE]
 const STATIC = ['/manifest.webmanifest', '/icons/icon-180.png', '/icons/icon-192.png', '/icons/icon-512.png']
-// 离线外壳页（document 级 200 响应，可用于离线导航兜底）。
-// '/' 在无 cookie 时会被 proxy 307 → /login，所以只能在带有效会话时缓存到干净副本。
+// 离线兜底外壳（冷启动离线时至少能给出应用壳）。
+// '/'、'/diary'、'/settings' 在无 cookie 时会被 proxy 307 → /login，安装期拿不到干净副本，
+// 靠运行时（带 cookie 的在线导航）补缓存。
 const SHELLS = ['/', '/login']
 
 // 缓存优先的白名单。**不能对所有同源 GET 都缓存优先**：
-// App Router 的客户端软导航会请求 '/xxx?_rsc=<hash>'（不是 navigate 模式），
-// 若被缓存，部署新版后会命中旧响应，表现为「改了但页面没变、硬刷才好」。
-// 这里只放带内容指纹（/_next/static/ 的 chunk 名含 hash，内容变了文件名就变）
-// 或极少变化的资源。
+// 只放带内容指纹（/_next/static/ 的 chunk 名含 hash，内容变了文件名就变）或极少变化的资源。
 const CACHE_FIRST_PREFIX = ['/_next/static/', '/icons/']
 const CACHE_FIRST_EXACT = ['/manifest.webmanifest']
 
-// 把一个 URL 的响应缓存进 CACHE（只在干净 200 时写入）。
-// 键传 URL 字符串（会被规范化为完整 URL）：运行时缓存用 pathname，
-// 这样 PWA start_url / 深链带 query 时也能命中同一份外壳。
-async function precache(url, res) {
+// 把响应缓存进指定 Cache（只在干净 200 时写入）。
+// 键传 pathname 字符串：运行时缓存用 pathname（剥 query），
+// 这样 PWA start_url / 深链带 query 时也能命中同一份外壳/载荷。
+async function cachePut(cacheName, pathname, res) {
   if (res.ok && !res.redirected) {
     try {
-      const c = await caches.open(CACHE)
-      await c.put(url, res)
+      const c = await caches.open(cacheName)
+      await c.put(pathname, res)
     } catch { /* 缓存写入失败不影响主流程 */ }
   }
 }
 
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {
-    // 逐个请求 + 独立容错：addAll 任一失败会整体 reject，导致整个安装失败
-    //（此前 '/' 307 时 addAll 虽能跟随重定向存入，但那正是 v5 要修的毒缓存）。
+    // 逐个请求 + 独立容错：addAll 任一失败会整体 reject，且重定向响应会入缓存（v5 修的毒缓存）。
     for (const u of [...STATIC, ...SHELLS]) {
       try {
         const res = await fetch(u, { cache: 'reload' })
         // redirected 响应（307 跟随后的最终响应）绝不入缓存：
         // WebKit 拿它响应导航请求会直接抛「response served by service worker has redirections」
-        if (res.ok && !res.redirected) await precache(u, res)
+        await cachePut(CACHE, u, res)
       } catch { /* 安装期网络失败：跳过，运行时导航成功时还会补缓存 */ }
     }
     await self.skipWaiting()
@@ -54,7 +61,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => !KEEP_CACHES.includes(k)).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   )
 })
@@ -64,22 +71,20 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return
   if (url.pathname.startsWith('/api/')) return // API 永不缓存
   if (url.origin !== self.location.origin) return
-  // 导航请求：网络优先（cache:'reload' 绕过 HTTP 缓存——HTML 体积小且带 ETag 协商，
-  // 但 WKWebView 对启发式缓存的旧副本连协商都不发，必须在 SW 层强制走网络），
-  // 成功时顺手把外壳页补进缓存；失败（离线）回退缓存（离线可打开）。
+  const headers = e.request.headers
+
+  // 导航请求（HTML 文档）：网络优先（cache:'reload' 绕过 HTTP 缓存——WKWebView 对启发式
+  // 缓存的旧副本连协商都不发），成功时顺手把页面外壳补进缓存（任意路径，不限 SHELLS）；
+  // 失败（离线）回退缓存：精确匹配 → '/' 外壳 → '/login' 外壳。
   if (e.request.mode === 'navigate') {
     e.respondWith((async () => {
       try {
         const res = await fetch(e.request, { cache: 'reload' })
-        // 只缓存外壳页的干净 200：redirected 响应（如会话过期时 '/' → /login）不碰，
-        // 防止覆盖已有的好外壳。键用 pathname（剥离 query）。
-        if (res.ok && !res.redirected && SHELLS.includes(url.pathname)) {
-          void precache(url.pathname, res.clone())
-        }
+        // redirected 响应（如会话过期时 '/' → /login）不碰，防止覆盖已有的好外壳
+        void cachePut(CACHE, url.pathname, res.clone())
         return res
       } catch {
-        // 离线兜底：精确匹配 → '/' 外壳 → '/login' 外壳 → 网络错误。
-        // 带 redirected 标记的缓存条目（理论上 v5 起不会产生）一律跳过。
+        // 带 redirected 标记的缓存条目（理论上不会产生）一律跳过
         for (const u of [url.pathname, '/', '/login']) {
           const hit = await caches.match(u)
           if (hit && !hit.redirected) return hit
@@ -89,7 +94,25 @@ self.addEventListener('fetch', (e) => {
     })())
     return
   }
-  // 其余同源 GET（含 RSC 软导航请求）一律不介入，交给浏览器按 HTTP 缓存语义处理
+
+  // RSC 软导航请求（客户端路由 fetch，带 RSC:1 头）：同样网络优先、缓存兜底。
+  // 预取请求（部分载荷）不介入，避免污染完整导航载荷缓存。
+  if (headers.get('rsc') === '1' && !headers.has('next-router-prefetch') && !headers.has('next-router-segment-prefetch')) {
+    e.respondWith((async () => {
+      try {
+        const res = await fetch(e.request, { cache: 'reload' })
+        void cachePut(RSC_CACHE, url.pathname, res.clone())
+        return res
+      } catch {
+        const hit = await caches.open(RSC_CACHE).then((c) => c.match(url.pathname))
+        if (hit && !hit.redirected) return hit
+        return Response.error()
+      }
+    })())
+    return
+  }
+
+  // 其余同源 GET（含 RSC 预取请求）一律不介入，交给浏览器按 HTTP 缓存语义处理
   const cacheFirst = CACHE_FIRST_EXACT.includes(url.pathname)
     || CACHE_FIRST_PREFIX.some((p) => url.pathname.startsWith(p))
   if (!cacheFirst) return
