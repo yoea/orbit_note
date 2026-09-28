@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mergeEntriesById, remainingAfterFlush } from '@/lib/client/offline'
+import { mergeEntriesById, queuedToEntry, remainingAfterFlush } from '@/lib/client/offline'
 import { diaryCreateSchema } from '@/lib/server/validation'
 import type { EncryptedEntry } from '@/lib/client/entries'
 
@@ -53,6 +53,29 @@ describe('remainingAfterFlush（队列冲刷保留决策）', () => {
 
   it('停止且无确认 → 原样保留', () => {
     expect(remainingAfterFlush(q, new Set(), 0)).toEqual(q)
+  })
+})
+
+describe('queuedToEntry（队列项 → 条目形态）', () => {
+  it('字段映射：createdAt/updatedAt 取 queuedAt，定位/天气为 null', () => {
+    const e = queuedToEntry({ id: 'u1', ciphertext: 'ct', iv: 'iv', wordCount: 12, timezone: 'Asia/Shanghai', queuedAt: Date.UTC(2026, 8, 29, 1, 2, 3) })
+    expect(e.id).toBe('u1')
+    expect(e.ciphertext).toBe('ct')
+    expect(e.iv).toBe('iv')
+    expect(e.wordCount).toBe(12)
+    expect(e.timezone).toBe('Asia/Shanghai')
+    expect(e.createdAt).toBe(new Date(Date.UTC(2026, 8, 29, 1, 2, 3)).toISOString())
+    expect(e.updatedAt).toBe(e.createdAt)
+    expect(e.latitude).toBeNull()
+    expect(e.longitude).toBeNull()
+    expect(e.locationName).toBeNull()
+    expect(e.weather).toBeNull()
+  })
+
+  it('可直接并入列表数据流（与 EncryptedEntry 同构，解密路径无需分支）', () => {
+    const e = queuedToEntry({ id: 'u2', ciphertext: 'ct', iv: 'iv', wordCount: 1, timezone: null, queuedAt: 0 })
+    const merged = mergeEntriesById([entry('a', '2026-01-01')], [e])
+    expect(merged.map((x) => x.id).sort()).toEqual(['a', 'u2'])
   })
 })
 

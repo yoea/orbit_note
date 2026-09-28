@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
 import { useUserName } from '@/lib/client/use-user-name'
-import { cacheEntriesPage, cacheStats, getCachedEntries, getCachedStats } from '@/lib/client/offline'
+import { cacheEntriesPage, cacheStats, getCachedEntries, getCachedStats, getQueuedEntries } from '@/lib/client/offline'
 import SearchDialog from './SearchDialog'
 import SearchIcon from './SearchIcon'
 import ContributionHeatmap from './ContributionHeatmap'
@@ -37,12 +37,13 @@ interface DecryptedItem {
   wordCount: number // 解密时计算（trim 后长度，与详情页/编辑器口径一致）
   lat: number | null
   locationName: string | null
+  pending: boolean // 离线新增、尚未同步到服务器的笔记（列表显示「未同步」徽标）
 }
 
 interface Group {
   key: string // yyyy-mm-dd（本地时区）
   label: string // 今天 / 昨天 / 2026年8月25日 · 星期二
-  items: { id: string; time: string; title: string; preview: string; wordCount: number; lat: number | null; locationName: string | null }[]
+  items: { id: string; time: string; title: string; preview: string; wordCount: number; lat: number | null; locationName: string | null; pending: boolean }[]
   // 组头统计（服务端全量聚合——分页只加载了部分，不能从已加载条目统计）
   statCount: number
   statWords: number
@@ -136,19 +137,26 @@ export default function DiaryListView() {
     } catch { /* 忽略 */ }
   }, [items, stats])
 
-  // 请求一页（offset 起 10 条）并解密。离线兜底：请求不可达时切本地缓存的同位置切片。
+  // 请求一页（offset 起 10 条）并解密。离线兜底：请求不可达时切本地——
+  // 密文缓存 + 离线写队列（离线新增的笔记保存后立即出现在这里，带「未同步」标记）。
   const fetchPage = useCallback(async (pageOffset: number): Promise<DecryptedItem[]> => {
     const dek = getDek()
     if (!dek) return []
     let entries: Entry[]
+    let pendingIds = new Set<string>()
     const res = await fetch(`/api/diary?limit=${PAGE_SIZE}&offset=${pageOffset}`).catch(() => null)
     if (res) {
       if (!res.ok) throw new Error('加载失败')
       entries = ((await res.json()) as { entries: Entry[] }).entries
       void cacheEntriesPage(entries) // 在线成功顺手缓存（密文，异步不阻塞）
     } else {
-      // 网络不可达：读缓存（getCachedEntries 已按 createdAt 倒序，切片语义与分页一致）
-      entries = (await getCachedEntries()).slice(pageOffset, pageOffset + PAGE_SIZE)
+      // 网络不可达：缓存（getCachedEntries 已按 createdAt 倒序）+ 队列（未同步，新→旧），
+      // 合并后统一按创建时间倒序再切片（分页语义与在线一致）
+      const [cached, queued] = await Promise.all([getCachedEntries(), getQueuedEntries()])
+      pendingIds = new Set(queued.map((q) => q.id))
+      entries = [...queued, ...cached]
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+        .slice(pageOffset, pageOffset + PAGE_SIZE)
       if (!entries.length) throw new Error('加载失败')
     }
     const decrypted: DecryptedItem[] = []
@@ -168,6 +176,7 @@ export default function DiaryListView() {
           wordCount: plain.trim().length,
           lat: e.latitude,
           locationName: e.locationName,
+          pending: pendingIds.has(e.id),
         })
       } catch {
         // 单条解密失败跳过（数据损坏不阻塞列表）
@@ -235,13 +244,16 @@ export default function DiaryListView() {
       grouped.set(key, [...(grouped.get(key) ?? []), item])
     }
     return [...grouped.entries()].map(([key, list]) => {
-      // 服务端全量统计（当天所有条目，不受分页影响）；stats 未加载时退回已加载统计
+      // 服务端全量统计（当天所有条目，不受分页影响）；stats 未加载时退回已加载统计。
+      // 离线时叠加队列里的未同步篇数/字数——服务端统计（或其缓存）不含这批；
+      // 无统计退回 list.length 时**不**再叠加（list 已含未同步条目，叠加会重复计）
       const dayStat = stats?.byDay?.[key]
+      const pendingList = list.filter((i) => i.pending)
       return {
         key,
         label: dayLabel(key),
-        statCount: dayStat?.count ?? list.length,
-        statWords: dayStat?.words ?? list.reduce((s, i) => s + i.wordCount, 0),
+        statCount: dayStat ? dayStat.count + pendingList.length : list.length,
+        statWords: dayStat ? dayStat.words + pendingList.reduce((s, i) => s + i.wordCount, 0) : list.reduce((s, i) => s + i.wordCount, 0),
         items: list.map((i) => ({
           id: i.id,
           time: i.createdAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }),
@@ -250,6 +262,7 @@ export default function DiaryListView() {
           wordCount: i.wordCount,
           lat: i.lat,
           locationName: i.locationName,
+          pending: i.pending,
         })),
       }
     })
@@ -314,6 +327,16 @@ export default function DiaryListView() {
                       <span className="shrink-0 text-xs tabular-nums text-neutral-400">{item.time}</span>
                       {/* 标题 = 首行加粗 */}
                       <span className="line-clamp-1 font-medium text-neutral-800 dark:text-neutral-200">{item.title}</span>
+                      {/* 未同步徽标：离线新增、尚未上传服务器的笔记（断网图标，同步后消失） */}
+                      {item.pending && (
+                        <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden>
+                            <path d="M17.5 19a4.5 4.5 0 1 0 0-9h-1.8A7 7 0 1 0 4 14.7" />
+                            <line x1="2" y1="2" x2="22" y2="22" />
+                          </svg>
+                          未同步
+                        </span>
+                      )}
                     </span>
                     {/* 剩余正文预览（单行截断；标题已单行截断） */}
                     {item.preview && (

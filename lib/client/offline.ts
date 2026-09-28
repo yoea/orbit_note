@@ -124,6 +124,63 @@ export async function getQueuedCount(): Promise<number> {
   return ((await idbGet<QueuedEntry[]>(QUEUE_KEY)) ?? []).length
 }
 
+// 队列项 → 列表/详情可直接消费的条目形态（与 EncryptedEntry 同构）。
+// createdAt/updatedAt 都取 queuedAt（创建时刻）；timezone 之外的定位/天气字段离线拿不到，
+// 置 null（这些字段的补写本来就是保存成功后的服务端异步操作）。
+export function queuedToEntry(item: QueuedEntry): import('./entries').EncryptedEntry {
+  const iso = new Date(item.queuedAt).toISOString()
+  return {
+    id: item.id,
+    ciphertext: item.ciphertext,
+    iv: item.iv,
+    createdAt: iso,
+    updatedAt: iso,
+    wordCount: item.wordCount,
+    latitude: null,
+    longitude: null,
+    locationAccuracy: null,
+    locationName: null,
+    weather: null,
+    timezone: item.timezone,
+  }
+}
+
+// 队列里的全部条目（离线列表合并用；按 queuedAt 新→旧）。
+// 在线时队列通常为空（解锁即冲刷），离线时是「新增且未同步」的那批。
+export async function getQueuedEntries(): Promise<import('./entries').EncryptedEntry[]> {
+  const queue = (await idbGet<QueuedEntry[]>(QUEUE_KEY)) ?? []
+  return queue
+    .slice()
+    .sort((a, b) => b.queuedAt - a.queuedAt)
+    .map(queuedToEntry)
+}
+
+export async function getQueuedEntryById(id: string): Promise<import('./entries').EncryptedEntry | null> {
+  const queue = (await idbGet<QueuedEntry[]>(QUEUE_KEY)) ?? []
+  const item = queue.find((q) => q.id === id)
+  return item ? queuedToEntry(item) : null
+}
+
+// 离线编辑「未同步笔记」：更新队列项的密文/字数（id/queuedAt 不变——创建时刻稳定，
+// 编辑时刻由调用方在 UI 层表达为 updatedAt）。条目不在队列中时静默忽略（返回 false）。
+export async function updateQueuedEntry(id: string, patch: { ciphertext: string; iv: string; wordCount: number }): Promise<boolean> {
+  const queue = (await idbGet<QueuedEntry[]>(QUEUE_KEY)) ?? []
+  const idx = queue.findIndex((q) => q.id === id)
+  if (idx < 0) return false
+  queue[idx] = { ...queue[idx], ...patch }
+  await idbSet(QUEUE_KEY, queue)
+  return true
+}
+
+// 离线删除「未同步笔记」：直接移出队列（还没上过服务器，无需服务端删除）。
+export async function removeQueuedEntry(id: string): Promise<boolean> {
+  const queue = (await idbGet<QueuedEntry[]>(QUEUE_KEY)) ?? []
+  const next = queue.filter((q) => q.id !== id)
+  if (next.length === queue.length) return false
+  await idbSet(QUEUE_KEY, next)
+  return true
+}
+
 // 冲刷离线写队列：逐条 POST（客户端 UUID 幂等——重复重传命中已有 id 时服务器返回 200 原条目）。
 // 返回本次成功同步的条数。遇网络错误 / 401 即停止（后续大概率同样失败），保留剩余队列。
 export async function flushOfflineQueue(): Promise<number> {
@@ -182,9 +239,13 @@ export async function clearOfflineData(): Promise<void> {
 // ---- 离线导航预热 ----
 
 // Tab 目的地页面（'/' 不需要——冷启动本身就是对它的硬导航）。
-// /entry/[id] 是动态路径、数量不可枚举，刻意不预热（离线点未访问过的详情无兜底，
-// 与「缓存兜底」哲学一致）。
-const PREWARM_PATHS = ['/diary', '/settings']
+// /entry/[id] 是动态路径、数量不可枚举，但详情页是纯客户端组件（id 取自 URL）——
+// 预热一个「占位 id」的外壳，离线时 SW 把占位 id 替换成真实 id 后即可服务任意
+// /entry/* 导航（见 sw.js navigate 兜底的 ENTRY_FALLBACK 说明）。
+// 占位 UUID 必须与 public/sw.js 的 ENTRY_PLACEHOLDER 保持一致（合法 UUID 才不会被
+// 任何校验层拦下；全零格式肉眼可辨，绝不与真实条目冲突）。
+const ENTRY_PLACEHOLDER = '00000000-0000-0000-0000-000000000000'
+const PREWARM_PATHS = ['/diary', '/settings', `/entry/${ENTRY_PLACEHOLDER}`]
 // 与 public/sw.js 的预热分支约定同一请求头（普通 GET + 此头 ⇒ SW 网络优先并缓存 HTML 外壳）
 const PREWARM_HEADER = { 'x-qo-prewarm': '1' }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import ConfirmDialog from '@/components/ConfirmDialog'
@@ -10,21 +10,53 @@ import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
 import RecoveryRegenerateDialog from '@/components/RecoveryRegenerateDialog'
 import NameEditDialog from '@/components/NameEditDialog'
 import ProfileCard from '@/components/ProfileCard'
+import Toast from '@/components/Toast'
 import { clearDek } from '@/lib/client/session'
 import { clearUserNameCache } from '@/lib/client/profile'
 import { useUserName } from '@/lib/client/use-user-name'
+import { useOffline } from '@/lib/client/use-offline'
 
 // 设置视图（原生路由页 /settings 渲染；DEK 会话级持久化，导航/重载自动恢复）
 // 偏好开关已独立到 /settings/prefs，本页只保留一个入口——那一组占页高约 40%，
 // 移出后本页一屏即可放下，不再需要滚动。
+//
+// 离线权限：导出 / 改昵称 / 改恢复密钥 / 改通行密钥 / 改偏好设置都依赖服务器写操作
+// 或需拉取服务器数据，离线时置灰并提示「该功能离线模式暂不可用」——与其让用户点进去
+// 撞一次「保存失败」，不如入口处就说明白。「关于」「退出登录」不受限（纯本地/只读操作）。
 export default function SettingsView() {
   const router = useRouter()
+  const offline = useOffline()
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
   const [showPrefs, setShowPrefs] = useState(false)
   const [showPasskeys, setShowPasskeys] = useState(false)
   const [showRecovery, setShowRecovery] = useState(false)
   const [showNameEdit, setShowNameEdit] = useState(false)
+  // 离线禁用提示：offlineToastAt 是触发计数器（>0 即显示）。连点自增 →
+  // 下面的 effect 重启 2s 计时器（toast 动画重放）；比手写 setTimeout+ref 简单且无 lint 争议
+  const [offlineToastAt, setOfflineToastAt] = useState(0)
+
+  useEffect(() => {
+    if (!offlineToastAt) return
+    const t = setTimeout(() => setOfflineToastAt(0), 2000)
+    return () => clearTimeout(t)
+  }, [offlineToastAt])
+
+  function notifyOffline() {
+    setOfflineToastAt((n) => n + 1)
+  }
+
+  // 离线守卫：离线时弹提示，在线时执行原动作
+  function guard(action: () => void) {
+    return () => {
+      if (!offline) { action(); return }
+      notifyOffline()
+    }
+  }
+
+  // 离线置灰样式（视觉禁用；点击仍触发——弹提示比无声置灰更友好）
+  const disabledClass = offline ? 'opacity-50' : ''
+
   // 用户名（加密存服务器；库里没有会自动生成默认名 Orbit_xxx）
   const userName = useUserName()
   // 预取的 Passkey 列表：点击前 fetch 完成，弹窗打开第一帧即完整列表（无加载闪烁）
@@ -65,12 +97,13 @@ export default function SettingsView() {
       </header>
       {/* 个人信息卡片：生成式头像 + 名字 + 一行统计；点开改名。
           不设分组标题——卡片本身已足够表意，省掉一个只配一行的标题 */}
-      <ProfileCard onEditName={() => setShowNameEdit(true)} />
+      <ProfileCard onEditName={guard(() => setShowNameEdit(true))} />
       <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">安全</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
-          {/* 点击查看各设备通行密钥，可禁用/启用指定设备、添加新设备（先预取数据再打开，无加载闪烁） */}
-          <button onClick={() => void openPasskeysDialog()} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
+          {/* 点击查看各设备通行密钥，可禁用/启用指定设备、添加新设备（先预取数据再打开，无加载闪烁）。
+              离线禁用：列表与增删都依赖服务器 */}
+          <button onClick={guard(() => void openPasskeysDialog())} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">{userName ? `${userName}的通行密钥` : '通行密钥'}</p>
               <p className="mt-0.5 text-xs text-neutral-400">指纹 / Face ID / Windows Hello 等</p>
@@ -79,8 +112,8 @@ export default function SettingsView() {
           </button>
         </li>
         <li>
-          {/* 重新生成恢复密钥：弹窗完成（不再跳转独立页面） */}
-          <button onClick={() => setShowRecovery(true)} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
+          {/* 重新生成恢复密钥：弹窗完成（不再跳转独立页面）。离线禁用：重生成是服务器写操作 */}
+          <button onClick={guard(() => setShowRecovery(true))} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">重新生成恢复密钥</p>
               <p className="mt-0.5 text-xs text-neutral-400">更换新的恢复密钥，旧密钥立即失效</p>
@@ -95,8 +128,8 @@ export default function SettingsView() {
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
           {/* 偏好设置：弹窗（原先是跳转独立页 /settings/prefs——那组开关只占约 40% 页高，
-              跳页多一次导航与返回，改为弹窗后设置页一屏容纳） */}
-          <button onClick={() => setShowPrefs(true)} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
+              跳页多一次导航与返回，改为弹窗后设置页一屏容纳）。离线禁用：开关写操作走服务器同步 */}
+          <button onClick={guard(() => setShowPrefs(true))} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">偏好设置</p>
               <p className="mt-0.5 text-xs text-neutral-400">位置、天气、地点名与各项显示开关</p>
@@ -117,7 +150,13 @@ export default function SettingsView() {
       <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">数据</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
-          <Link href="/settings/export" className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
+          {/* 导出笔记：解密后拼 CSV。离线禁用：导出需要拉取服务器全量日记密文
+              （本地缓存不保证完整）。拦截导航 + 提示 */}
+          <Link
+            href="/settings/export"
+            onClick={(e) => { if (offline) { e.preventDefault(); notifyOffline() } }}
+            className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}
+          >
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">导出笔记</p>
               <p className="mt-0.5 text-xs text-neutral-400">解密全部日记为 CSV 文件</p>
@@ -159,6 +198,8 @@ export default function SettingsView() {
       {showNameEdit && userName && (
         <NameEditDialog current={userName} onSaved={() => setShowNameEdit(false)} onClose={() => setShowNameEdit(false)} />
       )}
+      {/* 离线禁用提示（点击被禁入口时短暂显示） */}
+      {offlineToastAt > 0 && <Toast message="该功能离线模式暂不可用" />}
     </main>
   )
 }

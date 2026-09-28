@@ -26,8 +26,17 @@
 //     SW 拦截该头走网络优先并把干净 200 的 HTML 外壳写入 CACHE（与硬导航同一键空间）。
 //     离线点 tab：RSC 失败 → Next 硬导航 → SW navigate 命中预热外壳 → 整页加载
 //     （JS chunk 走 cache-first，页面数据走 IndexedDB 兜底）→ 完整离线体验。
-const CACHE = 'qo-static-v7'
-const RSC_CACHE = 'qo-rsc-v7'
+// v8：离线查看笔记详情（/entry/[id]）。详情页是纯客户端组件（id 取自 useParams，
+//     数据客户端拉取），任意 /entry/* 的 HTML 外壳可服务任意 id——但 HTML 内嵌的
+//     RSC flight 载荷带着生成时的路由状态（含当时的 id），直接拿 A 的外壳服务 B
+//     会在 hydration 时产生路由状态与 URL 不一致。因此预热一个**占位 UUID** 的外壳，
+//     离线服务时把占位 id 字符串替换为请求的真实 id（flight 载荷与 URL 严格一致），
+//     再以重建的 Response 返回（删 content-length，长度已变）。
+const CACHE = 'qo-static-v8'
+const RSC_CACHE = 'qo-rsc-v8'
+// /entry/* 离线通用外壳的占位 id——必须与 lib/client/offline.ts 的 ENTRY_PLACEHOLDER
+// 一致（预热键与服务端渲染用的就是它，替换目标也是它）
+const ENTRY_PLACEHOLDER = '00000000-0000-0000-0000-000000000000'
 const KEEP_CACHES = [CACHE, RSC_CACHE]
 const STATIC = ['/manifest.webmanifest', '/icons/icon-180.png', '/icons/icon-192.png', '/icons/icon-512.png']
 // 离线兜底外壳（冷启动离线时至少能给出应用壳）。
@@ -84,7 +93,8 @@ self.addEventListener('fetch', (e) => {
 
   // 导航请求（HTML 文档）：网络优先（cache:'reload' 绕过 HTTP 缓存——WKWebView 对启发式
   // 缓存的旧副本连协商都不发），成功时顺手把页面外壳补进缓存（任意路径，不限 SHELLS）；
-  // 失败（离线）回退缓存：精确匹配 → '/' 外壳 → '/login' 外壳。
+  // 失败（离线）回退缓存：精确匹配 → /entry/* 通用外壳（占位 id 替换为真实 id）→
+  // '/' 外壳 → '/login' 外壳。
   if (e.request.mode === 'navigate') {
     e.respondWith((async () => {
       try {
@@ -93,8 +103,24 @@ self.addEventListener('fetch', (e) => {
         void cachePut(CACHE, url.pathname, res.clone())
         return res
       } catch {
+        const exact = await caches.match(url.pathname)
+        if (exact && !exact.redirected) return exact
+        // /entry/<id> 通用外壳：详情页是纯客户端组件，任意 id 的外壳结构相同；
+        // 替换占位 id → 真实 id 保证 hydration 时路由状态与 URL 一致（见文件头 v8 注释）
+        if (url.pathname.startsWith('/entry/')) {
+          const shell = await caches.match(`/entry/${ENTRY_PLACEHOLDER}`)
+          if (shell && !shell.redirected) {
+            const realId = url.pathname.slice('/entry/'.length)
+            try {
+              const body = (await shell.text()).split(ENTRY_PLACEHOLDER).join(realId)
+              const headers = new Headers(shell.headers)
+              headers.delete('content-length') // 替换后长度已变，交给浏览器重算
+              return new Response(body, { status: shell.status, headers })
+            } catch { /* 重写失败：继续走逐级回退 */ }
+          }
+        }
         // 带 redirected 标记的缓存条目（理论上不会产生）一律跳过
-        for (const u of [url.pathname, '/', '/login']) {
+        for (const u of ['/', '/login']) {
           const hit = await caches.match(u)
           if (hit && !hit.redirected) return hit
         }

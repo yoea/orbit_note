@@ -10,7 +10,7 @@ import { copyText } from '@/lib/client/clipboard'
 import { clientReverseGeocode } from '@/lib/client/geocode'
 import { getPosition, parseCoords } from '@/lib/client/location'
 import { isAutoPlaceNameEnabled } from '@/lib/client/prefs'
-import { cacheEntriesPage, getCachedEntryById } from '@/lib/client/offline'
+import { cacheEntriesPage, getCachedEntryById, getQueuedEntryById, removeQueuedEntry, updateQueuedEntry } from '@/lib/client/offline'
 import { weatherEmoji } from '@/lib/client/weather'
 import { playSaveSound } from '@/lib/client/sound'
 import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
@@ -42,6 +42,11 @@ export default function EntryView({ id }: { id: string }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [decryptFailed, setDecryptFailed] = useState(false)
+  // 「未同步」标记：条目来自离线写队列（新增后尚未上传服务器）。
+  // 这类条目离线可编辑（改队列密文）/可删除（移出队列）；缓存条目离线只读。
+  const [pendingSync, setPendingSync] = useState(false)
+  // 网络不可达、数据来自本地（缓存或队列）：此时云端条目不可改（PATCH/DELETE 发不出去）
+  const [localReadonly, setLocalReadonly] = useState(false)
   const [coordsCopied, setCoordsCopied] = useState(false)
   // —— 定位相关：与正文保存完全解耦 ——
   // 任何定位改动（添加 / 移除 / 补地点名）都立即 PATCH 落库，不经过底部「保存修改」按钮。
@@ -190,9 +195,13 @@ export default function EntryView({ id }: { id: string }) {
       try {
         const res = await fetch(`/api/diary/${id}`).catch(() => null)
         if (res === null) {
-          // 网络不可达：回退本地密文缓存（在线成功时每篇都会顺手缓存）
-          const cached = await getCachedEntryById(id)
+          // 网络不可达：回退本地——先密文缓存（在线成功时每篇都会顺手缓存），
+          // 再离线写队列（离线新增且未同步的笔记，服务端没有）
+          const cached = (await getCachedEntryById(id)) ?? (await getQueuedEntryById(id))
           if (!cached) throw new Error('加载失败')
+          // 队列里有 = 未同步（缓存未命中而队列命中的情形）
+          setPendingSync((await getQueuedEntryById(id)) !== null)
+          setLocalReadonly(true)
           setEntry(cached)
           try {
             setPlain(await decryptText(getDek()!, cached.ciphertext, cached.iv))
@@ -207,6 +216,8 @@ export default function EntryView({ id }: { id: string }) {
         if (!res.ok) throw new Error('加载失败')
         const { entry } = await res.json() as { entry: Entry }
         setEntry(entry)
+        // 在线：若该条目还压在离线队列里（冲刷失败），仍按未同步处理（编辑走队列）
+        setPendingSync((await getQueuedEntryById(id)) !== null)
         void cacheEntriesPage([entry]) // 在线成功顺手缓存单条（密文）
         try {
           setPlain(await decryptText(getDek()!, entry.ciphertext, entry.iv))
@@ -266,9 +277,28 @@ export default function EntryView({ id }: { id: string }) {
     try {
       const dek = getDek()!
       const { ciphertext, iv } = await encryptText(dek, plain)
+      const wordCount = plain.trim().length
+      // 未同步笔记（离线新增、尚未上传）：编辑直接改写队列项密文，不走 PATCH——
+      // 服务器上还没有这条，PATCH 只会 404。同步时上传的自然是最新密文。
+      if (pendingSync) {
+        const updated = await updateQueuedEntry(id, { ciphertext, iv, wordCount })
+        if (!updated) throw new Error('保存失败')
+        const nowIso = new Date().toISOString()
+        setEntry((prev) => prev ? { ...prev, ciphertext, iv, wordCount, updatedAt: nowIso } : prev)
+        setAddLocationOpen(false)
+        setCoordInput('')
+        setCoordError(null)
+        setError(null)
+        setEditing(false)
+        playSaveSound()
+        setSavedFlash(true)
+        if (savedFlashTimerRef.current) clearTimeout(savedFlashTimerRef.current)
+        savedFlashTimerRef.current = setTimeout(() => setSavedFlash(false), 2000)
+        return
+      }
       // 只保存正文。定位的增删已在操作当时立即落库（见 persistLocation），
       // 不随本次提交——该 PATCH 不带 ciphertext，服务端不会更新 updatedAt。
-      const body: Record<string, unknown> = { ciphertext, iv, wordCount: plain.trim().length }
+      const body: Record<string, unknown> = { ciphertext, iv, wordCount }
       const res = await fetch(`/api/diary/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -293,11 +323,17 @@ export default function EntryView({ id }: { id: string }) {
     } finally {
       setBusy(false)
     }
-  }, [entry, plain, id])
+  }, [entry, plain, id, pendingSync])
 
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const remove = useCallback(async () => {
+    // 未同步笔记：还没上过服务器，移出本地队列即完成删除
+    if (pendingSync) {
+      await removeQueuedEntry(id)
+      router.replace('/diary')
+      return
+    }
     try {
       const res = await fetch(`/api/diary/${id}`, { method: 'DELETE' })
       if (res.status === 401) { router.replace('/login'); return }
@@ -311,7 +347,7 @@ export default function EntryView({ id }: { id: string }) {
       setError('删除失败，请重试')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }, [id, pendingSync])
 
   if (error && !entry) {
     return (
@@ -371,10 +407,20 @@ export default function EntryView({ id }: { id: string }) {
           </Link>
         )}
       </header>
-      <p className="text-sm tabular-nums text-neutral-400">
+      <p className="flex flex-wrap items-center gap-2 text-sm tabular-nums text-neutral-400">
         {fmtDate(created)}
         {/* 字数在解密时计算（与编辑器底部"共 x 字"一致：trim 后长度） */}
         {!decryptFailed && <> · {plain.trim().length} 字</>}
+        {/* 未同步徽标：离线新增、尚未上传服务器的笔记（同步后自动消失） */}
+        {pendingSync && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden>
+              <path d="M17.5 19a4.5 4.5 0 1 0 0-9h-1.8A7 7 0 1 0 4 14.7" />
+              <line x1="2" y1="2" x2="22" y2="22" />
+            </svg>
+            未同步
+          </span>
+        )}
       </p>
       {/* 定位信息：查看与编辑共用同一位置与样式（字数行下方）——优先地点名，点击复制精确坐标。
           编辑态且原笔记无坐标时，改为展示「添加定位」入口 */}
@@ -398,7 +444,8 @@ export default function EntryView({ id }: { id: string }) {
               <span className="shrink-0 text-xs text-neutral-400">{weatherEmoji(entry.weather)}{entry.weather}</span>
             )}
           </div>
-          {editing && (
+          {/* 未同步笔记不提供定位增删：定位走服务端 PATCH，而这条还没上服务器 */}
+          {editing && !pendingSync && (
             <button
               onClick={() => setConfirmRemoveLocation(true)}
               disabled={locationBusy}
@@ -408,7 +455,7 @@ export default function EntryView({ id }: { id: string }) {
             </button>
           )}
         </div>
-      ) : editing ? (
+      ) : editing && !pendingSync ? (
         <div className="mt-1">
           {!addLocationOpen ? (
             <button onClick={() => setAddLocationOpen(true)} className="text-xs text-neutral-400 underline">
@@ -505,16 +552,20 @@ export default function EntryView({ id }: { id: string }) {
             <span />
           )}
           <div className="flex items-center gap-6">
+            {/* 离线只读：云端缓存条目在断网时不可编辑/删除（PATCH/DELETE 发不出去，
+                硬点只会「保存失败」）。未同步笔记（pendingSync）不受限——编辑/删除
+                都在本地队列完成。 */}
             <button
               onClick={() => { editSnapshotRef.current = plain; closeAddLocation(); setEditing(true) }}
-              disabled={decryptFailed}
+              disabled={decryptFailed || (localReadonly && !pendingSync)}
               className="text-sm text-neutral-500 active:opacity-60 disabled:opacity-40"
             >
               编辑
             </button>
             <button
               onClick={() => setConfirmingDelete(true)}
-              className="text-sm text-red-500 active:opacity-60"
+              disabled={localReadonly && !pendingSync}
+              className="text-sm text-red-500 active:opacity-60 disabled:opacity-40"
             >
               删除
             </button>
