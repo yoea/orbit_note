@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import type { RegistrationResponseJSON } from '@simplewebauthn/server'
 import { db } from '@/lib/server/db'
-import { credentials } from '@/lib/server/db/schema'
+import { credentials, userProfile } from '@/lib/server/db/schema'
 import { createSession, SESSION_COOKIE } from '@/lib/server/session'
 import { takeChallenge, verifyRegistration } from '@/lib/server/webauthn'
 import { rateLimit } from '@/lib/server/ratelimit'
 import { assertSameOrigin, isAuthed } from '@/lib/server/auth'
+import { PROFILE_OWNER_ID } from '@/lib/server/validation'
 
 export async function POST(req: Request) {
   if (!rateLimit('register', 5, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
@@ -18,6 +19,8 @@ export async function POST(req: Request) {
   if (existing.length > 0 && !(await isAuthed(req))) {
     return NextResponse.json({ error: 'already_initialized' }, { status: 403 })
   }
+  // 本次是否为「首次注册」（即创建账号）——只有这一次才写注册时间
+  const isFirstRegistration = existing.length === 0
 
   // 形状防御检查后再 cast（@simplewebauthn 13.x JSON 响应类型）
   const registration = body.registration as RegistrationResponseJSON
@@ -42,6 +45,15 @@ export async function POST(req: Request) {
     // 设备标识（客户端 UA 解析，仅展示用途；长度防御）
     device: typeof body.device === 'string' && body.device.length <= 64 ? body.device : null,
   }).onConflictDoNothing()
+
+  // 首次注册即创建账号：记录注册时间（设置页个人信息展示用）。
+  // onConflictDoNothing —— 重复调用不会覆盖已有行；用户名（密文）由客户端稍后懒写入，
+  // 那条 PUT 不会碰 created_at。
+  if (isFirstRegistration) {
+    await db.insert(userProfile)
+      .values({ id: PROFILE_OWNER_ID, createdAt: new Date() })
+      .onConflictDoNothing()
+  }
 
   const session = await createSession()
   const res = NextResponse.json({ ok: true })

@@ -73,6 +73,9 @@ export const userProfile = pgTable('user_profile', {
   id: text('id').primaryKey(),
   nameCiphertext: text('name_ciphertext'),
   nameIv: text('name_iv'),
+  // 注册时间：仅「首次注册（即创建账号）」时由服务端写入，之后不再改动。
+  // 可空——本功能上线之前注册的老用户没有这个值，界面回退为「第一篇日记」的日期。
+  createdAt: timestamp('created_at', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

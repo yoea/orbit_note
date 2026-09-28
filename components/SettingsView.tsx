@@ -1,6 +1,6 @@
 'use client'
 
-import { useLayoutEffect, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import OrbitLogo from '@/components/OrbitLogo'
@@ -9,46 +9,16 @@ import AboutDialog from '@/components/AboutDialog'
 import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
 import RecoveryRegenerateDialog from '@/components/RecoveryRegenerateDialog'
 import NameEditDialog from '@/components/NameEditDialog'
+import ProfileCard from '@/components/ProfileCard'
 import { clearDek } from '@/lib/client/session'
 import { clearUserNameCache } from '@/lib/client/profile'
 import { useUserName } from '@/lib/client/use-user-name'
-import { GEOCODE_KEY, LOCATION_KEY, OTD_KEY, PROMPT_KEY, STREAK_KEY, WEATHER_KEY, syncPrefToServer } from '@/lib/client/prefs'
-
-// 偏好开关组件：未加载时渲染中性占位（圆点居中，视觉上非开非关——
-// 避免「先渲染默认开启、再变关闭」的闪烁）；加载完成后才是真实可切换开关
-function PrefSwitch({ enabled, ready, onToggle }: { enabled: boolean; ready: boolean; onToggle: () => void }) {
-  if (!ready) {
-    return (
-      <span className="relative h-7 w-12 shrink-0 rounded-full bg-neutral-300 opacity-60 dark:bg-neutral-600" aria-hidden>
-        <span className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow" />
-      </span>
-    )
-  }
-  return (
-    <button
-      onClick={onToggle}
-      role="switch"
-      aria-checked={enabled}
-      className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${enabled ? 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500' : 'bg-neutral-300 dark:bg-neutral-600'}`}
-    >
-      <span className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-5' : ''}`} />
-    </button>
-  )
-}
-
-// 定位开关（与 DiaryEditor 的 isLocationEnabled 共用 localStorage key）
 
 // 设置视图（原生路由页 /settings 渲染；DEK 会话级持久化，导航/重载自动恢复）
+// 偏好开关已独立到 /settings/prefs，本页只保留一个入口——那一组占页高约 40%，
+// 移出后本页一屏即可放下，不再需要滚动。
 export default function SettingsView() {
   const router = useRouter()
-  const [locationEnabled, setLocationEnabled] = useState(true)
-  const [showStreak, setShowStreak] = useState(true)
-  const [showPrompt, setShowPrompt] = useState(true)
-  const [saveWeather, setSaveWeather] = useState(true)
-  const [showOtd, setShowOtd] = useState(true)
-  const [autoPlaceName, setAutoPlaceName] = useState(true)
-  // 偏好加载完成前渲染中性占位（避免「默认开启→真实状态」的闪烁）
-  const [prefsReady, setPrefsReady] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
   const [showAbout, setShowAbout] = useState(false)
   const [showPasskeys, setShowPasskeys] = useState(false)
@@ -75,74 +45,6 @@ export default function SettingsView() {
     setShowPasskeys(true)
   }
 
-  // useLayoutEffect：浏览器 paint 前同步读取 localStorage——首帧即真实开关状态，
-  // 配合 PrefSwitch 的中性占位（同步读取后立即 ready），无「先开后关」闪烁
-  useLayoutEffect(() => {
-    try {
-      setLocationEnabled(localStorage.getItem(LOCATION_KEY) !== '0')
-      setShowStreak(localStorage.getItem(STREAK_KEY) !== '0')
-      setShowPrompt(localStorage.getItem(PROMPT_KEY) !== '0')
-      setSaveWeather(localStorage.getItem(WEATHER_KEY) !== '0')
-      setShowOtd(localStorage.getItem(OTD_KEY) !== '0')
-      setAutoPlaceName(localStorage.getItem(GEOCODE_KEY) !== '0')
-    } catch { /* localStorage 不可用则保持默认 */ }
-    setPrefsReady(true)
-  }, [])
-
-  function toggleLocation() {
-    const next = !locationEnabled
-    setLocationEnabled(next)
-    try {
-      localStorage.setItem(LOCATION_KEY, next ? '1' : '0')
-      syncPrefToServer(LOCATION_KEY, next) // 异步同步数据库（多端）
-    } catch { /* 忽略存储失败（隐私模式等） */ }
-  }
-
-  function toggleStreak() {
-    const next = !showStreak
-    setShowStreak(next)
-    try {
-      localStorage.setItem(STREAK_KEY, next ? '1' : '0')
-      syncPrefToServer(STREAK_KEY, next) // 异步同步数据库（多端）
-    } catch { /* 忽略存储失败（隐私模式等） */ }
-  }
-
-  function togglePrompt() {
-    const next = !showPrompt
-    setShowPrompt(next)
-    try {
-      localStorage.setItem(PROMPT_KEY, next ? '1' : '0')
-      syncPrefToServer(PROMPT_KEY, next) // 异步同步数据库（多端）
-    } catch { /* 忽略存储失败（隐私模式等） */ }
-  }
-
-  function toggleWeather() {
-    const next = !saveWeather
-    setSaveWeather(next)
-    try {
-      localStorage.setItem(WEATHER_KEY, next ? '1' : '0')
-      syncPrefToServer(WEATHER_KEY, next) // 异步同步数据库（多端）
-    } catch { /* 忽略存储失败（隐私模式等） */ }
-  }
-
-  function toggleOtd() {
-    const next = !showOtd
-    setShowOtd(next)
-    try {
-      localStorage.setItem(OTD_KEY, next ? '1' : '0')
-      syncPrefToServer(OTD_KEY, next) // 异步同步数据库（多端）
-    } catch { /* 忽略存储失败（隐私模式等） */ }
-  }
-
-  function toggleAutoPlaceName() {
-    const next = !autoPlaceName
-    setAutoPlaceName(next)
-    try {
-      localStorage.setItem(GEOCODE_KEY, next ? '1' : '0')
-      syncPrefToServer(GEOCODE_KEY, next) // 异步同步数据库（多端）
-    } catch { /* 忽略存储失败（隐私模式等） */ }
-  }
-
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
     clearDek()
@@ -162,24 +64,13 @@ export default function SettingsView() {
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">设置</h1>
         <span className="w-8" />
       </header>
-      {/* 用户名：懒生成（库里没有则生成默认名 Orbit_xxx 并加密落库），点开可改 */}
-      <p className="px-1 pb-2 pt-1 text-xs font-medium text-neutral-400">账号</p>
-      <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
-        <li>
-          <button onClick={() => setShowNameEdit(true)} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
-            <div className="min-w-0">
-              <p className="text-neutral-800 dark:text-neutral-200">名字</p>
-              <p className="mt-0.5 truncate text-xs text-neutral-400">{userName ?? '加载中…'}</p>
-            </div>
-            <span className="shrink-0 text-lg text-neutral-300">›</span>
-          </button>
-        </li>
-      </ul>
-      {/* iOS 风格分组卡片：安全 → 偏好 → 数据（危险操作置底并红色标出） */}
+      {/* 个人信息卡片：生成式头像 + 名字 + 一行统计；点开改名。
+          不设分组标题——卡片本身已足够表意，省掉一个只配一行的标题 */}
+      <ProfileCard onEditName={() => setShowNameEdit(true)} />
       <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">安全</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
-          {/* 点击查看各设备 Passkey，可禁用/启用指定设备、添加新设备（先预取数据再打开，无加载闪烁） */}
+          {/* 点击查看各设备通行密钥，可禁用/启用指定设备、添加新设备（先预取数据再打开，无加载闪烁） */}
           <button onClick={() => void openPasskeysDialog()} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">{userName ? `${userName}的通行密钥` : '通行密钥'}</p>
@@ -199,49 +90,27 @@ export default function SettingsView() {
           </button>
         </li>
       </ul>
-      <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">偏好</p>
+      {/* 通用：偏好设置入口 + 关于。合并成一组——两者各自都只有一行，
+          分开会各带一个「只配一行」的分组标题，白占两处页高 */}
+      <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">通用</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
-        <li className="flex items-center justify-between px-4 py-3.5">
-          <div>
-            <p className="text-neutral-800 dark:text-neutral-200">保存时记录位置</p>
-            <p className="mt-0.5 text-xs text-neutral-400">关闭后保存日记不再请求定位</p>
-          </div>
-          <PrefSwitch enabled={locationEnabled} ready={prefsReady} onToggle={toggleLocation} />
+        <li>
+          <Link href="/settings/prefs" className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
+            <div>
+              <p className="text-neutral-800 dark:text-neutral-200">偏好设置</p>
+              <p className="mt-0.5 text-xs text-neutral-400">位置、天气、地点名与各项显示开关</p>
+            </div>
+            <span className="text-lg text-neutral-300">›</span>
+          </Link>
         </li>
-        <li className="flex items-center justify-between px-4 py-3.5">
-          <div>
-            <p className="text-neutral-800 dark:text-neutral-200">保存时记录天气</p>
-            <p className="mt-0.5 text-xs text-neutral-400">关闭后保存日记不再获取实时天气</p>
-          </div>
-          <PrefSwitch enabled={saveWeather} ready={prefsReady} onToggle={toggleWeather} />
-        </li>
-        <li className="flex items-center justify-between px-4 py-3.5">
-          <div>
-            <p className="text-neutral-800 dark:text-neutral-200">自动补全地点名</p>
-            <p className="mt-0.5 text-xs text-neutral-400">关闭后只显示坐标</p>
-          </div>
-          <PrefSwitch enabled={autoPlaceName} ready={prefsReady} onToggle={toggleAutoPlaceName} />
-        </li>
-        <li className="flex items-center justify-between px-4 py-3.5">
-          <div>
-            <p className="text-neutral-800 dark:text-neutral-200">显示连续写作天数</p>
-            <p className="mt-0.5 text-xs text-neutral-400">首页日期旁显示连续写了 N 天</p>
-          </div>
-          <PrefSwitch enabled={showStreak} ready={prefsReady} onToggle={toggleStreak} />
-        </li>
-        <li className="flex items-center justify-between px-4 py-3.5">
-          <div>
-            <p className="text-neutral-800 dark:text-neutral-200">显示每日提示</p>
-            <p className="mt-0.5 text-xs text-neutral-400">首页输入框上方的写作灵感提示</p>
-          </div>
-          <PrefSwitch enabled={showPrompt} ready={prefsReady} onToggle={togglePrompt} />
-        </li>
-        <li className="flex items-center justify-between px-4 py-3.5">
-          <div>
-            <p className="text-neutral-800 dark:text-neutral-200">显示去年的今天</p>
-            <p className="mt-0.5 text-xs text-neutral-400">首页顶部往年今日回忆卡片</p>
-          </div>
-          <PrefSwitch enabled={showOtd} ready={prefsReady} onToggle={toggleOtd} />
+        <li>
+          <button onClick={() => setShowAbout(true)} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
+            <div>
+              <p className="text-neutral-800 dark:text-neutral-200">关于 Orbit</p>
+              <p className="mt-0.5 text-xs text-neutral-400">端到端加密的私人日记，只为一个人服务</p>
+            </div>
+            <span className="text-lg text-neutral-300">›</span>
+          </button>
         </li>
       </ul>
       <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">数据</p>
@@ -265,19 +134,7 @@ export default function SettingsView() {
           </button>
         </li>
       </ul>
-      <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">关于</p>
-      <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
-        <li>
-          <button onClick={() => setShowAbout(true)} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
-            <div>
-              <p className="text-neutral-800 dark:text-neutral-200">关于 Orbit</p>
-              <p className="mt-0.5 text-xs text-neutral-400">端到端加密的私人日记，只为一个人服务</p>
-            </div>
-            <span className="text-lg text-neutral-300">›</span>
-          </button>
-        </li>
-      </ul>
-      {/* 底部品牌：Logo + 上下间距——「关于 Orbit」与页脚之间不再紧贴，视觉收尾平衡 */}
+      {/* 底部品牌收尾 */}
       <div className="flex justify-center pb-8 pt-6">
         <OrbitLogo />
       </div>

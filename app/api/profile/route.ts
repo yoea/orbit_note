@@ -16,7 +16,9 @@ export async function GET(req: Request) {
   const profile = row?.nameCiphertext && row.nameIv
     ? { nameCiphertext: row.nameCiphertext, nameIv: row.nameIv }
     : null
-  return NextResponse.json({ profile })
+  // 注册时间（明文时间戳，不含身份信息）：仅首次注册时写入；
+  // 老用户为 null，界面回退为「第一篇日记」的日期
+  return NextResponse.json({ profile, createdAt: row?.createdAt ?? null })
 }
 
 export async function PUT(req: Request) {

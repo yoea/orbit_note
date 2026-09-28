@@ -85,6 +85,13 @@
       "when": 1790581391913,
       "tag": "0011_regular_logan",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790583067538,
+      "tag": "0012_fast_juggernaut",
+      "breakpoints": true
     }
   ]
 }

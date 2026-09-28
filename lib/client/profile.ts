@@ -1,7 +1,10 @@
-// 用户名（可识别身份的元数据）：
-// 用 DEK 加密后存服务器（/api/profile），服务器只见密文；读取需要 DEK。
+// 用户资料（可识别身份的元数据）：
+// 名字用 DEK 加密后存服务器（/api/profile），服务器只见密文；读取需要 DEK。
 // 因此名字只在**解锁后**可得——所有展示位置都在解锁之后，不影响使用。
-// 懒创建：首次需要时若库里为空，生成默认名 Orbit_xxx 并落库（setup 流程不参与）。
+// 懒创建：首次需要时若库里没有名字，生成默认名 Orbit_xxx 并落库（setup 流程不参与）。
+//
+// createdAt（注册时间）是明文时间戳、不含身份信息：仅「首次注册」时由服务端写入；
+// 本功能上线之前注册的老用户为 null，界面回退为「第一篇日记」的日期。
 import { decryptText, encryptText } from './crypto/encryption'
 import { getDek } from './session'
 
@@ -14,24 +17,33 @@ export function generateDefaultName(): string {
   return `Orbit_${fragment}`
 }
 
+interface ProfileState {
+  name: string
+  createdAt: string | null
+}
+
 // 会话级缓存：解锁后读一次即可，避免每个页面重复「拉取 + 解密」。
-// 同时作为极简的订阅源——改名后所有正在显示名字的组件都要跟着更新，
+// 同时作为极简订阅源——改名后所有正在显示名字的组件都要跟着更新，
 // 否则设置页改完名字，别的页面（以及它自己）还显示旧值。
-let cached: string | null = null
+let cached: ProfileState | null = null
 const listeners = new Set<() => void>()
 
-function setCached(name: string | null): void {
-  if (cached === name) return
-  cached = name
+function setCached(next: ProfileState | null): void {
+  if (cached?.name === next?.name && cached?.createdAt === next?.createdAt) return
+  cached = next
   for (const listener of listeners) listener()
 }
 
+// 供 useSyncExternalStore 订阅：返回值必须是稳定的原始值（不能每次新建对象）
 export function getUserName(): string | null {
-  return cached
+  return cached?.name ?? null
 }
 
-// 供 useSyncExternalStore 订阅（返回值需稳定，故缓存用原始字符串）
-export function subscribeUserName(listener: () => void): () => void {
+export function getProfileCreatedAt(): string | null {
+  return cached?.createdAt ?? null
+}
+
+export function subscribeProfile(listener: () => void): () => void {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
 }
@@ -51,32 +63,36 @@ async function putName(dek: CryptoKey, name: string): Promise<void> {
   if (!res.ok) throw new Error('保存名字失败')
 }
 
-// 读取用户名；库里没有则生成默认名并落库。需要 DEK（未解锁时抛错）。
+// 读取资料；库里没有名字则生成默认名并落库。需要 DEK（未解锁时抛错）。
 export async function loadUserName(): Promise<string> {
-  if (cached) return cached
+  if (cached) return cached.name
   const dek = getDek()
   if (!dek) throw new Error('未解锁')
   const res = await fetch('/api/profile')
   if (!res.ok) throw new Error('读取名字失败')
-  const data = await res.json() as { profile: { nameCiphertext: string; nameIv: string } | null }
+  const data = await res.json() as {
+    profile: { nameCiphertext: string; nameIv: string } | null
+    createdAt: string | null
+  }
+  const createdAt = data.createdAt ?? null
   if (data.profile) {
     try {
       const name = await decryptText(dek, data.profile.nameCiphertext, data.profile.nameIv)
-      if (name) { setCached(name); return name }
+      if (name) { setCached({ name, createdAt }); return name }
     } catch { /* 解密失败（如换过 DEK）→ 视为未设置，重建默认名 */ }
   }
   const name = generateDefaultName()
   await putName(dek, name)
-  setCached(name)
+  setCached({ name, createdAt })
   return name
 }
 
-// 改名（设置页）。空名拒绝；超长按上限截断。
+// 改名（设置页）。空名拒绝；超长按上限截断。createdAt 不受影响。
 export async function saveUserName(name: string): Promise<void> {
   const dek = getDek()
   if (!dek) throw new Error('未解锁')
   const trimmed = name.trim().slice(0, USER_NAME_MAX)
   if (!trimmed) throw new Error('名字不能为空')
   await putName(dek, trimmed)
-  setCached(trimmed)
+  setCached({ name: trimmed, createdAt: cached?.createdAt ?? null })
 }
