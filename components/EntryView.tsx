@@ -440,8 +440,14 @@ export default function EntryView({ id }: { id: string }) {
             disabled={busy}
             className="mt-3 min-h-0 w-full flex-1 resize-none bg-transparent text-base leading-relaxed outline-none disabled:opacity-60"
           />
-          {/* 底部区：整体贴底（上次编辑 + 保存按钮），输入框弹性占中间 */}
-          <div className="mt-auto flex flex-col gap-2 pt-2">
+          {/* 底部区：整体贴底（上次编辑 + 保存按钮），输入框弹性占中间。
+              必须有下内边距：main 自身没有 pb，而 TabBar 就紧贴在它下方（(app)/layout 里
+              两者是相邻的兄弟节点，中间没有任何间隔）——少了这段留白，渐变实心按钮的下边缘
+              会正好压在 TabBar 的 1px 上边框上，视觉上就是「按钮与 TabBar 重叠」。
+              查看态没这问题，只因那条操作栏自带 py-4。
+              取 16px（pb-4）与查看态操作栏的下内边距一致；底部安全区仍由 TabBar 的
+              pb-safe 承担，这里不能写 safe-pb（否则叠出双份留白）。 */}
+          <div className="mt-auto flex flex-col gap-2 pb-4 pt-2">
             {isEdited && (
               <p className="text-xs tabular-nums text-neutral-400">上次编辑 {fmtDate(editedAt)}</p>
             )}

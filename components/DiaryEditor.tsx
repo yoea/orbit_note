@@ -336,12 +336,25 @@ export default function DiaryEditor() {
         </div>
       )}
       {showDraftBanner && (
-        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950">
-          <p className="text-sm font-medium text-amber-800 dark:text-amber-200">发现上次未完成的日记</p>
-          <div className="mt-2 flex gap-3">
-            <button onClick={() => void restoreDraft()} className="text-sm font-medium text-amber-800 underline dark:text-amber-200">恢复草稿</button>
-            <button onClick={() => void discardDraft()} className="text-sm text-amber-700 dark:text-amber-300">放弃草稿</button>
-          </div>
+        /* 未完成草稿横幅：单行紧凑结构——此前是「标题 + 两个下划线文字链」两层，
+           文案与元素都偏多；且 amber 是全站唯一的黄系，与「品牌渐变 + 中性灰」体系不搭。
+           现在配色对齐同页的「去年的今天」卡片（中性灰底 + 1px 边框），主操作借用主按钮的
+           品牌渐变；文案压到最短（“恢复 / 放弃”已由行内文案交代对象）。
+           交互完全不变：恢复 = 解密填入编辑器；放弃 = 清本地 IndexedDB + 服务器草稿。 */
+        <div className="mb-3 flex items-center gap-3 rounded-xl border border-neutral-100 bg-neutral-50/60 px-3.5 py-2 dark:border-neutral-800 dark:bg-neutral-900/40">
+          <p className="min-w-0 flex-1 text-xs text-neutral-500 dark:text-neutral-400">发现未完成的草稿</p>
+          <button
+            onClick={() => void restoreDraft()}
+            className="shrink-0 rounded-lg bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-90"
+          >
+            恢复
+          </button>
+          <button
+            onClick={() => void discardDraft()}
+            className="shrink-0 py-1.5 text-xs text-neutral-400 active:opacity-60"
+          >
+            放弃
+          </button>
         </div>
       )}
       {/* 每日提示：随机一句，点击换一条（写作灵感） */}
