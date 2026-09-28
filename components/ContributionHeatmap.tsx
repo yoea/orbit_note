@@ -48,8 +48,11 @@ export default function ContributionHeatmap({ byDay }: { byDay: Record<string, {
     <div className="pb-4">
       {/* 26 周一屏放下，通常无需横滚；左对齐——半年图从左侧开始，视觉更自然 */}
       <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {/* pb-5：为底部绝对定位的月份标签留出空间（不裁剪） */}
-        <div className="flex w-max gap-[2px] pb-5">
+        {/* pt-[3px]：为「今天」方块的 ring（向外 1px 的 box-shadow）留出空间——
+            外层 overflow-x-auto 的 overflow-y 会被算作 auto 形成裁剪，顶部无内边距时
+            最上面一行的描边会被裁掉。
+            pb-5：为底部绝对定位的月份标签留出空间（不裁剪），同时也覆盖了最下一行的描边 */}
+        <div className="flex w-max gap-[2px] pt-[3px] pb-5">
           {weeks.map((week, wi) => {
             // 每列底部月份小字：该列所属年月与上一列不同时显示（跨年同月也能正确标注）。
             // absolute 定位：不参与列宽计算——否则"10月/12月"两位数字会把列撑宽，
