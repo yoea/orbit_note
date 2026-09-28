@@ -38,16 +38,15 @@ export default function EntryView({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null)
   const [decryptFailed, setDecryptFailed] = useState(false)
   const [coordsCopied, setCoordsCopied] = useState(false)
-  const [removeLocation, setRemoveLocation] = useState(false)
-  // —— 编辑态「添加定位」（原笔记没有坐标时才有意义）——
-  // pendingLocation 是待保存的坐标（点「保存修改」时才随 PATCH 落库）
-  const [pendingLocation, setPendingLocation] = useState<
-    { latitude: number; longitude: number; accuracy: number | null; name: string | null } | null
-  >(null)
+  // —— 定位相关：与正文保存完全解耦 ——
+  // 任何定位改动（添加 / 移除 / 补地点名）都立即 PATCH 落库，不经过底部「保存修改」按钮。
+  // 该按钮只负责正文内容。
   const [addLocationOpen, setAddLocationOpen] = useState(false)
   const [coordInput, setCoordInput] = useState('')
   const [coordError, setCoordError] = useState<string | null>(null)
-  const [locating, setLocating] = useState(false)
+  const [locating, setLocating] = useState(false) // 正在读取 GPS
+  const [savingLocation, setSavingLocation] = useState(false) // 正在 PATCH 定位
+  const [confirmRemoveLocation, setConfirmRemoveLocation] = useState(false)
   // 打开详情页自动补地点名：同一篇只尝试一次
   const autoGeocodeTriedRef = useRef<string | null>(null)
   const [confirmCancelEdit, setConfirmCancelEdit] = useState(false)
@@ -87,11 +86,34 @@ export default function EntryView({ id }: { id: string }) {
     }
   }
 
-  // 编辑态「添加定位」：读取当前定位。超时给足（用户主动点击、有明确等待预期，
-  // 不像保存那样赶时间）。拿到坐标立刻回填界面，地点名异步补——失败静默，
-  // 保存后详情页的自动补查会再兜一次。
+  // 定位写库入口：所有定位改动都走这里，**立即生效**，与底部「保存修改」按钮无关。
+  // PATCH 不带 ciphertext → 服务端不更新 updatedAt，所以补/改定位不算「编辑」，
+  // 详情页不会因此显示「编辑于」。
+  async function persistLocation(patch: Record<string, unknown>) {
+    const res = await fetch(`/api/diary/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
+    if (!res.ok) throw new Error('保存位置失败')
+    const data = await res.json() as { entry: Entry }
+    setEntry((prev) => (prev ? { ...prev, ...data.entry } : prev))
+  }
+
+  // 地点名异步反查并补写（尽力而为）：失败静默——详情页的自动补查与点击坐标都能兜底
+  function backfillLocationName(latitude: number, longitude: number) {
+    if (!isAutoPlaceNameEnabled()) return
+    void (async () => {
+      const name = await clientReverseGeocode(latitude, longitude)
+      if (!name) return
+      try { await persistLocation({ locationName: name }) } catch { /* 忽略 */ }
+    })()
+  }
+
+  // 编辑态「添加定位」之一：读取当前定位。超时给足（用户主动点击、有明确等待预期，
+  // 不像保存那样赶时间）。拿到坐标立即落库，地点名随后异步补。
   async function applyCurrentLocation() {
-    if (locating) return
+    if (locating || savingLocation) return
     setLocating(true)
     setCoordError(null)
     let pos: Awaited<ReturnType<typeof getPosition>> = null
@@ -101,39 +123,58 @@ export default function EntryView({ id }: { id: string }) {
       setLocating(false)
     }
     if (!pos) { setCoordError('定位失败或超时，请检查定位权限后重试'); return }
-    setPendingLocation({ latitude: pos.latitude, longitude: pos.longitude, accuracy: pos.accuracy, name: null })
-    setAddLocationOpen(false)
-    setRemoveLocation(false)
-    if (isAutoPlaceNameEnabled()) {
-      const name = await clientReverseGeocode(pos.latitude, pos.longitude)
-      if (name) setPendingLocation((prev) => (prev ? { ...prev, name } : prev))
+    const { latitude, longitude, accuracy } = pos
+    setSavingLocation(true)
+    try {
+      await persistLocation({ latitude, longitude, locationAccuracy: accuracy })
+      setAddLocationOpen(false)
+      backfillLocationName(latitude, longitude)
+    } catch {
+      setCoordError('保存位置失败，请重试')
+    } finally {
+      setSavingLocation(false)
     }
   }
 
-  // 编辑态「添加定位」：手填坐标。接受 "25.049642, 102.676280" 这种形式
-  // （逗号分隔、逗号后空格自动忽略、兼容中文全角逗号），见 parseCoords。
-  function applyManualCoords() {
+  // 编辑态「添加定位」之二：手填坐标，立即落库。
+  // 接受 "25.049642, 102.676280"（逗号分隔、逗号后空格忽略、兼容中文全角逗号），见 parseCoords。
+  async function applyManualCoords() {
+    if (savingLocation) return
     const parsed = parseCoords(coordInput)
     if (!parsed) {
       setCoordError('格式不对，应为「纬度, 经度」，例如 25.049642, 102.676280')
       return
     }
-    setPendingLocation({ latitude: parsed.latitude, longitude: parsed.longitude, accuracy: null, name: null })
-    setCoordInput('')
-    setCoordError(null)
-    setAddLocationOpen(false)
-    setRemoveLocation(false)
-    if (isAutoPlaceNameEnabled()) {
-      void (async () => {
-        const name = await clientReverseGeocode(parsed.latitude, parsed.longitude)
-        if (name) setPendingLocation((prev) => (prev ? { ...prev, name } : prev))
-      })()
+    setSavingLocation(true)
+    try {
+      await persistLocation({ latitude: parsed.latitude, longitude: parsed.longitude, locationAccuracy: null })
+      setCoordInput('')
+      setCoordError(null)
+      setAddLocationOpen(false)
+      backfillLocationName(parsed.latitude, parsed.longitude)
+    } catch {
+      setCoordError('保存位置失败，请重试')
+    } finally {
+      setSavingLocation(false)
     }
   }
 
-  // 退出编辑态时清理「添加定位」的临时状态（未保存的坐标不保留）
-  function resetAddLocation() {
-    setPendingLocation(null)
+  // 移除定位：立即生效且不可逆，调用前由 UI 二次确认。
+  // 服务端在 latitude 为 null 时会把 locationName 一并清空。
+  async function removeLocationNow() {
+    setConfirmRemoveLocation(false)
+    setSavingLocation(true)
+    try {
+      await persistLocation({ latitude: null, longitude: null, locationAccuracy: null })
+    } catch {
+      setError('移除定位失败，请重试')
+    } finally {
+      setSavingLocation(false)
+    }
+  }
+
+  // 收起「添加定位」面板并清理输入（坐标已在上一步落库，这里没有待保存内容）
+  function closeAddLocation() {
     setAddLocationOpen(false)
     setCoordInput('')
     setCoordError(null)
@@ -205,19 +246,9 @@ export default function EntryView({ id }: { id: string }) {
     try {
       const dek = getDek()!
       const { ciphertext, iv } = await encryptText(dek, plain)
+      // 只保存正文。定位的增删已在操作当时立即落库（见 persistLocation），
+      // 不随本次提交——该 PATCH 不带 ciphertext，服务端不会更新 updatedAt。
       const body: Record<string, unknown> = { ciphertext, iv, wordCount: plain.trim().length }
-      if (pendingLocation) {
-        // 原笔记没有坐标、用户在编辑态添加了定位 → 随本次保存一起落库
-        body.latitude = pendingLocation.latitude
-        body.longitude = pendingLocation.longitude
-        body.locationAccuracy = pendingLocation.accuracy
-        if (pendingLocation.name) body.locationName = pendingLocation.name
-      } else if (removeLocation) {
-        // 用户删除位置：显式传 null 覆盖原坐标（diaryUpdateSchema 接受 nullable 字段）
-        body.latitude = null
-        body.longitude = null
-        body.locationAccuracy = null
-      }
       const res = await fetch(`/api/diary/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -226,9 +257,7 @@ export default function EntryView({ id }: { id: string }) {
       if (!res.ok) throw new Error('保存失败')
       const data = await res.json()
       setEntry((prev) => prev ? { ...prev, ...data.entry } : prev)
-      setRemoveLocation(false)
-      // 清理「添加定位」的临时状态（坐标已落库）
-      setPendingLocation(null)
+      // 收起「添加定位」面板（坐标早已落库，这里没有待保存内容）
       setAddLocationOpen(false)
       setCoordInput('')
       setCoordError(null)
@@ -244,7 +273,7 @@ export default function EntryView({ id }: { id: string }) {
     } finally {
       setBusy(false)
     }
-  }, [entry, plain, id, removeLocation, pendingLocation])
+  }, [entry, plain, id])
 
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
@@ -283,12 +312,11 @@ export default function EntryView({ id }: { id: string }) {
   const isEdited = editedAt.getTime() !== created.getTime()
   const fmtDate = (d: Date) =>
     `${d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
-  // 展示用坐标：编辑态新添加的（pendingLocation）优先于已保存的
-  const shownLat = pendingLocation?.latitude ?? entry.latitude
-  const shownLon = pendingLocation?.longitude ?? entry.longitude
-  const hasCoords = shownLat != null && shownLon != null
-  const shownName = pendingLocation ? pendingLocation.name : entry.locationName
-  const displayCoords = shownLat != null && shownLon != null ? `${shownLat.toFixed(6)}, ${shownLon.toFixed(6)}` : ''
+  // entry 始终是服务端最新状态（定位改动已即时落库），无需本地暂存值
+  const { latitude: entryLat, longitude: entryLon } = entry
+  const hasCoords = entryLat != null && entryLon != null
+  const displayCoords = entryLat != null && entryLon != null ? `${entryLat.toFixed(6)}, ${entryLon.toFixed(6)}` : ''
+  const locationBusy = locating || savingLocation
   return (
     <main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-y-auto px-5 safe-pt safe-pb">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
@@ -303,10 +331,11 @@ export default function EntryView({ id }: { id: string }) {
           /* 取消编辑：无改动直接退出；有改动弹确认（丢弃则恢复编辑前内容） */
           <button
             onClick={() => {
-              // 无改动（含未保存的「添加定位」）直接退出；否则弹确认
-              if (plain === editSnapshotRef.current && !removeLocation && !pendingLocation) {
+              // 正文无改动 → 直接退出；否则弹确认。
+              // 定位改动是即时落库的，不参与这里的「有无改动」判断，也不会被取消操作回滚。
+              if (plain === editSnapshotRef.current) {
                 setEditing(false)
-                resetAddLocation()
+                closeAddLocation()
                 return
               }
               setConfirmCancelEdit(true)
@@ -336,12 +365,11 @@ export default function EntryView({ id }: { id: string }) {
             {/* 点击复制精确坐标（有地址时复制坐标；无地址时同时触发地点补查） */}
             <button
               onClick={() => void copyCoords()}
-              disabled={pendingLocation != null}
-              className="text-xs tabular-nums text-neutral-400 active:opacity-60 disabled:opacity-60"
+              className="text-xs tabular-nums text-neutral-400 active:opacity-60"
             >
               <span className="mr-0.5 text-[10px]">📍</span>
               {/* 有地址信息只显示地址；没有则只显示经纬度（不显示精度） */}
-              {shownName ?? displayCoords}
+              {entry.locationName ?? displayCoords}
               {/* 已复制提示：跟在地点名/坐标后面 */}
               {coordsCopied && <span className="ml-1.5 text-[10px] font-medium text-emerald-500">已复制坐标</span>}
             </button>
@@ -350,13 +378,12 @@ export default function EntryView({ id }: { id: string }) {
               <span className="shrink-0 text-xs text-neutral-400">{weatherEmoji(entry.weather)}{entry.weather}</span>
             )}
           </div>
-          {editing && pendingLocation && (
-            <button onClick={resetAddLocation} className="ml-2 text-xs text-neutral-400 underline">
-              取消添加的定位
-            </button>
-          )}
-          {editing && !pendingLocation && !removeLocation && (
-            <button onClick={() => setRemoveLocation(true)} className="ml-2 text-xs text-red-500 underline">
+          {editing && (
+            <button
+              onClick={() => setConfirmRemoveLocation(true)}
+              disabled={locationBusy}
+              className="ml-2 text-xs text-red-500 underline disabled:opacity-50"
+            >
               移除定位信息
             </button>
           )}
@@ -371,16 +398,16 @@ export default function EntryView({ id }: { id: string }) {
             <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
               <button
                 onClick={() => void applyCurrentLocation()}
-                disabled={locating}
+                disabled={locationBusy}
                 className="rounded-lg bg-neutral-100 py-2 text-xs text-neutral-700 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200"
               >
-                {locating ? '正在定位…' : '读取当前定位'}
+                {locating ? '正在定位…' : savingLocation ? '正在保存…' : '读取当前定位'}
               </button>
               <div className="flex items-center gap-2">
                 <input
                   value={coordInput}
                   onChange={(e) => { setCoordInput(e.target.value); setCoordError(null) }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyManualCoords() } }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void applyManualCoords() } }}
                   placeholder="25.049642, 102.676280"
                   autoCapitalize="none"
                   autoCorrect="off"
@@ -388,26 +415,22 @@ export default function EntryView({ id }: { id: string }) {
                   className="min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-xs tabular-nums outline-none focus:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
                 />
                 <button
-                  onClick={applyManualCoords}
-                  disabled={!coordInput.trim()}
+                  onClick={() => void applyManualCoords()}
+                  disabled={!coordInput.trim() || locationBusy}
                   className="shrink-0 rounded-lg bg-neutral-100 px-3 py-2 text-xs text-neutral-700 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200"
                 >
                   确定
                 </button>
               </div>
-              <p className="text-[10px] text-neutral-400">粘贴「纬度, 经度」即可，逗号分隔</p>
+              <p className="text-[10px] text-neutral-400">粘贴「纬度, 经度」即可，确定后立即保存</p>
               {coordError && <p className="text-[10px] text-red-500">{coordError}</p>}
-              <button
-                onClick={() => { setAddLocationOpen(false); setCoordInput(''); setCoordError(null) }}
-                className="self-start text-[10px] text-neutral-400 underline"
-              >
+              <button onClick={closeAddLocation} className="self-start text-[10px] text-neutral-400 underline">
                 取消
               </button>
             </div>
           )}
         </div>
       ) : null}
-      {removeLocation && <p className="mt-1 text-xs text-neutral-400">保存后坐标与地点名将被移除</p>}
       {editing ? (
         <>
           {/* 输入框：flex-1 弹性填充剩余空间（min-h-0 允许收缩）——编辑区完整填满视口 */}
@@ -455,7 +478,7 @@ export default function EntryView({ id }: { id: string }) {
           )}
           <div className="flex items-center gap-6">
             <button
-              onClick={() => { editSnapshotRef.current = plain; resetAddLocation(); setEditing(true) }}
+              onClick={() => { editSnapshotRef.current = plain; closeAddLocation(); setEditing(true) }}
               disabled={decryptFailed}
               className="text-sm text-neutral-500 active:opacity-60 disabled:opacity-40"
             >
@@ -482,11 +505,22 @@ export default function EntryView({ id }: { id: string }) {
           onConfirm={() => {
             setConfirmCancelEdit(false)
             setPlain(editSnapshotRef.current) // 恢复编辑前内容
-            setRemoveLocation(false)
-            resetAddLocation() // 丢弃未保存的坐标
+            closeAddLocation() // 收起定位面板（已落库的定位不回滚）
             setEditing(false)
           }}
           onCancel={() => setConfirmCancelEdit(false)}
+        />
+      )}
+      {/* 移除定位：即时生效且不可逆，故二次确认 */}
+      {confirmRemoveLocation && (
+        <ConfirmDialog
+          title="确定移除定位信息吗？"
+          message="坐标与地点名会立即从这篇日记中删除，无法恢复。"
+          confirmText="移除"
+          cancelText="取消"
+          destructive
+          onConfirm={() => void removeLocationNow()}
+          onCancel={() => setConfirmRemoveLocation(false)}
         />
       )}
       {confirmingDelete && (
