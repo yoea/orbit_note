@@ -127,17 +127,23 @@ export default function DiaryEditor() {
     })()
   }, [])
 
-  // 去年今日隐藏状态：今天是否已隐藏（同步快，先于异步 fetch 完成）
+  // 去年今日隐藏状态：今天是否已隐藏（同步快，先于异步 fetch 完成）。
+  // localStorage 只在客户端可读，只能在挂载后 setState 一次——这是该场景的标准做法
+  // （放渲染期会破坏 SSR hydration），react-hooks/set-state-in-effect 在此为误报。
   useEffect(() => {
     const d = new Date()
     const key = `qo-otd-hidden-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- 客户端专属来源，挂载后同步一次
       setOtdHidden(localStorage.getItem(key) === '1')
     } catch { /* 忽略 */ }
   }, [])
 
-  // 每日提示：初始随机一条；每次显示（含切换）上报出现次数
+  // 每日提示：初始随机一条；每次显示（含切换）上报出现次数。
+  // nextPromptIndex() 不是纯函数（会更新提示出现统计），不能在渲染期调用，
+  // 只能在挂载后初始化一次——规则在此为误报。
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 带副作用的客户端专属初始化
     setPromptIdx(nextPromptIndex())
   }, [])
   useEffect(() => {

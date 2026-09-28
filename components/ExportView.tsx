@@ -81,10 +81,11 @@ export default function ExportView() {
     }
   }
 
-  // 导出成功后：10 秒倒计时自动返回设置页（组件卸载 → 解密数据与页面状态全部释放）
+  // 导出成功后：10 秒倒计时自动返回设置页（组件卸载 → 解密数据与页面状态全部释放）。
+  // 倒计时初值在导出成功处与 setExported 一起设置，这里只负责走秒——
+  // 避免在 effect 里同步 setState（react-hooks/set-state-in-effect）。
   useEffect(() => {
     if (exported == null) return
-    setCountdown(10)
     const t = setInterval(() => {
       setCountdown((c) => {
         if (c <= 1) {
@@ -144,6 +145,8 @@ export default function ExportView() {
       a.download = fileName
       a.click()
       URL.revokeObjectURL(url)
+      // 倒计时初值随导出一并设置（走秒逻辑见上方 effect）
+      setCountdown(10)
       setExported(all.length)
     } catch (e) {
       setError(e instanceof Error ? e.message : '导出失败，请重试')

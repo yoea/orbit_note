@@ -140,7 +140,10 @@ export REMOTE_UPDATE=/path/to/update.sh # 服务器端 update.sh 绝对路径
 bash scripts/deploy.sh
 ```
 
-流程：同步代码 → 注入版本号（git describe + 构建时间戳）→ 本地 `npm ci && npm run build` → 打包（生产 node_modules + .next）→ scp 上传 → 服务器解压 + `pm2 restart` → HTTP 验证。
+流程：**生产库 schema 前置检查** → 同步代码 → 注入版本号（git describe + 构建时间戳）→ 本地 `npm ci && npm run build` → 打包（生产 node_modules + .next）→ scp 上传 → 服务器解压 + `pm2 restart` → HTTP 验证。
+
+> ⚠️ **迁移必须先在服务器执行**。`deploy.sh` / `update.sh` 都不跑迁移，所以 deploy 的第 1 步会对照 `drizzle/*.sql` 检查生产库 schema（表与列），**发现落后即中止**，不会白跑一次构建。
+> 紧急情况下可用 `SKIP_SCHEMA_CHECK=1 bash scripts/deploy.sh` 跳过——但只在明确知道为什么要跳过时用。
 
 **服务器端只需**：Node.js 20+、PM2、PostgreSQL、解压工具。
 

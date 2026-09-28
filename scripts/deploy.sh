@@ -23,18 +23,40 @@ REMOTE_HOST="${REMOTE_HOST:?请在 .env.local 中设置 REMOTE_HOST（ssh 主机
 REMOTE_TAR="/tmp/quiet-orbit-prod.tar.gz"
 REMOTE_UPDATE="${REMOTE_UPDATE:?请在 .env.local 中设置 REMOTE_UPDATE（服务器端 update.sh 绝对路径）}"
 
-echo "=== [1/7] 同步代码到构建目录 ==="
+echo "=== [1/8] 生产库 schema 前置检查 ==="
+# 迁移必须先在服务器上执行——deploy.sh / update.sh 都不跑迁移。
+# 漏掉会出现「代码上线了但表/列不存在」的 500，且没有明显报错，很难排查，
+# 因此这里做成硬失败（检查不通过即中止，不会白跑一次构建）。
+# ssh 由本脚本执行、Node 只做解析比对：本机 Node 的 child_process 在受限环境里
+# spawn 会 EBUSY（实测连 node/git 都起不来），不能交给 Node 内部再起 ssh。
+if [ "${SKIP_SCHEMA_CHECK:-0}" = "1" ]; then
+  echo "已跳过（SKIP_SCHEMA_CHECK=1）"
+else
+  REMOTE_APP_DIR="$(dirname "$REMOTE_UPDATE")"
+  # 固定路径而非 mktemp：Git Bash 下 mktemp 可能返回带盘符的路径，清理时会报错
+  SCHEMA_DUMP="/tmp/qo-schema-actual.txt"
+  trap 'rm -f "$SCHEMA_DUMP"' EXIT
+  if ! ssh -o ConnectTimeout=25 "$REMOTE_HOST" "APP_DIR='$REMOTE_APP_DIR' sh -s" \
+      < "$PROJECT_DIR/scripts/schema-dump.sh" > "$SCHEMA_DUMP"; then
+    echo "❌ 无法读取生产库 schema（ssh 或数据库查询失败）。" >&2
+    echo "   如确认无需检查，可用 SKIP_SCHEMA_CHECK=1 bash scripts/deploy.sh 跳过。" >&2
+    exit 1
+  fi
+  node "$PROJECT_DIR/scripts/check-schema.mjs" "$SCHEMA_DUMP"
+fi
+
+echo "=== [2/8] 同步代码到构建目录 ==="
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 tar --exclude=node_modules --exclude=.next --exclude=.env.local --exclude=.env --exclude=.git -czf - -C "$PROJECT_DIR" . | tar -xzf - -C "$BUILD_DIR"
 echo "代码已同步"
 
-echo "=== [2/7] 版本号（git describe → 最近 tag） ==="
+echo "=== [3/8] 版本号（git describe → 最近 tag） ==="
 VERSION="$(git -C "$PROJECT_DIR" describe --tags --abbrev=0 --always)"
 echo "$VERSION" > "$BUILD_DIR/.version"
 echo "版本：$VERSION"
 
-echo "=== [3/7] 安装依赖 + 生产构建 ==="
+echo "=== [4/8] 安装依赖 + 生产构建 ==="
 cd "$BUILD_DIR"
 # --ignore-scripts：跳过依赖的 postinstall。带脚本的包（esbuild / fsevents /
 # unrs-resolver 等）全部是 dev 或平台相关，生产运行与 next build 都不需要它们；
@@ -50,14 +72,14 @@ fi
 npm prune --omit=dev 2>&1 | tail -1
 rm -f .env
 
-echo "=== [4/7] 打包产物 ==="
+echo "=== [5/8] 打包产物 ==="
 tar --exclude=.env --exclude=.git --exclude=.next/cache -czf "$TARBALL" .
 ls -lh "$TARBALL"
 
-echo "=== [5/7] 上传到服务器 ==="
+echo "=== [6/8] 上传到服务器 ==="
 scp -o ConnectTimeout=25 "$TARBALL" "$REMOTE_HOST:$REMOTE_TAR"
 
-echo "=== [6/7] 远程更新（解压 + pm2 restart + 验证） ==="
+echo "=== [7/8] 远程更新（解压 + pm2 restart + 验证） ==="
 ssh -o ConnectTimeout=25 "$REMOTE_HOST" "bash $REMOTE_UPDATE $REMOTE_TAR"
 
 # 部署校验：线上 BUILD_ID 必须等于本次构建的 BUILD_ID
@@ -71,4 +93,4 @@ if [ "$LOCAL_BUILD_ID" != "$REMOTE_BUILD_ID" ]; then
 fi
 echo "✅ BUILD_ID 校验通过：$LOCAL_BUILD_ID"
 
-echo "=== [7/7] 部署完成 ==="
+echo "=== [8/8] 部署完成 ==="

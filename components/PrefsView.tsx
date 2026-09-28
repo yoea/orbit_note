@@ -40,7 +40,12 @@ export default function PrefsView() {
   const [prefsReady, setPrefsReady] = useState(false)
 
   // useLayoutEffect：浏览器 paint 前同步读取 localStorage——首帧即真实开关状态，
-  // 配合 PrefSwitch 的中性占位（同步读取后立即 ready），无「先开后关」闪烁
+  // 配合 PrefSwitch 的中性占位（同步读取后立即 ready），无「先开后关」闪烁。
+  //
+  // 为什么不用 useSyncExternalStore：它 hydration 后的取值校正走的是被动 effect
+  // （paint 之后），会先渲染出默认值再切换 —— 正是这里要避免的闪烁。
+  // 这个模式是刻意的，react-hooks/set-state-in-effect 在此为误报，故显式关闭。
+  /* eslint-disable react-hooks/set-state-in-effect -- 客户端专属偏好需在 paint 前同步应用，否则开关会闪一下 */
   useLayoutEffect(() => {
     try {
       setLocationEnabled(localStorage.getItem(LOCATION_KEY) !== '0')
@@ -52,6 +57,7 @@ export default function PrefsView() {
     } catch { /* localStorage 不可用则保持默认 */ }
     setPrefsReady(true)
   }, [])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // 先写 localStorage（立即生效），再异步同步数据库（多端）
   function toggle(key: string, current: boolean, set: (v: boolean) => void) {

@@ -43,6 +43,17 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_VERSION: getVersion(),
     NEXT_PUBLIC_COMMIT_ID: getCommitId(),
   },
+  // /api/* 不在 proxy 的 matcher 内（避免中间件介入每个 API 请求），因此拿不到那套安全头。
+  // 对 JSON 响应而言真正有意义的是 nosniff：阻止浏览器忽略声明的内容类型去嗅探，
+  // 避免响应体被当作 HTML/脚本解释。在这里按路径声明，新增 API 路由自动覆盖。
+  async headers() {
+    return [
+      {
+        source: '/api/:path*',
+        headers: [{ key: 'X-Content-Type-Options', value: 'nosniff' }],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

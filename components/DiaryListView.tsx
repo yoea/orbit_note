@@ -68,7 +68,10 @@ export default function DiaryListView() {
   const restoredScrollRef = useRef(false)
   const itemsRef = useRef<DecryptedItem[]>([])
 
-  itemsRef.current = items
+  // 同步给 ref：itemsRef 只被「滚动保存」回调异步读取，因此在 effect 里赋值。
+  // 不要写回渲染期赋值（itemsRef.current = items）——渲染期写 ref 会在并发渲染下读到
+  // 尚未提交的值，也是 react-hooks/refs 明确禁止的。
+  useEffect(() => { itemsRef.current = items }, [items])
 
   // 读取恢复状态：{ y, count } 或 null
   const readScrollState = (): { y: number; count: number } | null => {

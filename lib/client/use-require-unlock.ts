@@ -39,17 +39,23 @@ export function useRequireUnlock(): { state: UnlockState; retryUnlock: () => Pro
   }, [router])
 
   // 手动解锁（用户手势下 WebAuthn 正常）：成功 → ready；PRF 不可用 → 登录页（恢复密钥）；
-  // 失败 → 自动重试一次（iOS PWA 首次 get 偶发失败），仍失败返回错误信息
+  // 失败 → 自动重试一次（iOS PWA 首次 get 偶发失败），仍失败返回错误信息。
+  // 递归体抽成内部函数：避免在 useCallback 初始化器里引用 retryUnlock 自身
+  // （react-hooks/immutability 会判定为「未声明先使用」）。
   const retryUnlock = useCallback(async (): Promise<string | null> => {
-    const result = await loginWithPasskey()
-    if (result.ok && getDek()) { setState('ready'); return null }
-    if (result.error === PRF_UNAVAILABLE) { router.replace('/login'); return null }
-    if (!retriedRef.current) {
-      retriedRef.current = true
-      setTimeout(() => { void retryUnlock() }, 400)
-      return null
+    async function attempt(isRetry: boolean): Promise<string | null> {
+      const result = await loginWithPasskey()
+      if (result.ok && getDek()) { setState('ready'); return null }
+      if (result.error === PRF_UNAVAILABLE) { router.replace('/login'); return null }
+      if (!isRetry) {
+        retriedRef.current = true
+        // 首次失败不向调用方报错，稍后自动重试一次
+        setTimeout(() => { void attempt(true) }, 400)
+        return null
+      }
+      return result.error ?? '解锁失败，请重试'
     }
-    return result.error ?? '解锁失败，请重试'
+    return attempt(retriedRef.current)
   }, [router])
 
   return { state, retryUnlock }
