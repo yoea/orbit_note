@@ -34,6 +34,13 @@ export const diaryUpdateSchema = z
   })
   .refine((d) => Object.keys(d).length > 0, { message: '更新内容不能为空' })
 export const draftPutSchema = z.strictObject({ ...encryptedPayload, updatedAt: z.number().int().positive().optional() })
+
+// 用户名（密文入库，客户端 DEK 加密；服务器只见密文）
+export const PROFILE_OWNER_ID = 'owner'
+export const profilePutSchema = z.strictObject({
+  nameCiphertext: z.string().min(1).max(2048),
+  nameIv: z.string().min(1).max(64),
+})
 export const wrapperSchema = z
   .strictObject({
     wrapperType: z.enum(['passkey_prf', 'recovery']),

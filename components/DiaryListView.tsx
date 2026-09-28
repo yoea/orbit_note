@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
+import { useUserName } from '@/lib/client/use-user-name'
 import ContributionHeatmap from './ContributionHeatmap'
 
 const PAGE_SIZE = 10
@@ -60,6 +61,7 @@ export default function DiaryListView() {
   const [hasMore, setHasMore] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const userName = useUserName()
   // 滚动位置保持：sessionStorage 存 { y: 滚动值, count: 已加载条数 }
   // ——返回时先加载到足够深度再恢复滚动（否则内容高度不足被钳制）
   const SCROLL_KEY = 'qo-diary-scroll'
@@ -248,9 +250,12 @@ export default function DiaryListView() {
       {stats && (
         <>
           <div className="flex items-baseline justify-between gap-2 pb-2 text-xs tabular-nums text-neutral-400">
-            <span>共 {stats.count} 篇 · 写了 {stats.days} 天</span>
+            {/* 用户名放在最前（名字是懒生成的，未就绪时整段省略，不留空位）；名字过长截断 */}
+            <span className="min-w-0 truncate">
+              {userName && <>{userName} | </>}{stats.days} 天·共 {stats.count} 篇
+            </span>
             {/* 总字数：byDay 各天字数之和（千分位） */}
-            <span>共写了 {Object.values(stats.byDay ?? {}).reduce((sum, d) => sum + d.words, 0).toLocaleString()} 字</span>
+            <span className="shrink-0">共写了 {Object.values(stats.byDay ?? {}).reduce((sum, d) => sum + d.words, 0).toLocaleString()} 字</span>
           </div>
           {/* 写作频率热力图（仅在有日记时显示） */}
           {stats.count > 0 && <ContributionHeatmap byDay={stats.byDay ?? {}} />}

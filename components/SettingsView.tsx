@@ -8,7 +8,10 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import AboutDialog from '@/components/AboutDialog'
 import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
 import RecoveryRegenerateDialog from '@/components/RecoveryRegenerateDialog'
+import NameEditDialog from '@/components/NameEditDialog'
 import { clearDek } from '@/lib/client/session'
+import { clearUserNameCache } from '@/lib/client/profile'
+import { useUserName } from '@/lib/client/use-user-name'
 import { GEOCODE_KEY, LOCATION_KEY, OTD_KEY, PROMPT_KEY, STREAK_KEY, WEATHER_KEY, syncPrefToServer } from '@/lib/client/prefs'
 
 // 偏好开关组件：未加载时渲染中性占位（圆点居中，视觉上非开非关——
@@ -50,6 +53,9 @@ export default function SettingsView() {
   const [showAbout, setShowAbout] = useState(false)
   const [showPasskeys, setShowPasskeys] = useState(false)
   const [showRecovery, setShowRecovery] = useState(false)
+  const [showNameEdit, setShowNameEdit] = useState(false)
+  // 用户名（加密存服务器；库里没有会自动生成默认名 Orbit_xxx）
+  const userName = useUserName()
   // 预取的 Passkey 列表：点击前 fetch 完成，弹窗打开第一帧即完整列表（无加载闪烁）
   const [passkeysData, setPasskeysData] = useState<PasskeyInfo[] | null>(null)
 
@@ -140,6 +146,7 @@ export default function SettingsView() {
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
     clearDek()
+    clearUserNameCache() // 清掉会话内的名字缓存，避免下次解锁前泄漏
     router.replace('/login')
   }
 
@@ -155,14 +162,27 @@ export default function SettingsView() {
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">设置</h1>
         <span className="w-8" />
       </header>
+      {/* 用户名：懒生成（库里没有则生成默认名 Orbit_xxx 并加密落库），点开可改 */}
+      <p className="px-1 pb-2 pt-1 text-xs font-medium text-neutral-400">账号</p>
+      <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
+        <li>
+          <button onClick={() => setShowNameEdit(true)} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
+            <div className="min-w-0">
+              <p className="text-neutral-800 dark:text-neutral-200">名字</p>
+              <p className="mt-0.5 truncate text-xs text-neutral-400">{userName ?? '加载中…'}</p>
+            </div>
+            <span className="shrink-0 text-lg text-neutral-300">›</span>
+          </button>
+        </li>
+      </ul>
       {/* iOS 风格分组卡片：安全 → 偏好 → 数据（危险操作置底并红色标出） */}
-      <p className="px-1 pb-2 pt-1 text-xs font-medium text-neutral-400">安全</p>
+      <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">安全</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
           {/* 点击查看各设备 Passkey，可禁用/启用指定设备、添加新设备（先预取数据再打开，无加载闪烁） */}
           <button onClick={() => void openPasskeysDialog()} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
             <div>
-              <p className="text-neutral-800 dark:text-neutral-200">通行密钥</p>
+              <p className="text-neutral-800 dark:text-neutral-200">{userName ? `${userName}的通行密钥` : '通行密钥'}</p>
               <p className="mt-0.5 text-xs text-neutral-400">指纹 / Face ID / Windows Hello 等</p>
             </div>
             <span className="text-lg text-neutral-300">›</span>
@@ -263,7 +283,7 @@ export default function SettingsView() {
       </div>
       {confirmLogout && (
         <ConfirmDialog
-          title="确定退出登录吗？"
+          title={userName ? `确定退出 ${userName} 的登录吗？` : '确定退出登录吗？'}
           message="退出后需重新验证通行密钥才能解锁日记。"
           confirmText="退出"
           cancelText="取消"
@@ -276,6 +296,9 @@ export default function SettingsView() {
         <PasskeysDialog initialData={passkeysData} onClose={() => setShowPasskeys(false)} />
       )}
       {showRecovery && <RecoveryRegenerateDialog onClose={() => setShowRecovery(false)} />}
+      {showNameEdit && userName && (
+        <NameEditDialog current={userName} onSaved={() => setShowNameEdit(false)} onClose={() => setShowNameEdit(false)} />
+      )}
     </main>
   )
 }

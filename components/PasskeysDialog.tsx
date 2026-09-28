@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useUserName } from '@/lib/client/use-user-name'
 import ConfirmDialog from './ConfirmDialog'
 
 export interface PasskeyInfo {
@@ -23,6 +24,7 @@ export default function PasskeysDialog({ initialData, onClose }: {
   onClose: () => void
 }) {
   const router = useRouter()
+  const userName = useUserName()
   const [passkeys, setPasskeys] = useState<PasskeyInfo[]>(initialData ?? [])
   const [loadFailed, setLoadFailed] = useState(initialData == null)
   const [error, setError] = useState<string | null>(null)
@@ -93,12 +95,12 @@ export default function PasskeysDialog({ initialData, onClose }: {
         className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-neutral-800"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label="通行密钥设备"
+        aria-label={userName ? `${userName}的通行密钥` : '通行密钥'}
       >
         <div className="max-h-[70dvh] overflow-y-auto px-5 py-6">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">通行密钥设备</p>
+              <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{userName ? `${userName}的通行密钥` : '通行密钥'}</p>
               <p className="mt-1 text-xs text-neutral-400">管理各设备上的通行密钥</p>
             </div>
             {/* 添加新 Passkey：弱化为右上角加号，跳转注册页（带前进方向动画） */}

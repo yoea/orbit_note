@@ -57,6 +57,24 @@ describe('注册保护（C1 回归：必须完整验证 JWT，伪造 cookie 不�
   })
 })
 
+describe('profile API 认证保护（用户名端点，Task 回归）', () => {
+  it('无 cookie GET profile → 401', async () => {
+    const { GET } = await import('../app/api/profile/route')
+    const res = await GET(new Request('http://localhost:3000/api/profile'))
+    expect(res.status).toBe(401)
+  })
+
+  it('无 cookie PUT profile → 401', async () => {
+    const { PUT } = await import('../app/api/profile/route')
+    const res = await PUT(new Request('http://localhost:3000/api/profile', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nameCiphertext: 'x', nameIv: 'y' }),
+    }))
+    expect(res.status).toBe(401)
+  })
+})
+
 describe('assertSameOrigin（I2 CSRF 纵深校验）', () => {
   it('sec-fetch-site: same-origin → 通过', async () => {
     const { assertSameOrigin } = await import('../lib/server/auth')

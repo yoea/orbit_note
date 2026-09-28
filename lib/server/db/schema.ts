@@ -65,6 +65,17 @@ export const userPrefs = pgTable('user_prefs', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+// 用户资料（单行，id 固定 'owner'）：目前只存用户名。
+// 名字是「可识别身份」的信息——按项目 E2EE 约定**不存明文**，由客户端用 DEK 加密后入库，
+// 服务器永远拿不到真实名字（与 diary_entries 同级别的保护）。
+// 行是懒创建的：用户首次进入设置页时才写入默认名 Orbit_xxx。
+export const userProfile = pgTable('user_profile', {
+  id: text('id').primaryKey(),
+  nameCiphertext: text('name_ciphertext'),
+  nameIv: text('name_iv'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 // 每日提示显示统计（后续按出现频率展示用）
 export const promptStats = pgTable('prompt_stats', {
   promptId: text('prompt_id').primaryKey(), // 提示索引 "p_0".."p_99"

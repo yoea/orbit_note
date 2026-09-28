@@ -8,6 +8,7 @@ import { clearDek, getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
 import { verifyWithPasskey, verifyWithRecoveryKey } from '@/lib/client/verify'
 import { idbClearAll } from '@/lib/client/idb'
+import { useUserName } from '@/lib/client/use-user-name'
 
 interface Entry {
   id: string
@@ -47,6 +48,7 @@ export default function ExportView() {
   const [wiping, setWiping] = useState(false)
   // 导出成功后的返回倒计时（明文文件已下载，提示谨慎保存并自动返回设置页释放内存）
   const [countdown, setCountdown] = useState(0)
+  const userName = useUserName()
 
   // 文件名（本地日期，与下载一致）
   const now = new Date()
@@ -184,7 +186,7 @@ export default function ExportView() {
 
       {/* 顶部说明：验证成功前后都保留 */}
       <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
-        将全部日记导出为 <span className="font-medium">CSV</span> 文件，包含所有字段（正文、创建/更新时间、坐标、地点名、时区、字数）。
+        将{userName ? `${userName}的` : ''}全部日记导出为 <span className="font-medium">CSV</span> 文件，包含所有字段（正文、创建/更新时间、坐标、地点名、时区、字数）。
       </p>
       <p className="mt-1 text-xs leading-relaxed text-neutral-400">
         正文以加密状态存储，导出时在本地解密——明文只在你设备上生成下载，不会上传服务器。
@@ -279,7 +281,7 @@ export default function ExportView() {
           title="删除确认"
           message={
             <>
-              所有日记、通行密钥与恢复密钥将全部删除，<span className="font-semibold text-red-500">无法恢复</span>，账号也将被删除。请输入「{WIPE_CONFIRM_TEXT}」确认，之后将通过通行密钥验证身份。
+              {userName ? `${userName}的` : ''}所有日记、通行密钥与恢复密钥将全部删除，<span className="font-semibold text-red-500">无法恢复</span>，账号也将被删除。请输入「{WIPE_CONFIRM_TEXT}」确认，之后将通过通行密钥验证身份。
             </>
           }
           expected={WIPE_CONFIRM_TEXT}

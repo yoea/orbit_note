@@ -78,6 +78,13 @@
       "when": 1788263260974,
       "tag": "0010_worthless_franklin_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790581391913,
+      "tag": "0011_regular_logan",
+      "breakpoints": true
     }
   ]
 }
