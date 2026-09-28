@@ -9,7 +9,11 @@ import { rateLimit } from '@/lib/server/ratelimit'
 import { assertSameOrigin } from '@/lib/server/auth'
 
 export async function POST(req: Request) {
-  if (!rateLimit('login', 10, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
+  // 全局桶放宽到 30/min（原 10/min）：攻击者发垃圾 POST（伪造 Origin 头即可通过第一道检查）
+  // 就能以 10/min 灌满原桶，锁死本人通行密钥登录（P1）。真正的防线是 WebAuthn 签名验证
+  // （256 位密钥不可伪造），限流只是纵深防御；垃圾请求在 challenge 校验即被拒，负载极低。
+  // 配合 OpenResty 单 IP 10/min：单 IP 最多占桶 1/3，灌满需 ≥3 个 IP。
+  if (!rateLimit('login', 30, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
   if (!assertSameOrigin(req)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 })
   const body = (await req.json().catch(() => null)) as { token?: string; assertion?: unknown; device?: string } | null
   if (!body?.token || !body.assertion) return NextResponse.json({ error: 'bad_request' }, { status: 400 })

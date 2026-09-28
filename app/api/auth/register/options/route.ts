@@ -6,7 +6,10 @@ import { generateRegisterOptions, storeChallenge } from '@/lib/server/webauthn'
 import { isAuthed } from '@/lib/server/auth'
 
 export async function GET(req: Request) {
-  if (!rateLimit('register-options', 5, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
+  // 全局桶放宽到 30/min（原 5/min）：桶在 isAuthed 检查之前扣减，垃圾 GET 曾能以 5/min
+  // 灌满原桶——锁死本人首次 setup 或设置页添加新通行密钥（P1 同类）。
+  // 配合 OpenResty 单 IP 10/min：单 IP 最多占桶 1/3。
+  if (!rateLimit('register-options', 30, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
   const existing = await db.select().from(credentials).limit(1)
   // 已初始化：注册仅允许已登录用户在设置页添加新 Passkey。
   // 必须完整验证 JWT（isAuthed）——仅检查 cookie 字符串包含可被伪造 cookie 绕过

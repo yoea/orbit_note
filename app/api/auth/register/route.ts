@@ -9,7 +9,11 @@ import { assertSameOrigin, isAuthed } from '@/lib/server/auth'
 import { PROFILE_OWNER_ID } from '@/lib/server/validation'
 
 export async function POST(req: Request) {
-  if (!rateLimit('register', 5, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
+  // 全局桶放宽到 30/min（原 5/min）：垃圾 POST（伪造 Origin 即过第一道）曾能以 5/min
+  // 灌满原桶，锁死本人首次 setup 注册（P1 同类）。安全性不靠限流：注册需 register/options
+  // 签发的单次 challenge + 真实 authenticator 的 WebAuthn attestation，无法爆破。
+  // 配合 OpenResty 单 IP 10/min：单 IP 最多占桶 1/3。
+  if (!rateLimit('register', 30, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
   if (!assertSameOrigin(req)) return NextResponse.json({ error: 'invalid_origin' }, { status: 403 })
   const body = (await req.json().catch(() => null)) as { token?: string; registration?: unknown; device?: string } | null
   if (!body?.token || !body.registration) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
