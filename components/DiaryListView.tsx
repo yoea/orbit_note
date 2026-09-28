@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
 import { useUserName } from '@/lib/client/use-user-name'
+import SearchDialog from './SearchDialog'
+import SearchIcon from './SearchIcon'
 import ContributionHeatmap from './ContributionHeatmap'
 
 const PAGE_SIZE = 10
@@ -62,6 +64,7 @@ export default function DiaryListView() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const userName = useUserName()
+  const [searchOpen, setSearchOpen] = useState(false)
   // 滚动位置保持：sessionStorage 存 { y: 滚动值, count: 已加载条数 }
   // ——返回时先加载到足够深度再恢复滚动（否则内容高度不足被钳制）
   const SCROLL_KEY = 'qo-diary-scroll'
@@ -248,7 +251,10 @@ export default function DiaryListView() {
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">全部日记</h1>
-        <span className="w-8" />
+        {/* 搜索：点击后弹出全屏搜索层（正文加密，检索只能在客户端解密后完成） */}
+        <button onClick={() => setSearchOpen(true)} aria-label="搜索日记" className="-mr-1 px-1 text-neutral-400 active:opacity-60">
+          <SearchIcon />
+        </button>
       </header>
       {stats && (
         <>
@@ -319,6 +325,7 @@ export default function DiaryListView() {
           </div>
         )}
       </div>
+      {searchOpen && <SearchDialog onClose={() => setSearchOpen(false)} />}
     </main>
   )
 }

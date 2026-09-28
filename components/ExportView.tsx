@@ -5,24 +5,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import InputConfirmDialog from '@/components/InputConfirmDialog'
 import { clearDek, getDek } from '@/lib/client/session'
-import { decryptText } from '@/lib/client/crypto/encryption'
+import { decryptEntries, fetchAllEntries } from '@/lib/client/entries'
 import { verifyWithPasskey, verifyWithRecoveryKey } from '@/lib/client/verify'
 import { idbClearAll } from '@/lib/client/idb'
 import { useUserName } from '@/lib/client/use-user-name'
-
-interface Entry {
-  id: string
-  ciphertext: string
-  iv: string
-  createdAt: string
-  updatedAt: string
-  latitude: number | null
-  longitude: number | null
-  locationName: string | null
-  weather: string | null
-  timezone: string | null
-  wordCount: number
-}
 
 // 删除所有数据：必须手动输入这段文字才能通过（防误触强确认）
 const WIPE_CONFIRM_TEXT = '永久删除'
@@ -105,36 +91,19 @@ export default function ExportView() {
     if (!dek) return
     setExporting(true); setError(null)
     try {
-      // 1. 拉取全部
-      const all: Entry[] = []
-      let offset = 0
-      while (true) {
-        const res = await fetch(`/api/diary?limit=200&offset=${offset}`)
-        if (!res.ok) throw new Error('加载失败')
-        const { entries } = await res.json() as { entries: Entry[] }
-        all.push(...entries)
-        if (entries.length < 200) break
-        offset += entries.length
-      }
-      // 2. 解密并组装行（按创建时间倒序，与服务端一致）
-      const rows: string[][] = []
-      for (const e of all) {
-        let body = ''
-        try {
-          body = await decryptText(dek, e.ciphertext, e.iv)
-        } catch {
-          body = '(解密失败)'
-        }
-        rows.push([
-          e.id, e.createdAt, e.updatedAt, body,
-          e.wordCount,
-          e.latitude == null ? '' : String(e.latitude),
-          e.longitude == null ? '' : String(e.longitude),
-          e.locationName ?? '',
-          e.weather ?? '',
-          e.timezone ?? '',
-        ].map(csvField))
-      }
+      // 1+2. 拉取全部条目并逐条解密 —— 与搜索弹窗共用同一套分页/解密逻辑
+      // （lib/client/entries.ts），避免两处分页约定各自演化。
+      // 保持服务端顺序（createdAt 倒序）。
+      const all = await decryptEntries(dek, await fetchAllEntries())
+      const rows: string[][] = all.map(({ entry: e, plain: body }) => [
+        e.id, e.createdAt, e.updatedAt, body,
+        e.wordCount,
+        e.latitude == null ? '' : String(e.latitude),
+        e.longitude == null ? '' : String(e.longitude),
+        e.locationName ?? '',
+        e.weather ?? '',
+        e.timezone ?? '',
+      ].map(csvField))
       // 3. 生成 CSV（带 BOM：Excel 打开中文不乱码）
       const header = ['id', 'created_at', 'updated_at', 'body', 'word_count', 'latitude', 'longitude', 'location_name', 'weather', 'timezone'].join(',')
       const csv = '﻿' + header + '\n' + rows.map((r) => r.join(',')).join('\n')
