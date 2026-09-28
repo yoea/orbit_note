@@ -48,6 +48,24 @@ const nextConfig: NextConfig = {
         source: '/api/:path*',
         headers: [{ key: 'X-Content-Type-Options', value: 'nosniff' }],
       },
+      // HTML 页面显式 no-cache：Next 给预渲染页的默认头是 s-maxage=31536000（仅对 CDN
+      // 生效），浏览器侧新鲜度「未指定」——iOS Safari / PWA 的 WKWebView 会对这种页面
+      // 做启发式缓存，直接用本地旧副本不发协商请求，部署新版后手机上表现为「改了但没变」
+      // （真实事故：v1.15.5 修好的登录页页脚在 iOS 上"又消失"）。no-cache = 每次带 ETag
+      // 协商：内容没变是廉价 304，变了立即拿新页。必须逐路径枚举——不能写 '/:path*'，
+      // 否则会把 /_next/static/ 指纹资源的 immutable 长缓存也覆盖掉。
+      // 新增页面路由时这里要同步登记。
+      ...[
+        { source: '/' },
+        { source: '/login' },
+        { source: '/setup' },
+        { source: '/diary' },
+        { source: '/entry/:id' },
+        { source: '/settings/:path*' },
+      ].map((p) => ({
+        ...p,
+        headers: [{ key: 'Cache-Control', value: 'no-cache' }],
+      })),
     ];
   },
 };
