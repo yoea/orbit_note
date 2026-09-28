@@ -33,13 +33,6 @@ html {
 .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
 .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
 
-/* 离线徽标让位：断网时 (app) 布局根（app/(app)/layout.tsx）挂上 qo-offline 类，
-   顶部安全区之上叠一个 fixed 居中的离线圆标（OfflineBadge，24px 高，位于
-   safe-area + 8px 处）——把组内所有页面的 .safe-pt 顶部再多推 32px，
-   徽标正好落在让出的空档（居中页标题上方），不与任何内容重叠。
-   在线时不挂类，恢复原状。只作用于 (app) 组内（登录页等组外页面无徽标，不受影响）。 */
-.qo-offline .safe-pt { padding-top: calc(env(safe-area-inset-top) + 32px); }
-
 /* 应用根高度：必须按「可见视口」算，不能用 100%/100vh。
    为什么：iOS 上 100%（html/body 的高度链）与 100vh 取的都是**大视口**——把 Safari
    底部工具栏、PWA 的 home indicator 所覆盖的那一段也算进去了。本应用所有页面都不做
