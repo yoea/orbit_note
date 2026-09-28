@@ -68,3 +68,6 @@ fi
 echo "login: 200"
 "$PM2_BIN" status quiet-orbit | grep quiet-orbit
 echo "=== 更新完成 ==="
+# 回读线上 BUILD_ID 供 deploy.sh 终验（格式固定，deploy.sh 用 sed 提取）。
+# 放在最后一行：deploy.sh 捕获本脚本输出后无需再开一次 ssh 往返。
+echo "BUILD_ID: $(cat "$APP_DIR/.next/BUILD_ID")"
