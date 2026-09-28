@@ -90,7 +90,7 @@ export default function LoginPage() {
 
   if (loadError) {
     return (
-      <main className="flex min-h-0 flex-1 flex-col px-6 safe-pb">
+      <main className="flex min-h-0 flex-1 flex-col px-6 pb-safe">
         <div className="m-auto flex flex-col items-center gap-4">
           <p className="text-sm text-neutral-500">连接失败，请检查网络后重试</p>
           <button onClick={() => window.location.reload()} className="rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">
@@ -103,7 +103,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col px-6 safe-pb">
+    <main className="flex min-h-0 flex-1 flex-col px-6 pb-safe">
       {/* m-auto：LOGO + 按钮整体在容器中完全垂直居中（比 justify-center 更稳健） */}
       <div className="m-auto flex w-full max-w-xs flex-col items-center gap-8">
         {/* 品牌 LOGO */}
@@ -163,9 +163,20 @@ export default function LoginPage() {
 // 页脚：版本号 + 版权（原全局页脚的登录页形态——全局页脚已由 TabBar 取代，
 // 但登录页在组外、不渲染 TabBar，值得公开的版本/版权信息在这里展示；
 // 完整的「关于」内容仍在应用内的关于弹窗）
+//
+// 两处都踩过坑，别再改回去：
+// 1) 颜色不能用 text-neutral-300 dark:text-neutral-600 —— 这一对是「反的」：
+//    浅色模式画的是给深色底用的浅灰（#d4d4d4 on #fff ≈ 1.5:1），深色模式画的是给浅色底
+//    用的深灰（#525252 on #0a0a0a ≈ 2.5:1）。10px 小字在这个对比度下等于不可见，
+//    桌面（大屏、近距离）勉强能看清，iPhone 上就是「没显示」。现在用 500/400：
+//    浅色 4.7:1、深色 7.4:1，都过 WCAG AA 正文标准。
+// 2) 底部留白由 .pb-safe（= max(env(safe-area-inset-bottom), 1rem)）承担，不能用
+//    .safe-pb（= env(...)）：后者在没有 home indicator 的设备/环境里算出来是 0，
+//    页脚就会紧贴容器底边、落进系统覆盖区。父级 main 上的 .pb-safe 与这里的 pb-2
+//    相加，保证页脚文字始终离屏幕底边足够远。
 function VersionFooter() {
   return (
-    <footer className="pb-1 text-center text-[10px] text-neutral-300 dark:text-neutral-600" aria-hidden>
+    <footer className="pb-2 text-center text-[10px] text-neutral-500 dark:text-neutral-400" aria-hidden>
       Orbit {process.env.NEXT_PUBLIC_VERSION ?? 'dev'} · © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'}
     </footer>
   )

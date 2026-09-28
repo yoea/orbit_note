@@ -33,6 +33,22 @@ html {
 .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
 .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
 
+/* 应用根高度：必须按「可见视口」算，不能用 100%/100vh。
+   为什么：iOS 上 100%（html/body 的高度链）与 100vh 取的都是**大视口**——把 Safari
+   底部工具栏、PWA 的 home indicator 所覆盖的那一段也算进去了。本应用所有页面都不做
+   window 滚动（(app) 组内页面是容器滚动，登录/初始化页把内容垂直居中），所以底部
+   工具栏始终可见，于是紧贴容器底边的元素（登录页的版本页脚、TabBar）正好落在被系统
+   覆盖的那一条里 ⇒ 桌面上正常、iPhone Safari 与 PWA 里「不显示」。
+   100dvh = 随浏览器工具栏实时变化的动态视口高度，即真正可见的高度（Safari 15.4+，
+   其余现代内核均支持）；不支持的旧内核退回 100%（= 改动前的行为，不会塌成 0）。
+   注意：dvh 只排除浏览器 UI，不排除刘海/home indicator 那圈系统安全区——
+   所以 .safe-pt / .pb-safe 仍然必须存在。★ 这是 unlayered 类，会覆盖 Tailwind 的
+   高度工具类，元素上不要再写 h-full / h-dvh。 */
+.app-height {
+  height: 100%;
+  height: 100dvh;
+}
+
 /* 页面标题栏高度（单一来源，勿在组件里各写一遍）。
    为什么需要它：页头是 flex + items-center，而 <h1> 用绝对定位做水平居中。
    按 CSS Flexbox 规范，绝对定位子元素的静态位置按「它是唯一的 flex item」计算，

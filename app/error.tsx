@@ -26,8 +26,10 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
           回首页
         </Link>
       </div>
-      {/* 诊断码：与登录页的「诊断 no-dek」同风格，便于定位问题；不含任何内容信息 */}
-      {error.digest && <p className="mt-1 text-[10px] text-neutral-300 dark:text-neutral-600">诊断码 {error.digest}</p>}
+      {/* 诊断码：与登录页的「诊断 no-dek」同风格，便于定位问题；不含任何内容信息。
+          颜色与登录页版本页脚/关于弹窗版权行统一（原 text-neutral-300 dark:text-neutral-600
+          是反的，浅色模式下 ≈1.5:1 等于看不见） */}
+      {error.digest && <p className="mt-1 text-[10px] text-neutral-500 dark:text-neutral-400">诊断码 {error.digest}</p>}
     </main>
   )
 }

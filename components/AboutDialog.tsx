@@ -62,8 +62,10 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
               调用时坐标会发送给对应服务
             </p>
           </div>
-          {/* 版权行从原全局页脚搬来：页脚已由底部 TabBar 取代，版权声明不能随之丢失 */}
-          <p className="mt-4 text-center text-[10px] text-neutral-300 dark:text-neutral-600">
+          {/* 版权行从原全局页脚搬来：页脚已由底部 TabBar 取代，版权声明不能随之丢失。
+              颜色与登录页的版本页脚保持一致：不能用 text-neutral-300 dark:text-neutral-600
+              ——那一对是反的（浅色底上用浅灰 ≈1.5:1、深色底上用深灰 ≈2.5:1），10px 小字等于看不见。 */}
+          <p className="mt-4 text-center text-[10px] text-neutral-500 dark:text-neutral-400">
             © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'}
           </p>
         </div>
