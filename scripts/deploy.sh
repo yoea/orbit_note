@@ -2,7 +2,9 @@
 # Quiet Orbit 一键部署（本地执行）
 # 流程：同步代码 → 注入版本号 → 构建 → 打包 → 上传 → 远程更新（update.sh）→ 验证
 # 用法：bash scripts/deploy.sh
-set -e
+# 注意：必须带 pipefail——构建步骤用了 `cmd | tail -N`，否则管道退出码会被 tail 吞掉，
+# 构建失败也会继续打包上传（曾导致线上 .next 未更新但 .version 已改的假成功）。
+set -eo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${BUILD_DIR:-/tmp/qo-prod}"
@@ -37,6 +39,11 @@ cd "$BUILD_DIR"
 npm ci --no-audit --no-fund 2>&1 | tail -1
 cp "$PROJECT_DIR/.env.local" .env
 npm run build 2>&1 | tail -3
+# 构建产物硬校验：缺 BUILD_ID 说明 build 实际失败，立即中止，不要上传半成品
+if [ ! -f .next/BUILD_ID ]; then
+  echo "❌ 构建失败：.next/BUILD_ID 不存在。中止部署。"
+  exit 1
+fi
 npm prune --omit=dev 2>&1 | tail -1
 rm -f .env
 
@@ -49,5 +56,16 @@ scp -o ConnectTimeout=25 "$TARBALL" "$REMOTE_HOST:$REMOTE_TAR"
 
 echo "=== [6/7] 远程更新（解压 + pm2 restart + 验证） ==="
 ssh -o ConnectTimeout=25 "$REMOTE_HOST" "bash $REMOTE_UPDATE $REMOTE_TAR"
+
+# 部署校验：线上 BUILD_ID 必须等于本次构建的 BUILD_ID
+# （tar 覆盖式解压不会删除旧 .next，若上传的包缺 .next，线上会静默跑旧构建）
+LOCAL_BUILD_ID="$(cat "$BUILD_DIR/.next/BUILD_ID")"
+REMOTE_APP_DIR="$(dirname "$REMOTE_UPDATE")"
+REMOTE_BUILD_ID="$(ssh -o ConnectTimeout=25 "$REMOTE_HOST" "cat '$REMOTE_APP_DIR/.next/BUILD_ID'" 2>/dev/null || echo '')"
+if [ "$LOCAL_BUILD_ID" != "$REMOTE_BUILD_ID" ]; then
+  echo "❌ 部署校验失败：线上 BUILD_ID($REMOTE_BUILD_ID) ≠ 本地($LOCAL_BUILD_ID)"
+  exit 1
+fi
+echo "✅ BUILD_ID 校验通过：$LOCAL_BUILD_ID"
 
 echo "=== [7/7] 部署完成 ==="
