@@ -15,6 +15,7 @@ import { playSaveSound } from '@/lib/client/sound'
 import { PROMPTS, nextPromptIndex, reportPromptShown } from '@/lib/client/prompts'
 import { computeStreak } from '@/lib/client/streak'
 import { clearLocalDraft, fetchServerDraft, loadLocalDraft, pickNewer, pushServerDraft, saveLocalDraft } from '@/lib/client/draft-sync'
+import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 
 export default function DiaryEditor() {
   const [text, setText] = useState('')
@@ -384,10 +385,14 @@ export default function DiaryEditor() {
         </div>
       )}
       {showConfetti && <ConfettiBurst />}
-      {/* 上下 padding 均 8px。底部安全区不再由这里承担——(app)/layout 的 TabBar 已经
-          自带 pb-safe，此处若再加 env(safe-area-inset-bottom) 会叠出一段空白。
-          也不能用 safe-pb + pb-2 组合——.safe-pb 是 unlayered 自定义类，会覆盖 Tailwind 的 pb-2 */}
-      <footer className="mt-auto px-2 pb-2 pt-2">
+      {/* 左右不再单独留白：原先这里是 px-2，而输入框（AutoTextarea）没有左右内边距，
+          于是「保存」按钮比它上方的输入框窄了 8px，也不比详情页编辑态的「保存修改」
+          （底部区无 px，直接吃 main 的 px-5）。去掉后两页主按钮左右边界一致。
+          上 8px / 下 16px：下边距与详情页编辑态底部区、查看态操作栏对齐（TabBar 就在紧下方）。
+          底部安全区不再由这里承担——(app)/layout 的 TabBar 已经自带 pb-safe，
+          此处若再加 env(safe-area-inset-bottom) 会叠出一段空白。
+          也不能用 safe-pb + pb-4 组合——.safe-pb 是 unlayered 自定义类，会覆盖 Tailwind 的 pb-4 */}
+      <footer className="mt-auto pb-4 pt-2">
         <p className="mb-3 text-center text-xs text-neutral-400">
           {status === 'saving' && '正在保存…'}
           {status === 'saved' && (
@@ -399,8 +404,10 @@ export default function DiaryEditor() {
         <button
           onClick={() => void save()}
           disabled={!text.trim() || status === 'saving'}
-          className={`w-full rounded-2xl py-3.5 font-medium text-white transition-colors active:scale-[0.99] disabled:opacity-30 ${
-            status === 'saved' ? 'bg-emerald-500 dark:bg-emerald-500' : 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 text-white'
+          /* 样式取全宽主按钮常量（与详情页编辑态「保存修改」逐字符同一份，含 py-4 高度与
+             disabled:opacity-50）；唯一分支是 saved 态换成翠绿底表示「已落盘」。 */
+          className={`${PRIMARY_BUTTON_CLASS} ${
+            status === 'saved' ? 'bg-emerald-500 dark:bg-emerald-500' : BRAND_GRADIENT_CLASS
           }`}
         >
           {status === 'saving' ? '保存中…' : status === 'saved' ? '已保存 ✓' : '保存'}

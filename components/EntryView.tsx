@@ -12,6 +12,7 @@ import { getPosition, parseCoords } from '@/lib/client/location'
 import { isAutoPlaceNameEnabled } from '@/lib/client/prefs'
 import { weatherEmoji } from '@/lib/client/weather'
 import { playSaveSound } from '@/lib/client/sound'
+import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import Toast from './Toast'
 
 interface Entry {
@@ -454,7 +455,9 @@ export default function EntryView({ id }: { id: string }) {
             <button
               onClick={() => void saveEdit()}
               disabled={busy || !plain.trim()}
-              className="w-full rounded-2xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 py-4 font-medium text-white disabled:opacity-50"
+              /* 样式取全宽主按钮常量——与写页「保存」逐字符同一份（含 py-4 高度、disabled:opacity-50
+                 与按下 scale 反馈），两侧高度/圆角/禁用态不会再各自漂移。 */
+              className={`${PRIMARY_BUTTON_CLASS} ${BRAND_GRADIENT_CLASS}`}
             >
               {busy ? '保存中…' : '保存修改'}
             </button>
