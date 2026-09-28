@@ -124,11 +124,13 @@ export default function LoginPage() {
           >
             {busy ? '正在验证…' : '使用通行密钥登录'}
           </button>
-          <p className="mt-3 text-center text-xs text-neutral-400">通过通行密钥快速安全登录</p>
-          <p className="mt-1 text-center text-[10px] text-neutral-400/70">支持指纹、Face ID、Windows Hello 等</p>
+          {/* 按钮下方原本还有两行小字说明（重复解释通行密钥、并列举行指纹 / 面容 / Hello），
+              已删除：按钮文案本身完整，再啰嗦一遍信息增量为零；且那两行是浅灰小字
+              （neutral-400 浅色下 2.5:1，第二行叠加 /70 后仅 1.8:1），本就低于 WCAG AA、
+              在手机上几乎看不清。通行密钥的能力说明已归位到「关于」弹窗与设置页功能列表。 */}
           {/* 恢复密钥入口：仅在通行密钥登录失败后出现（小字、居中、无下划线、淡色） */}
           {passkeyFailed && (
-            <button onClick={() => setMode('recovery')} className="mt-2 text-center text-xs text-neutral-400/70">
+            <button onClick={() => setMode('recovery')} className="mt-3 text-center text-xs text-neutral-400/70">
               使用恢复密钥登录
             </button>
           )}

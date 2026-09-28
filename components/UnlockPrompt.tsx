@@ -37,8 +37,9 @@ export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<str
           >
             {busy ? '正在验证…' : '使用通行密钥登录'}
           </button>
-          <p className="mt-3 text-center text-xs text-neutral-400">通过通行密钥快速安全登录</p>
-          <p className="mt-1 text-center text-[10px] text-neutral-400/70">支持指纹、Face ID、Windows Hello 等</p>
+          {/* 与登录页是同一个界面元素的两份拷贝：按钮下方那两行小字说明已一并删除，
+              理由见 app/login/page.tsx 的注释。只改一处会立刻出现「同一次登录、
+              两个页面文案不同」，以后要动这里记得两边同步。 */}
           {error && <p className="mt-3 text-center text-sm text-red-500">{error}</p>}
         </div>
       </div>
