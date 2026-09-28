@@ -7,8 +7,12 @@ export const WEATHER_KEY = 'qo-save-weather'
 export const STREAK_KEY = 'qo-show-streak'
 export const PROMPT_KEY = 'qo-show-prompt'
 export const OTD_KEY = 'qo-show-on-this-day'
+// 自动补全地点名：控制所有「把坐标发给第三方换取地名」的自动行为
+// （保存时反查 + 打开详情页自动反查）。关闭后不再自动外发坐标，
+// 但点击坐标仍可手动查询一次。
+export const GEOCODE_KEY = 'qo-auto-place-name'
 
-const ALL_KEYS = [LOCATION_KEY, WEATHER_KEY, STREAK_KEY, PROMPT_KEY, OTD_KEY]
+const ALL_KEYS = [LOCATION_KEY, WEATHER_KEY, STREAK_KEY, PROMPT_KEY, OTD_KEY, GEOCODE_KEY]
 
 function get(key: string): boolean {
   if (typeof window === 'undefined') return true
@@ -54,4 +58,7 @@ export function isPromptEnabled(): boolean {
 }
 export function isOnThisDayEnabled(): boolean {
   return get(OTD_KEY)
+}
+export function isAutoPlaceNameEnabled(): boolean {
+  return get(GEOCODE_KEY)
 }

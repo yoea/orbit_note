@@ -9,7 +9,7 @@ import AboutDialog from '@/components/AboutDialog'
 import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
 import RecoveryRegenerateDialog from '@/components/RecoveryRegenerateDialog'
 import { clearDek } from '@/lib/client/session'
-import { LOCATION_KEY, OTD_KEY, PROMPT_KEY, STREAK_KEY, WEATHER_KEY, syncPrefToServer } from '@/lib/client/prefs'
+import { GEOCODE_KEY, LOCATION_KEY, OTD_KEY, PROMPT_KEY, STREAK_KEY, WEATHER_KEY, syncPrefToServer } from '@/lib/client/prefs'
 
 // 偏好开关组件：未加载时渲染中性占位（圆点居中，视觉上非开非关——
 // 避免「先渲染默认开启、再变关闭」的闪烁）；加载完成后才是真实可切换开关
@@ -43,6 +43,7 @@ export default function SettingsView() {
   const [showPrompt, setShowPrompt] = useState(true)
   const [saveWeather, setSaveWeather] = useState(true)
   const [showOtd, setShowOtd] = useState(true)
+  const [autoPlaceName, setAutoPlaceName] = useState(true)
   // 偏好加载完成前渲染中性占位（避免「默认开启→真实状态」的闪烁）
   const [prefsReady, setPrefsReady] = useState(false)
   const [confirmLogout, setConfirmLogout] = useState(false)
@@ -77,6 +78,7 @@ export default function SettingsView() {
       setShowPrompt(localStorage.getItem(PROMPT_KEY) !== '0')
       setSaveWeather(localStorage.getItem(WEATHER_KEY) !== '0')
       setShowOtd(localStorage.getItem(OTD_KEY) !== '0')
+      setAutoPlaceName(localStorage.getItem(GEOCODE_KEY) !== '0')
     } catch { /* localStorage 不可用则保持默认 */ }
     setPrefsReady(true)
   }, [])
@@ -123,6 +125,15 @@ export default function SettingsView() {
     try {
       localStorage.setItem(OTD_KEY, next ? '1' : '0')
       syncPrefToServer(OTD_KEY, next) // 异步同步数据库（多端）
+    } catch { /* 忽略存储失败（隐私模式等） */ }
+  }
+
+  function toggleAutoPlaceName() {
+    const next = !autoPlaceName
+    setAutoPlaceName(next)
+    try {
+      localStorage.setItem(GEOCODE_KEY, next ? '1' : '0')
+      syncPrefToServer(GEOCODE_KEY, next) // 异步同步数据库（多端）
     } catch { /* 忽略存储失败（隐私模式等） */ }
   }
 
@@ -183,6 +194,13 @@ export default function SettingsView() {
             <p className="mt-0.5 text-xs text-neutral-400">关闭后保存日记不再获取实时天气</p>
           </div>
           <PrefSwitch enabled={saveWeather} ready={prefsReady} onToggle={toggleWeather} />
+        </li>
+        <li className="flex items-center justify-between px-4 py-3.5">
+          <div>
+            <p className="text-neutral-800 dark:text-neutral-200">自动补全地点名</p>
+            <p className="mt-0.5 text-xs text-neutral-400">保存与查看时自动把坐标换成地点名；关闭后只显示坐标（点击坐标仍可手动查询）</p>
+          </div>
+          <PrefSwitch enabled={autoPlaceName} ready={prefsReady} onToggle={toggleAutoPlaceName} />
         </li>
         <li className="flex items-center justify-between px-4 py-3.5">
           <div>

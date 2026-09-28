@@ -11,6 +11,7 @@ const PREF_KEYS = new Set([
   'qo-show-streak',
   'qo-show-prompt',
   'qo-show-on-this-day',
+  'qo-auto-place-name',
 ])
 
 // 用户偏好（设置页开关）读写：多端同步，替代 localStorage

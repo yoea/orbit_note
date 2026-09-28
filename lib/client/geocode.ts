@@ -1,12 +1,26 @@
+// 反查只需要「区/市」级精度，因此发送前把坐标模糊掉：
+// 保留 2 位小数 ≈ 0.01° ≈ 1.1km——足够定位到区/街道，但不再暴露精确位置。
+export const GEOCODE_PRECISION = 2
+
+// 保留 precision 位小数（四舍五入）。-0 归一为 0，避免 URL 里出现 "-0.00" 这种丑陋值。
+export function coarsenCoordinate(value: number, precision: number = GEOCODE_PRECISION): number {
+  const factor = 10 ** precision
+  const rounded = Math.round(value * factor) / factor
+  return Object.is(rounded, -0) ? 0 : rounded
+}
+
 // 客户端直调 BigDataCloud reverse-geocode（免费无 key）：
 // 直连 CDN 域名 api-bdc.io（bigdatacloud.net 会 307 重定向过来，iOS Safari 对
 // 重定向后 CORS 兼容性差——直连绕过重定向，实测 ~1.2s，CORS 开放 *）。
 // localityLanguage=zh-Hans 返回简体中文（如"黄浦区"）。
 // 网络抖动（手机流量出海链路偶发不稳）→ 超时 + 自动重试 2 次；仍失败返回 null
 // （界面退回显示经纬度，点击坐标可再次查询）。
-// 隐私注意：坐标会从浏览器直接发送给 BigDataCloud（用户已确认接受）。
+// 隐私注意：坐标会从浏览器直接发送给 BigDataCloud（用户已确认接受），
+// 但发送前会经 coarsenCoordinate 模糊到约 1km 粒度——精确坐标永不外发。
 export async function clientReverseGeocode(lat: number, lon: number): Promise<string | null> {
-  const url = `https://api-bdc.io/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=zh-Hans`
+  const qLat = coarsenCoordinate(lat)
+  const qLon = coarsenCoordinate(lon)
+  const url = `https://api-bdc.io/data/reverse-geocode-client?latitude=${qLat}&longitude=${qLon}&localityLanguage=zh-Hans`
   for (let attempt = 0; attempt <= 2; attempt++) {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) })

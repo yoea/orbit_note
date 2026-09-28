@@ -8,7 +8,7 @@ import OrbitLogo from './OrbitLogo'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
-import { isLocationEnabled, isOnThisDayEnabled, isPromptEnabled, isStreakEnabled, isWeatherEnabled } from '@/lib/client/prefs'
+import { isAutoPlaceNameEnabled, isLocationEnabled, isOnThisDayEnabled, isPromptEnabled, isStreakEnabled, isWeatherEnabled } from '@/lib/client/prefs'
 import { clientReverseGeocode } from '@/lib/client/geocode'
 import { fetchWeather } from '@/lib/client/weather'
 import { playSaveSound } from '@/lib/client/sound'
@@ -208,14 +208,42 @@ export default function DiaryEditor() {
     await fetch('/api/draft', { method: 'DELETE' }).catch(() => {})
   }
 
+  // 保存后异步补写定位与元数据：绝不阻塞保存反馈。
+  // 定位单独给足超时——原先保存路径用的是 getPosition(2000)，2 秒对 iOS 冷启动
+  // 首次高精度定位（常需 5~15s）远远不够，且系统权限弹窗的等待时间也计入超时，
+  // 超时后静默返回 null，这就是「有些笔记没有地点」的根因。
+  // 现在保存先落库，定位在后台从容获取后再 PATCH 补写。
+  async function backfillLocation(entryId: string) {
+    if (!isLocationEnabled()) return
+    try {
+      const loc = await getPosition(15_000)
+      if (loc?.latitude == null || loc.longitude == null) return
+      const { latitude, longitude } = loc
+      const patch: Record<string, unknown> = {
+        latitude, longitude, locationAccuracy: loc.accuracy,
+      }
+      // 地点名反查与实时天气并行 → 一次 PATCH。
+      // 反查发送的是模糊后坐标（见 geocode.ts 的 coarsenCoordinate），精确坐标不出设备。
+      const [name, weather] = await Promise.all([
+        isAutoPlaceNameEnabled() ? clientReverseGeocode(latitude, longitude) : Promise.resolve(null),
+        isWeatherEnabled() ? fetchWeather(latitude, longitude) : Promise.resolve(null),
+      ])
+      if (name) patch.locationName = name
+      if (weather) patch.weather = weather
+      await fetch(`/api/diary/${entryId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+    } catch { /* 补写失败静默：详情页仍显示正文，可点坐标手动补查地点 */ }
+  }
+
   async function save() {
     const dek = getDek()
     const body = textRef.current.trim()
     if (!dek || !body) { setStatus('idle'); return }
     setStatus('saving')
     try {
-      // 定位开关（默认开启）：关闭后不请求定位
-      const loc = isLocationEnabled() ? await getPosition(2000) : null
       const { ciphertext, iv } = await encryptText(dek, body)
       const res = await fetch('/api/diary', {
         method: 'POST',
@@ -223,37 +251,17 @@ export default function DiaryEditor() {
         body: JSON.stringify({
           ciphertext, iv, encryptionVersion: 1,
           wordCount: body.length, // 解密时计算（与编辑器底部字数一致：trim 后长度）
-          latitude: loc?.latitude ?? null,
-          longitude: loc?.longitude ?? null,
-          locationAccuracy: loc?.accuracy ?? null,
+          // 坐标一律先留空：定位在保存成功后异步补写（见 backfillLocation），
+          // 避免 2 秒超时把位置直接丢掉，也避免保存按钮长时间转圈
+          latitude: null,
+          longitude: null,
+          locationAccuracy: null,
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
       })
       if (!res.ok) throw new Error('save failed')
-      // 保存成功后异步补写元数据（不阻塞保存反馈）：地点名反查 + 实时天气并行 → 一次 PATCH。
-      // 注意：POST 响应结构是 { entry }，必须解构 entry.id（此前误解构为 { id } 导致 PATCH 从未执行）
-      // 失败静默——详情页仍显示坐标，点击坐标可再次查询地点
-      if (loc?.latitude != null && loc.longitude != null) {
-        const { entry: savedEntry } = await res.json() as { entry?: { id?: string } }
-        void (async () => {
-          try {
-            const [name, weather] = await Promise.all([
-              clientReverseGeocode(loc.latitude!, loc.longitude!),
-              isWeatherEnabled() ? fetchWeather(loc.latitude!, loc.longitude!) : Promise.resolve(null),
-            ])
-            const patch: Record<string, unknown> = {}
-            if (name) patch.locationName = name
-            if (weather) patch.weather = weather
-            if (savedEntry?.id && Object.keys(patch).length > 0) {
-              await fetch(`/api/diary/${savedEntry.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(patch),
-              })
-            }
-          } catch { /* 元数据补写失败静默 */ }
-        })()
-      }
+      // POST 响应结构是 { entry }，这里是补写定位所必需的 entry.id
+      const { entry: savedEntry } = await res.json() as { entry?: { id?: string } }
       // 保存成功：取消未决防抖并作废进行中的冲刷，防止草稿"复活"
       if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }
       draftEpochRef.current++
@@ -267,6 +275,8 @@ export default function DiaryEditor() {
       setText(''); textRef.current = ''
       if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
       statusTimeoutRef.current = setTimeout(() => { setStatus('idle'); setShowConfetti(false) }, 2000)
+      // 定位与元数据异步补写：此刻保存反馈已经完成，用户可立即继续操作
+      if (savedEntry?.id) void backfillLocation(savedEntry.id)
     } catch {
       setStatus('error')
     }
