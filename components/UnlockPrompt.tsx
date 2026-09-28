@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import OrbitLogo from './OrbitLogo'
+import VersionFooter from './VersionFooter'
 
 // 手动解锁入口（留在当前页）；单次认证完成登录+解锁。
 // 点击后立即唤起系统通行密钥弹窗（userVerification: discouraged——不自动识别，
@@ -51,6 +52,10 @@ export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<str
           {error && <p className="mt-3 text-center text-sm text-red-500">{error}</p>}
         </div>
       </div>
+      {/* 版本页脚与登录页同款（共享组件）：用户日常看到的「登录界面」其实是这里——
+          会话 cookie 30 天有效，PWA 冷启动大多落在 UnlockPrompt 而非 /login，
+          此前只有 /login 有版本行，造成「版本号一直不显示」的误报（真实事故）。 */}
+      <VersionFooter />
     </main>
   )
 }
