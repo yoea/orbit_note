@@ -90,7 +90,7 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
   // 开关行清单：文案、落盘键与状态并排一处，省掉 6 段几乎相同的 JSX。
   // 新增开关只需在此加一行（键与文案不会在复制粘贴中走样）。
   const rows = [
-    { key: OFFLINE_KEY, label: '离线缓存', hint: queuedCount > 0 ? `有 ${queuedCount} 篇待同步日记，关闭开关将丢弃` : '断网时仍可解锁并查看已缓存的日记，关闭即清除本机缓存', enabled: offlineCache, setEnabled: setOfflineCache },
+    { key: OFFLINE_KEY, label: '离线缓存', hint: queuedCount > 0 ? `有 ${queuedCount} 篇待同步日记，关闭开关将丢弃` : '断网时仍可解锁并新建和查看日记', enabled: offlineCache, setEnabled: setOfflineCache },
     { key: LOCATION_KEY, label: '保存时记录位置', hint: '关闭后保存日记不再请求定位', enabled: locationEnabled, setEnabled: setLocationEnabled },
     { key: WEATHER_KEY, label: '保存时记录天气', hint: '关闭后保存日记不再获取实时天气', enabled: saveWeather, setEnabled: setSaveWeather },
     { key: GEOCODE_KEY, label: '自动补全地点名', hint: '关闭后不会自动把坐标转为地名', enabled: autoPlaceName, setEnabled: setAutoPlaceName },
