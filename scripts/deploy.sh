@@ -40,6 +40,8 @@ fi
 REMOTE_HOST="${REMOTE_HOST:?请在 .env.local 中设置 REMOTE_HOST（ssh 主机别名）}"
 REMOTE_TAR="/tmp/quiet-orbit-prod.tar.gz"
 REMOTE_UPDATE="${REMOTE_UPDATE:?请在 .env.local 中设置 REMOTE_UPDATE（服务器端 update.sh 绝对路径）}"
+# 服务器上的应用目录 = update.sh 所在目录（两者同目录部署）
+REMOTE_APP_DIR="$(dirname "$REMOTE_UPDATE")"
 
 T0=$(date +%s)
 LAST=$(date +%s)
@@ -70,7 +72,34 @@ rm_tree() {
   return 0
 }
 
-echo "=== [1/8] 生产库 schema 前置检查 ==="
+echo "=== [1/8] 线上前置检查（WebAuthn 配置 + 生产库 schema） ==="
+# ---- 1a) WebAuthn 配置（2026-09-29 真实事故后加）----
+# 服务器 .env 若残留本地开发值（WEBAUTHN_RP_ID=localhost / ORIGIN=http://localhost:3000），
+# 进程能正常起、/login 也返回 200，但**浏览器会拒绝所有通行密钥**——认证全废却毫无征兆
+# （报错只出现在用户浏览器里：The RP ID "localhost" is invalid for this domain）。
+# 必须在花 40~65s 构建上传之前拦住。只读远端 .env，不做任何修改。
+if [ "$DRY_RUN" = "1" ]; then
+  echo "WebAuthn 配置检查：已跳过（DRY_RUN=1）"
+elif [ "${SKIP_ENV_CHECK:-0}" = "1" ]; then
+  echo "WebAuthn 配置检查：已跳过（SKIP_ENV_CHECK=1）"
+else
+  ENV_LINES="$(ssh -o ConnectTimeout=25 "$REMOTE_HOST" \
+    "grep -E '^WEBAUTHN_(RP_ID|ORIGIN)=' '$REMOTE_APP_DIR/.env' 2>/dev/null" || true)"
+  env_ok=1
+  printf '%s\n' "$ENV_LINES" | grep -qE '^WEBAUTHN_RP_ID=.+' || env_ok=0
+  printf '%s\n' "$ENV_LINES" | grep -qE '^WEBAUTHN_ORIGIN=https://' || env_ok=0
+  if printf '%s\n' "$ENV_LINES" | grep -qiE '(localhost|127\.0\.0\.1)'; then env_ok=0; fi
+  if [ "$env_ok" != "1" ]; then
+    echo "❌ 线上 $REMOTE_APP_DIR/.env 的 WebAuthn 配置无效：" >&2
+    printf '%s\n' "$ENV_LINES" | sed 's/^/     /' >&2
+    echo "   生产要求：WEBAUTHN_RP_ID=<裸域名>（如 orbit.ewing.top）；WEBAUTHN_ORIGIN=https://<域名>" >&2
+    echo "   改好 .env 后重启：ssh $REMOTE_HOST 'pm2 restart quiet-orbit'" >&2
+    echo "   （确认无误仍要跳过：SKIP_ENV_CHECK=1 bash scripts/deploy.sh）" >&2
+    exit 1
+  fi
+  echo "WebAuthn 配置检查通过：$(printf '%s' "$ENV_LINES" | tr '\n' ' ')"
+fi
+# ---- 1b) 生产库 schema ----
 # 迁移必须先在服务器上执行——deploy.sh / update.sh 都不跑迁移。
 # 漏掉会出现「代码上线了但表/列不存在」的 500，且没有明显报错，很难排查，
 # 因此这里做成硬失败（检查不通过即中止，不会白跑一次构建）。
@@ -81,7 +110,6 @@ if [ "$DRY_RUN" = "1" ]; then
 elif [ "${SKIP_SCHEMA_CHECK:-0}" = "1" ]; then
   echo "已跳过（SKIP_SCHEMA_CHECK=1）"
 else
-  REMOTE_APP_DIR="$(dirname "$REMOTE_UPDATE")"
   # 固定路径而非 mktemp：Git Bash 下 mktemp 可能返回带盘符的路径，清理时会报错
   SCHEMA_DUMP="/tmp/qo-schema-actual.txt"
   trap 'rm -f "$SCHEMA_DUMP"' EXIT

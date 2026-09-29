@@ -92,6 +92,49 @@ if [ "$login_code" != "200" ]; then
   exit 1
 fi
 echo "login: 200"
+# ---- WebAuthn 运行期校验（2026-09-29 真实事故后加）----
+# （用 >>> / <<< 标记包起来，方便单独抽出来做正/反例验证）
+# 静态检查挡不住「配置是开发值、服务却照常起」这一类：必须真的问一次运行中的进程，
+# 再把它的答案和 .env 对齐。
+# 事故形态：服务器 .env 残留 WEBAUTHN_RP_ID=localhost ⇒ 进程健康、/login 200、
+# 库也连得上，但用户浏览器直接拒绝所有通行密钥
+# （The RP ID "localhost" is invalid for this domain）——**认证全废却零征兆**。
+# >>> webauthn-check
+ENV_FILE="$APP_DIR/.env"
+RP_EXPECT="$(grep -m1 '^WEBAUTHN_RP_ID=' "$ENV_FILE" | cut -d= -f2- | tr -d '\r')"
+ORIGIN_EXPECT="$(grep -m1 '^WEBAUTHN_ORIGIN=' "$ENV_FILE" | cut -d= -f2- | tr -d '\r')"
+case "$RP_EXPECT" in
+  "" | localhost | 127.0.0.1)
+    echo "❌ .env 的 WEBAUTHN_RP_ID('$RP_EXPECT') 非法（空或开发值）——浏览器会拒绝所有通行密钥"
+    exit 1
+    ;;
+esac
+case "$ORIGIN_EXPECT" in
+  https://*) ;;
+  *)
+    echo "❌ .env 的 WEBAUTHN_ORIGIN('$ORIGIN_EXPECT') 不是 https——浏览器会判定 origin 不匹配"
+    exit 1
+    ;;
+esac
+case "$ORIGIN_EXPECT" in
+  *localhost* | *127.0.0.1*)
+    echo "❌ .env 的 WEBAUTHN_ORIGIN('$ORIGIN_EXPECT') 指向本机——这是开发值，生产认证会全部失败"
+    exit 1
+    ;;
+esac
+RP_ACTUAL="$(curl -s --max-time 10 http://localhost:10826/api/auth/login/options | /usr/bin/node -e '
+  let s = ""
+  process.stdin.on("data", (d) => { s += d })
+  process.stdin.on("end", () => {
+    try { process.stdout.write(String(JSON.parse(s).options.rpId)) } catch { process.stdout.write("") }
+  })' || true)"
+if [ "$RP_ACTUAL" != "$RP_EXPECT" ]; then
+  echo "❌ 运行期 rpId('$RP_ACTUAL') ≠ .env 的 WEBAUTHN_RP_ID('$RP_EXPECT')"
+  echo "   说明进程环境与 .env 不一致——检查 start.sh 是否真的载入了 .env（且是强制覆盖语义）"
+  exit 1
+fi
+echo "webauthn: rpId=$RP_ACTUAL  origin=$ORIGIN_EXPECT"
+# <<< webauthn-check
 "$PM2_BIN" status "$APP_NAME" | grep "$APP_NAME" || true
 echo "=== 更新完成 ==="
 # 回读线上 BUILD_ID 供 deploy.sh 终验（格式固定，deploy.sh 用 sed 提取）。
