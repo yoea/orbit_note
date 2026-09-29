@@ -226,8 +226,19 @@ scp -o ConnectTimeout=25 "$PROJECT_DIR/scripts/update.sh" "$REMOTE_HOST:$REMOTE_
 step "7/8" "远程更新（清旧产物 + 解压 + pm2 restart + 验证）"
 # 捕获远程输出：BUILD_ID 由 update.sh 自己回读并打印在最后一行，
 # 省掉一次单独的 ssh 往返（实测 ~4s），校验效力相同（仍是脚本跑完后的线上实值）。
-REMOTE_LOG="$(ssh -o ConnectTimeout=25 "$REMOTE_HOST" "bash $REMOTE_UPDATE $REMOTE_TAR")"
+#
+# 必须先把输出打出来、再判断退出码：`X="$(cmd)"` 在 set -e 下会因为 cmd 非零而
+# 直接中断脚本，于是**远程脚本的真实报错被完全吞掉**——2026-09-29 排查线上事故时，
+# 我因此只看到「第 7 步无输出 + 退出 1」，误判了很久。先打印再加 2>&1，报错就看得见。
+set +e
+REMOTE_LOG="$(ssh -o ConnectTimeout=25 "$REMOTE_HOST" "bash $REMOTE_UPDATE $REMOTE_TAR" 2>&1)"
+REMOTE_RC=$?
+set -e
 printf '%s\n' "$REMOTE_LOG"
+if [ "$REMOTE_RC" != "0" ]; then
+  echo "❌ 远程更新失败（服务器端退出码 $REMOTE_RC）。上面的输出就是服务器端的真实报错。"
+  exit 1
+fi
 
 # 部署校验：线上 BUILD_ID 必须等于本次构建的 BUILD_ID
 # （防止上传包缺 .next 等原因导致线上静默跑旧构建）
