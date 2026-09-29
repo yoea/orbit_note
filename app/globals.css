@@ -30,6 +30,10 @@ html {
 }
 
 .safe-pt { padding-top: env(safe-area-inset-top); }
+/* 已废弃，勿在新代码使用：只有 env()，**没有 1rem 下限**。
+   在没有 home indicator 的环境（桌面浏览器、旧 iPhone）算出来是 0，
+   贴底元素会紧贴容器底边甚至落进系统覆盖区（登录页版本页脚「不显示」事故的一环）。
+   一律改用下面的 .pb-safe。tests/safe-area-padding.test.ts 会拦住新用法。 */
 .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
 .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
 

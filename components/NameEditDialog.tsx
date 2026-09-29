@@ -54,11 +54,11 @@ export default function NameEditDialog({ current, onSaved, onClose }: {
           <div className="mt-1.5 flex items-center justify-between">
             <button
               onClick={() => { setValue(generateDefaultName()); setError(null) }}
-              className="text-[10px] text-neutral-400 underline"
+              className="text-[10px] text-neutral-500 dark:text-neutral-400 underline"
             >
               随机生成一个
             </button>
-            <span className="text-[10px] tabular-nums text-neutral-400">{trimmed.length}/{USER_NAME_MAX}</span>
+            <span className="text-[10px] tabular-nums text-neutral-500 dark:text-neutral-400">{trimmed.length}/{USER_NAME_MAX}</span>
           </div>
           {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
         </div>

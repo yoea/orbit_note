@@ -97,7 +97,7 @@ export default function LoginPage() {
     return (
       <main className="flex min-h-0 flex-1 flex-col px-6 pb-safe">
         <div className="m-auto flex flex-col items-center gap-4">
-          <p className="text-sm text-neutral-500">连接失败，请检查网络后重试</p>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">连接失败，请检查网络后重试</p>
           <button onClick={() => window.location.reload()} className="rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">
             重试
           </button>
@@ -145,7 +145,7 @@ export default function LoginPage() {
         </div>
       ) : (
         <form onSubmit={(e) => void handleRecoverySubmit(e)} className="flex w-full max-w-xs flex-col gap-3">
-          <p className="text-sm text-neutral-500">输入恢复密钥完成解锁</p>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">输入恢复密钥完成解锁</p>
           <input
             value={recoveryKey}
             onChange={(e) => setRecoveryKey(e.target.value)}
@@ -166,7 +166,7 @@ export default function LoginPage() {
       {mode === 'recovery' && (
         <button
           onClick={() => { setMode('passkey'); setPasskeyFailed(false); setError(null) }}
-          className="text-sm text-neutral-400 underline"
+          className="text-sm text-neutral-500 dark:text-neutral-400 underline"
         >
           返回通行密钥登录
         </button>

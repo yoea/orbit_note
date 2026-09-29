@@ -89,7 +89,7 @@ export default function SettingsView() {
   }
 
   return (
-    <main className="animate-fade-in mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt">
+    <main className="animate-fade-in mx-auto h-full w-full max-w-md overflow-y-auto px-5 pb-4 safe-pt">
       {/* 电脑版与主页同宽（手机视图宽度），不随屏幕拉伸 */}
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       {/* 本页是 tab 目的地之一，不再放返回箭头（回首页由 TabBar 的「写」承担）；
@@ -101,7 +101,7 @@ export default function SettingsView() {
       {/* 个人信息卡片：生成式头像 + 名字 + 一行统计；点开改名。
           不设分组标题——卡片本身已足够表意，省掉一个只配一行的标题 */}
       <ProfileCard onEditName={guard(() => setShowNameEdit(true))} disabled={offline} />
-      <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">安全</p>
+      <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">安全</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
           {/* 点击查看各设备通行密钥，可禁用/启用指定设备、添加新设备（先预取数据再打开，无加载闪烁）。
@@ -109,9 +109,9 @@ export default function SettingsView() {
           <button onClick={guard(() => void openPasskeysDialog())} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">{userName ? `${userName}的通行密钥` : '通行密钥'}</p>
-              <p className="mt-0.5 text-xs text-neutral-400">指纹 / Face ID / Windows Hello 等</p>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">指纹 / Face ID / Windows Hello 等</p>
             </div>
-            <span className="text-lg text-neutral-300">›</span>
+            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </button>
         </li>
         <li>
@@ -119,15 +119,15 @@ export default function SettingsView() {
           <button onClick={guard(() => setShowRecovery(true))} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">重新生成恢复密钥</p>
-              <p className="mt-0.5 text-xs text-neutral-400">更换新的恢复密钥，旧密钥立即失效</p>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">更换新的恢复密钥，旧密钥立即失效</p>
             </div>
-            <span className="text-lg text-neutral-300">›</span>
+            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </button>
         </li>
       </ul>
       {/* 通用：偏好设置入口 + 关于。合并成一组——两者各自都只有一行，
           分开会各带一个「只配一行」的分组标题，白占两处页高 */}
-      <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">通用</p>
+      <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">通用</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
           {/* 偏好设置：弹窗（原先是跳转独立页 /settings/prefs——那组开关只占约 40% 页高，
@@ -135,22 +135,22 @@ export default function SettingsView() {
           <button onClick={guard(() => setShowPrefs(true))} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">偏好设置</p>
-              <p className="mt-0.5 text-xs text-neutral-400">位置、天气、地点名与各项显示开关</p>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">位置、天气、地点名与各项显示开关</p>
             </div>
-            <span className="text-lg text-neutral-300">›</span>
+            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </button>
         </li>
         <li>
           <button onClick={() => setShowAbout(true)} className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60">
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">关于 Orbit</p>
-              <p className="mt-0.5 text-xs text-neutral-400">端到端加密的私人日记</p>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">端到端加密的私人日记</p>
             </div>
-            <span className="text-lg text-neutral-300">›</span>
+            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </button>
         </li>
       </ul>
-      <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-400">数据</p>
+      <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">数据</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
           {/* 导出笔记：解密后拼 CSV。离线禁用：导出需要拉取服务器全量日记密文
@@ -162,9 +162,9 @@ export default function SettingsView() {
           >
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">导出笔记</p>
-              <p className="mt-0.5 text-xs text-neutral-400">解密全部日记为 CSV 文件</p>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">解密全部日记为 CSV 文件</p>
             </div>
-            <span className="text-lg text-neutral-300">›</span>
+            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </Link>
         </li>
         <li>
@@ -172,17 +172,17 @@ export default function SettingsView() {
           <button onClick={guard(() => setConfirmLogout(true))} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">退出登录</p>
-              <p className="mt-0.5 text-xs text-neutral-400">退出后需重新验证通行密钥才能解锁</p>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">退出后需重新验证通行密钥才能解锁</p>
             </div>
-            <span className="text-lg text-neutral-300">›</span>
+            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </button>
         </li>
       </ul>
-      {/* 底部留白：避免最后一组卡片紧贴 TabBar。
-          这里原先放了一个 Orbit 字标，但它当初的作用是给「关于 Orbit」留出与页脚的间隔——
-          该行已移入「通用」分组，而全局页脚已由 TabBar 取代（版本号与版权在「关于」弹窗里本来就有），
-          再放一个字标既重复、又正好压在 TabBar 上方，故移除 */}
-      <div className="h-10" aria-hidden />
+      {/* 底部留白由 main 的 pb-4 承担（与其他 (app) 页面统一）。
+          这里原先放了一个 <div className="h-10" aria-hidden /> 和更早的 Orbit 字标：
+          字标当初用来给「关于 Orbit」留间隔，该行已移入「通用」分组；字标移除后改用了 h-10 占位，
+          但 40px 与写页/详情页/列表页的 16px 不一致，会让同一位置的间距随页面漂移。
+          统一到 main 的 pb-4 后，这里不再需要占位元素。 */}
       {confirmLogout && (
         <ConfirmDialog
           title={userName ? `确定退出 ${userName} 的登录吗？` : '确定退出登录吗？'}

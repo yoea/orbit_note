@@ -1,0 +1,47 @@
+name: CI
+
+# 门禁顺序是有依赖的，别调整：
+#   · typecheck 读的是 `next build` 生成的 .next/types/**（LayoutProps 等），必须在 build 之后；
+#   · lint 与 test 不依赖构建，放最前面先拿到快速失败。
+# 与本地等价的一条命令是 `npm run verify`（package.json 里，顺序一致）。
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      # lib/server/env.ts 在 import 期就解析这些变量并校验；Next 构建时收集路由元数据会加载
+      # route 模块，所以构建期必须有值。这里给占位即可——所有页面都是客户端组件（'use client'），
+      # 构建期不连数据库、不发起外网请求，因此 CI 不需要起 PostgreSQL。
+      DATABASE_URL: postgres://ci:ci@localhost:5432/quiet_orbit_ci
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_RP_NAME: Quiet Orbit CI
+      WEBAUTHN_ORIGIN: http://localhost:3000
+      SESSION_SECRET: ci-only-session-secret-placeholder-32chars
+      RECOVERY_KEY_VERSION: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # 不要加 --ignore-scripts：本地 Windows 需要它是为了绕开 esbuild postinstall 的 EBUSY，
+      # Linux runner 上必须让 postinstall 正常跑完，平台二进制才会就位。
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run test
+
+      - run: npm run build
+
+      - run: npm run typecheck

@@ -34,9 +34,9 @@ export default function ProfileCard({ onEditName, disabled = false }: { onEditNa
         <span className="block truncate text-base font-medium text-neutral-800 dark:text-neutral-100">
           {name ?? '加载中…'}
         </span>
-        {subtitle && <span className="mt-0.5 block truncate text-xs tabular-nums text-neutral-400">{subtitle}</span>}
+        {subtitle && <span className="mt-0.5 block truncate text-xs tabular-nums text-neutral-500 dark:text-neutral-400">{subtitle}</span>}
       </span>
-      <span className="shrink-0 text-lg text-neutral-300">›</span>
+      <span className="shrink-0 text-lg text-neutral-500 dark:text-neutral-400">›</span>
     </button>
   )
 }

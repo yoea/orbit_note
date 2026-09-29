@@ -116,7 +116,7 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
             <li key={row.key} className="flex items-center justify-between gap-4 border-b border-neutral-100 py-3.5 last:border-b-0 dark:border-neutral-700">
               <div>
                 <p className="text-neutral-800 dark:text-neutral-200">{row.label}</p>
-                <p className="mt-0.5 text-xs text-neutral-400">{row.hint}</p>
+                <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{row.hint}</p>
               </div>
               <PrefSwitch enabled={row.enabled} ready={prefsReady} onToggle={() => toggle(row.key, row.enabled, row.setEnabled)} />
             </li>
@@ -124,7 +124,7 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
         </ul>
         <button
           onClick={onClose}
-          className="shrink-0 border-t border-neutral-200 py-3.5 text-base font-medium text-neutral-500 active:bg-neutral-100 dark:border-neutral-700 dark:active:bg-neutral-700"
+          className="shrink-0 border-t border-neutral-200 py-3.5 text-base font-medium text-neutral-500 dark:text-neutral-400 active:bg-neutral-100 dark:border-neutral-700 dark:active:bg-neutral-700"
         >
           完成
         </button>

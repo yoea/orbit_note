@@ -125,7 +125,7 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-3 py-3">
           {/* 输入框：复用应用既有的圆角浅底样式 */}
           <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl bg-neutral-100 px-3 py-2.5 dark:bg-neutral-900">
-            <span className="shrink-0 text-neutral-400"><SearchIcon className="h-4 w-4" /></span>
+            <span className="shrink-0 text-neutral-500 dark:text-neutral-400"><SearchIcon className="h-4 w-4" /></span>
             <input
               ref={inputRef}
               value={query}
@@ -134,13 +134,13 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-neutral-400"
+              className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-neutral-500 dark:placeholder:text-neutral-400"
             />
             {query !== '' && (
-              <button onClick={() => { setQuery(''); resetPaging() }} aria-label="清除" className="shrink-0 text-sm text-neutral-400 active:opacity-60">✕</button>
+              <button onClick={() => { setQuery(''); resetPaging() }} aria-label="清除" className="shrink-0 text-sm text-neutral-500 dark:text-neutral-400 active:opacity-60">✕</button>
             )}
           </div>
-          <button onClick={onClose} className="shrink-0 text-sm text-neutral-400 active:opacity-60">取消</button>
+          <button onClick={onClose} className="shrink-0 text-sm text-neutral-500 dark:text-neutral-400 active:opacity-60">取消</button>
         </div>
         {/* 筛选条件：与关键词是「与」的关系；时间与位置都是明文元数据 */}
         <div className="flex flex-wrap items-center gap-2 pb-3">
@@ -155,13 +155,13 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
-      <div className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto px-5 safe-pb">
+      <div className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto px-5 pb-safe">
         {/* 未输入且未筛选：只给引导，不展示全部日记（那是列表页的职责） */}
         {!active && (
-          <p className="pt-16 text-center text-sm text-neutral-400">输入关键词，或选择上面的筛选条件</p>
+          <p className="pt-16 text-center text-sm text-neutral-500 dark:text-neutral-400">输入关键词，或选择上面的筛选条件</p>
         )}
 
-        {active && loading && <p className="pt-16 text-center text-sm text-neutral-400">正在解密日记…</p>}
+        {active && loading && <p className="pt-16 text-center text-sm text-neutral-500 dark:text-neutral-400">正在解密日记…</p>}
 
         {active && !loading && error && (
           <div className="pt-16 text-center">
@@ -177,12 +177,12 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
 
         {active && !loading && !error && entries !== null && (
           results.length === 0 ? (
-            <p className="pt-16 text-center text-sm text-neutral-400">
+            <p className="pt-16 text-center text-sm text-neutral-500 dark:text-neutral-400">
               {trimmedQuery ? <>没有找到包含「{trimmedQuery}」的日记</> : '没有符合条件的日记'}
             </p>
           ) : (
             <>
-              <p className="py-2 text-xs tabular-nums text-neutral-400">
+              <p className="py-2 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
                 找到 {results.length} 篇
                 {visibleCount < results.length && `（已显示 ${visible.length}）`}
               </p>
@@ -192,7 +192,7 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
                   <li key={entry.id}>
                     <Link href={`/entry/${entry.id}`} className="flex flex-col gap-1 py-3 active:opacity-60">
                       <span className="flex items-baseline gap-2">
-                        <span className="shrink-0 text-xs tabular-nums text-neutral-400">
+                        <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
                           {new Date(entry.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
                         </span>
                         <span className="line-clamp-1 font-medium text-neutral-800 dark:text-neutral-200">
@@ -207,7 +207,7 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
                           不展示的话命中了也看不出为什么命中；用 Highlighted 渲染，
                           关键词命中天气时会像正文一样高亮。 */}
                       {(entry.locationName || entry.weather) && (
-                        <span className="flex items-baseline justify-between gap-2 text-xs text-neutral-400">
+                        <span className="flex items-baseline justify-between gap-2 text-xs text-neutral-500 dark:text-neutral-400">
                           {/* 左：地点名（无定位时留空，天气仍靠右对齐） */}
                           <span className="min-w-0 truncate">
                             {entry.locationName && (

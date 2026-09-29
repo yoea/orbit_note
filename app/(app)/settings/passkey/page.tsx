@@ -83,7 +83,7 @@ function AddPasskeyInner() {
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="page-header relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+        <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-500 dark:text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">添加通行密钥</h1>
@@ -98,7 +98,7 @@ function AddPasskeyInner() {
         >
           {busy ? '添加中…' : '注册新的通行密钥'}
         </button>
-        <p className="text-center text-xs text-neutral-400">新增一个通行密钥后，将可以用它解锁同一份日记</p>
+        <p className="text-center text-xs text-neutral-500 dark:text-neutral-400">新增一个通行密钥后，将可以用它解锁同一份日记</p>
         {error && <p className="text-center text-sm text-red-500">{error}</p>}
       </div>
     </main>

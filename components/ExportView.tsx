@@ -146,10 +146,10 @@ export default function ExportView() {
   }
 
   return (
-    <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt">
+    <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 pb-4 safe-pt">
       <header className="page-header relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-400">
+        <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-500 dark:text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">导出笔记</h1>
@@ -160,7 +160,7 @@ export default function ExportView() {
       <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
         将{userName ? `${userName}的` : ''}全部日记导出为 <span className="font-medium">CSV</span> 文件，包含所有字段（正文、创建/更新时间、坐标、地点名、时区、字数）。
       </p>
-      <p className="mt-1 text-xs leading-relaxed text-neutral-400">
+      <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
         正文以加密状态存储，导出时在本地解密——明文只在你设备上生成下载，不会上传服务器。
       </p>
 
@@ -178,7 +178,7 @@ export default function ExportView() {
             </button>
             <div className="flex items-center gap-3 py-1">
               <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-700" />
-              <span className="text-xs text-neutral-400">或</span>
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">或</span>
               <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-700" />
             </div>
             <input
@@ -202,7 +202,7 @@ export default function ExportView() {
             <button
               onClick={() => setWipeConfirmStep(1)}
               disabled={wiping}
-              className="text-xs text-neutral-400/70 disabled:opacity-50"
+              className="text-xs text-neutral-500 dark:text-neutral-400 disabled:opacity-50"
             >
               {wiping ? '验证中…' : '删除所有数据'}
             </button>
@@ -213,7 +213,7 @@ export default function ExportView() {
           {/* 验证通过：保留顶部说明，下方显示文件名与下载 */}
           <p className="mt-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">✓ 身份已验证</p>
           <div className="mt-4 rounded-2xl border border-neutral-100 bg-neutral-50/60 px-4 py-3.5 dark:border-neutral-800 dark:bg-neutral-900/40">
-            <p className="text-xs text-neutral-400">导出文件</p>
+            <p className="text-xs text-neutral-500 dark:text-neutral-400">导出文件</p>
             <p className="mt-1 break-all font-mono text-sm text-neutral-800 dark:text-neutral-200">{fileName}</p>
           </div>
           <button

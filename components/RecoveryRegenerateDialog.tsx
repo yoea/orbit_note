@@ -70,7 +70,7 @@ export default function RecoveryRegenerateDialog({ onClose }: { onClose: () => v
             /* 验证阶段 */
             <>
               <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">重新生成恢复密钥</p>
-              <p className="mt-1 text-xs text-neutral-400">先输入当前恢复密钥验证身份，验证通过后生成新密钥</p>
+              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">先输入当前恢复密钥验证身份，验证通过后生成新密钥</p>
               <input
                 value={currentKey}
                 onChange={(e) => setCurrentKey(e.target.value)}
@@ -91,11 +91,11 @@ export default function RecoveryRegenerateDialog({ onClose }: { onClose: () => v
           ) : (
             /* 结果阶段：新密钥仅显示一次 */
             <>
-              <p className="text-sm text-neutral-500">新的恢复密钥已生成，仅显示一次：</p>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">新的恢复密钥已生成，仅显示一次：</p>
               <code className="mt-2 block break-all rounded-xl bg-neutral-100 px-3 py-2.5 text-sm dark:bg-neutral-900">{result}</code>
               <button
                 onClick={() => void handleCopyResult()}
-                className="mt-2 text-sm text-neutral-500 underline"
+                className="mt-2 text-sm text-neutral-500 dark:text-neutral-400 underline"
               >
                 {copyState === 'copied' ? '已复制 ✓' : copyState === 'failed' ? '复制失败，请手动选择复制' : '复制恢复密钥'}
               </button>
@@ -111,7 +111,7 @@ export default function RecoveryRegenerateDialog({ onClose }: { onClose: () => v
               if (result) void copyText(result) // 尽力复制，失败不阻塞关闭
               onClose()
             }}
-            className="w-full rounded-xl py-2.5 text-base font-medium text-neutral-500 active:bg-neutral-100 dark:active:bg-neutral-700"
+            className="w-full rounded-xl py-3.5 text-base font-medium text-neutral-500 dark:text-neutral-400 active:bg-neutral-100 dark:active:bg-neutral-700"
           >
             {result ? '完成' : '取消'}
           </button>

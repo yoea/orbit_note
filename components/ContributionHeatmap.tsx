@@ -82,7 +82,7 @@ export default function ContributionHeatmap({ byDay }: { byDay: Record<string, {
                   )
                 })}
                 {showMonth && (
-                  <span className="absolute bottom-[-14px] left-0 whitespace-nowrap text-[8px] leading-none text-neutral-400">
+                  <span className="absolute bottom-[-14px] left-0 whitespace-nowrap text-[10px] leading-none text-neutral-500 dark:text-neutral-400">
                     {month}月
                   </span>
                 )}

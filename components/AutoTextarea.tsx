@@ -25,7 +25,7 @@ export default function AutoTextarea({ value, onChange, placeholder, autoFocus, 
       placeholder={placeholder}
       autoFocus={autoFocus}
       disabled={disabled}
-      className="w-full min-h-0 flex-1 resize-none overflow-y-auto bg-transparent text-lg leading-relaxed outline-none placeholder:text-neutral-300 disabled:opacity-60 dark:placeholder:text-neutral-600"
+      className="w-full min-h-0 flex-1 resize-none overflow-y-auto bg-transparent text-lg leading-relaxed outline-none placeholder:text-neutral-500 disabled:opacity-60 dark:placeholder:text-neutral-400"
     />
   )
 }

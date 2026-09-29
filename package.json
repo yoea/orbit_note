@@ -9,6 +9,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "verify": "npm run lint && npm run test && npm run build && npm run typecheck",
     "icons": "node scripts/generate-icons.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"

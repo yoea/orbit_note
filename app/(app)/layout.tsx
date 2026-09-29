@@ -30,8 +30,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // 收敛到 layout 后三个页面都能给出提示。
   if (state === 'error') {
     return (
-      <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 safe-pb">
-        <p className="text-sm text-neutral-500">连接失败，请检查网络后重试</p>
+      <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 px-6 pb-safe">
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">连接失败，请检查网络后重试</p>
         <button
           onClick={() => window.location.reload()}
           className="rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white"

@@ -92,7 +92,7 @@ export default function TabBar() {
                 // aria-current 让读屏软件知道当前所在页
                 aria-current={active ? 'page' : undefined}
                 className={`flex flex-col items-center gap-0.5 py-2 text-[10px] active:opacity-60 ${
-                  active ? 'font-medium' : 'text-neutral-400'
+                  active ? 'font-medium' : 'text-neutral-500 dark:text-neutral-400'
                 }`}
               >
                 <Icon className="h-5 w-5" accent={active} />

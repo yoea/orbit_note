@@ -101,48 +101,48 @@ export default function PasskeysDialog({ initialData, onClose }: {
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{userName ? `${userName}的通行密钥` : '通行密钥'}</p>
-              <p className="mt-1 text-xs text-neutral-400">管理各设备上的通行密钥</p>
+              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">管理各设备上的通行密钥</p>
             </div>
             {/* 添加新 Passkey：弱化为右上角加号，跳转注册页（带前进方向动画） */}
             <button
               onClick={() => router.push('/settings/passkey')}
               aria-label="注册新的通行密钥"
-              className="shrink-0 text-2xl font-light leading-6 text-neutral-400 active:opacity-60"
+              className="shrink-0 text-2xl font-light leading-6 text-neutral-500 dark:text-neutral-400 active:opacity-60"
             >
               ＋
             </button>
           </div>
           {loadFailed ? (
             <div className="flex flex-col items-center gap-2 py-6">
-              <p className="text-sm text-neutral-400">加载失败</p>
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">加载失败</p>
               <button onClick={() => void retry()} className="rounded-lg bg-neutral-100 px-4 py-1.5 text-sm text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
                 重试
               </button>
             </div>
           ) : passkeys.length === 0 ? (
-            <p className="py-6 text-center text-sm text-neutral-400">没有已注册的通行密钥</p>
+            <p className="py-6 text-center text-sm text-neutral-500 dark:text-neutral-400">没有已注册的通行密钥</p>
           ) : (
           <ul className="mt-4 divide-y divide-neutral-100 dark:divide-neutral-800">
             {passkeys.map((pk) => (
               <li key={pk.id} className="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
                 <div className="min-w-0 flex-1">
                   <p className="flex items-center gap-1.5 text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                    <span className={pk.disabled ? 'text-neutral-400' : undefined}>{pk.device ?? '未知设备'}</span>
+                    <span className={pk.disabled ? 'text-neutral-500 dark:text-neutral-400' : undefined}>{pk.device ?? '未知设备'}</span>
                     {/* 当前会话登录用的那把 key（登录后自动标注） */}
                     {pk.isCurrent && !pk.disabled && (
                       <span className="rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">当前</span>
                     )}
                     {/* 已禁用（软禁用，可重新启用） */}
                     {pk.disabled && (
-                      <span className="rounded-full bg-neutral-500/10 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500">已禁用</span>
+                      <span className="rounded-full bg-neutral-500/10 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 dark:text-neutral-400">已禁用</span>
                     )}
                   </p>
                   {/* 信息行：添加/最近使用左对齐，凭证尾号右对齐（信息区 flex-1 撑满至按钮左侧） */}
                   <div className="mt-0.5 flex items-baseline justify-between gap-2">
-                    <span className="min-w-0 truncate text-xs tabular-nums text-neutral-400">
+                    <span className="min-w-0 truncate text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
                       添加于 {fmtShort(pk.createdAt)} · {pk.lastUsedAt ? `最近使用 ${fmtShortTime(pk.lastUsedAt)}` : '从未使用'}
                     </span>
-                    <span className="shrink-0 font-mono text-xs text-neutral-400">{pk.credentialIdMasked}</span>
+                    <span className="shrink-0 font-mono text-xs text-neutral-500 dark:text-neutral-400">{pk.credentialIdMasked}</span>
                   </div>
                 </div>
                 {pk.disabled ? (
@@ -169,12 +169,12 @@ export default function PasskeysDialog({ initialData, onClose }: {
           </ul>
           )}
           {error && <p className="mt-3 text-center text-sm text-red-500">{error}</p>}
-          <p className="mt-4 text-xs leading-relaxed text-neutral-400">禁用后该设备无法登录，可随时重新启用</p>
+          <p className="mt-4 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">禁用后该设备无法登录，可随时重新启用</p>
         </div>
         <div className="border-t border-neutral-200 p-3 dark:border-neutral-700">
           <button
             onClick={onClose}
-            className="w-full rounded-xl py-2.5 text-base font-medium text-neutral-500 active:bg-neutral-100 dark:active:bg-neutral-700"
+            className="w-full rounded-xl py-3.5 text-base font-medium text-neutral-500 dark:text-neutral-400 active:bg-neutral-100 dark:active:bg-neutral-700"
           >
             完成
           </button>

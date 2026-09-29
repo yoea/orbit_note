@@ -371,7 +371,7 @@ export default function EntryView({ id }: { id: string }) {
     return (
       <main className="mx-auto flex h-full w-full max-w-md items-center justify-center px-5 safe-pt">
         <div className="text-center">
-          <p className="text-sm text-neutral-500">{error}</p>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">{error}</p>
           <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">重试</button>
         </div>
       </main>
@@ -397,7 +397,7 @@ export default function EntryView({ id }: { id: string }) {
       <header className="page-header relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中。
             字号：‹ 为半角字符视觉偏小（text-3xl），＋ 为全角字符视觉偏大（text-xl）——视觉平衡 */}
-        <Link href="/diary" aria-label="返回" scroll={false} className="-ml-1 px-1 text-3xl leading-none text-neutral-400">
+        <Link href="/diary" aria-label="返回" scroll={false} className="-ml-1 px-1 text-3xl leading-none text-neutral-500 dark:text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">日记</h1>
@@ -414,18 +414,18 @@ export default function EntryView({ id }: { id: string }) {
               }
               setConfirmCancelEdit(true)
             }}
-            className="text-sm text-neutral-400"
+            className="text-sm text-neutral-500 dark:text-neutral-400"
           >
             取消
           </button>
         ) : (
           /* 右上角加号：返回首页（新建笔记页） */
-          <Link href="/" aria-label="新建笔记" className="text-xl font-light leading-none text-neutral-400 active:opacity-60">
+          <Link href="/" aria-label="新建笔记" className="text-xl font-light leading-none text-neutral-500 dark:text-neutral-400 active:opacity-60">
             ＋
           </Link>
         )}
       </header>
-      <p className="flex flex-wrap items-center gap-2 text-sm tabular-nums text-neutral-400">
+      <p className="flex flex-wrap items-center gap-2 text-sm tabular-nums text-neutral-500 dark:text-neutral-400">
         {fmtDate(created)}
         {/* 字数在解密时计算（与编辑器底部"共 x 字"一致：trim 后长度） */}
         {!decryptFailed && <> · {plain.trim().length} 字</>}
@@ -449,7 +449,7 @@ export default function EntryView({ id }: { id: string }) {
             {/* 点击复制精确坐标（有地址时复制坐标；无地址时同时触发地点补查） */}
             <button
               onClick={() => void copyCoords()}
-              className="text-xs tabular-nums text-neutral-400 active:opacity-60"
+              className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400 active:opacity-60"
             >
               <span className="mr-0.5 text-[10px]">📍</span>
               {/* 有地址信息只显示地址；没有则只显示经纬度（不显示精度） */}
@@ -459,7 +459,7 @@ export default function EntryView({ id }: { id: string }) {
             </button>
             {/* 保存时记录的实时天气（有则显示，右对齐） */}
             {entry.weather && (
-              <span className="shrink-0 text-xs text-neutral-400">{weatherEmoji(entry.weather)}{entry.weather}</span>
+              <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">{weatherEmoji(entry.weather)}{entry.weather}</span>
             )}
           </div>
           {/* 未同步笔记不提供定位增删：定位走服务端 PATCH，而这条还没上服务器 */}
@@ -476,7 +476,7 @@ export default function EntryView({ id }: { id: string }) {
       ) : editing && !pendingSync ? (
         <div className="mt-1">
           {!addLocationOpen ? (
-            <button onClick={() => setAddLocationOpen(true)} className="text-xs text-neutral-400 underline">
+            <button onClick={() => setAddLocationOpen(true)} className="text-xs text-neutral-500 dark:text-neutral-400 underline">
               ＋ 添加定位
             </button>
           ) : (
@@ -507,9 +507,9 @@ export default function EntryView({ id }: { id: string }) {
                   确定
                 </button>
               </div>
-              <p className="text-[10px] text-neutral-400">粘贴「纬度, 经度」即可，确定后立即保存</p>
+              <p className="text-[10px] text-neutral-500 dark:text-neutral-400">粘贴「纬度, 经度」即可，确定后立即保存</p>
               {coordError && <p className="text-[10px] text-red-500">{coordError}</p>}
-              <button onClick={closeAddLocation} className="self-start text-[10px] text-neutral-400 underline">
+              <button onClick={closeAddLocation} className="self-start text-[10px] text-neutral-500 dark:text-neutral-400 underline">
                 取消
               </button>
             </div>
@@ -534,7 +534,7 @@ export default function EntryView({ id }: { id: string }) {
               pb-safe 承担，这里不能写 safe-pb（否则叠出双份留白）。 */}
           <div className="mt-auto flex flex-col gap-2 pb-4 pt-2">
             {isEdited && (
-              <p className="text-xs tabular-nums text-neutral-400">上次编辑 {fmtDate(editedAt)}</p>
+              <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">上次编辑 {fmtDate(editedAt)}</p>
             )}
             <button
               onClick={() => void saveEdit()}
@@ -565,7 +565,7 @@ export default function EntryView({ id }: { id: string }) {
         /* 底部操作栏：左「编辑于」（编辑过才显示，小 2 号），右「编辑 / 删除」 */
         <div className="mt-auto flex items-center justify-between gap-6 border-t border-neutral-100 py-4 dark:border-neutral-800">
           {isEdited ? (
-            <span className="text-xs tabular-nums text-neutral-400">编辑于 {fmtDate(editedAt)}</span>
+            <span className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">编辑于 {fmtDate(editedAt)}</span>
           ) : (
             <span />
           )}
@@ -576,7 +576,7 @@ export default function EntryView({ id }: { id: string }) {
             <button
               onClick={() => { editSnapshotRef.current = plain; closeAddLocation(); setEditing(true) }}
               disabled={decryptFailed || (localReadonly && !pendingSync)}
-              className="text-sm text-neutral-500 active:opacity-60 disabled:opacity-40"
+              className="text-sm text-neutral-500 dark:text-neutral-400 active:opacity-60 disabled:opacity-40"
             >
               编辑
             </button>

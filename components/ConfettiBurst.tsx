@@ -17,6 +17,14 @@ interface Particle {
 
 // 保存成功的庆祝粒子（游戏获奖感）：从保存按钮位置向上爆发彩色纸屑。
 // 粒子在 effect 中生成（避免 render 期间调用不纯函数 Math.random）。
+//
+// 定位：**锚定在父级 footer 的顶边**（absolute inset-x-0 top-0），而不是 fixed + 像素偏移。
+// 历史问题：原实现用 `fixed bottom-44`（写死 176px），这个数字其实等于
+//   TabBar 高（max(env(safe-area-inset-bottom),1rem) + 53px 内容）
+// + DiaryEditor footer 高（pt-2 + 状态行 + mb-3 + 按钮 py-4 + pb-4 ≈ 112px）
+// ——一旦 TabBar 的内边距、字号或 footer 间距改动，爆发原点就会漂移，且没有任何提示。
+// 改成绝对定位后原点由布局自动推导，两个组件各自改内边距都不必再同步这个数字。
+// 调用方需保证父级 footer 是 relative（见 DiaryEditor.tsx）。
 export default function ConfettiBurst() {
   const [particles, setParticles] = useState<Particle[]>([])
 
@@ -37,7 +45,7 @@ export default function ConfettiBurst() {
   }, [])
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-44 z-50 flex justify-center" aria-hidden>
+    <div className="pointer-events-none absolute inset-x-0 top-0 z-50 flex justify-center" aria-hidden>
       {particles.map((p) => (
         <span
           key={p.id}

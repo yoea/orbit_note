@@ -340,7 +340,7 @@ export default function DiaryEditor() {
         {/* 页头不再放「全部日记」「设置」图标——这两个目的地已由底部 TabBar 承担，
             同一入口出现两处只会让页头变杂（也符合 iOS 习惯：顶部不放重复的 tab 入口） */}
         <OrbitLogo />
-        <div className="mt-1 flex items-center justify-between text-sm text-neutral-400">
+        <div className="mt-1 flex items-center justify-between text-sm text-neutral-500 dark:text-neutral-400">
           <span className="bg-linear-to-r from-orange-500 via-rose-400 to-violet-500 bg-clip-text font-medium text-transparent">
             {today}
           </span>
@@ -355,7 +355,7 @@ export default function DiaryEditor() {
       {isOnThisDayEnabled() && !otdHidden && onThisDay && (
         <div className="mb-3 flex items-start gap-2 rounded-xl border border-neutral-100 bg-neutral-50/60 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/40">
           <Link href={`/entry/${onThisDay.id}`} className="min-w-0 flex-1 active:opacity-60">
-            <p className="text-xs font-medium text-neutral-400">
+            <p className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
               去年的今天 · {new Date(onThisDay.createdAt).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}
             </p>
             {onThisDayPreview && (
@@ -370,7 +370,7 @@ export default function DiaryEditor() {
               try { localStorage.setItem(key, '1') } catch { /* 忽略 */ }
             }}
             aria-label="隐藏"
-            className="shrink-0 px-0.5 text-sm leading-5 text-neutral-300 active:opacity-60 dark:text-neutral-600"
+            className="shrink-0 px-0.5 text-sm leading-5 text-neutral-500 active:opacity-60 dark:text-neutral-400"
           >
             ✕
           </button>
@@ -392,7 +392,7 @@ export default function DiaryEditor() {
           </button>
           <button
             onClick={() => void discardDraft()}
-            className="shrink-0 py-1.5 text-xs text-neutral-400 active:opacity-60"
+            className="shrink-0 py-1.5 text-xs text-neutral-500 dark:text-neutral-400 active:opacity-60"
           >
             放弃
           </button>
@@ -402,7 +402,7 @@ export default function DiaryEditor() {
       {isPromptEnabled() && (
         <button
           onClick={() => setPromptIdx(nextPromptIndex(promptIdx))}
-          className="mb-2 flex items-start gap-1.5 text-left text-xs leading-relaxed text-neutral-400/70 active:opacity-60"
+          className="mb-2 flex items-start gap-1.5 text-left text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 active:opacity-60"
         >
           <span className="shrink-0">💭</span>
           <span>{PROMPTS[promptIdx]}</span>
@@ -424,16 +424,17 @@ export default function DiaryEditor() {
           </p>
         </div>
       )}
-      {showConfetti && <ConfettiBurst />}
       {/* 左右不再单独留白：原先这里是 px-2，而输入框（AutoTextarea）没有左右内边距，
           于是「保存」按钮比它上方的输入框窄了 8px，也不比详情页编辑态的「保存修改」
           （底部区无 px，直接吃 main 的 px-5）。去掉后两页主按钮左右边界一致。
           上 8px / 下 16px：下边距与详情页编辑态底部区、查看态操作栏对齐（TabBar 就在紧下方）。
           底部安全区不再由这里承担——(app)/layout 的 TabBar 已经自带 pb-safe，
           此处若再加 env(safe-area-inset-bottom) 会叠出一段空白。
-          也不能用 safe-pb + pb-4 组合——.safe-pb 是 unlayered 自定义类，会覆盖 Tailwind 的 pb-4 */}
-      <footer className="mt-auto pb-4 pt-2">
-        <p className="mb-3 text-center text-xs text-neutral-400">
+          也不能用 safe-pb + pb-4 组合——.safe-pb 是 unlayered 自定义类，会覆盖 Tailwind 的 pb-4
+          relative：给 ConfettiBurst 当定位上下文（它按 footer 顶边锚定，不再用 fixed + 像素偏移） */}
+      <footer className="relative mt-auto pb-4 pt-2">
+        {showConfetti && <ConfettiBurst />}
+        <p className="mb-3 text-center text-xs text-neutral-500 dark:text-neutral-400">
           {status === 'saving' && '正在保存…'}
           {status === 'saved' && (
             <span className="animate-pop inline-block text-sm font-semibold text-emerald-500">

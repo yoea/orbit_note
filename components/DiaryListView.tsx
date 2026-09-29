@@ -306,7 +306,7 @@ export default function DiaryListView() {
     return (
       <main className="mx-auto flex h-full w-full max-w-md items-center justify-center px-5 safe-pt">
         <div className="text-center">
-          <p className="text-sm text-neutral-500">{error}</p>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">{error}</p>
           <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">重试</button>
         </div>
       </main>
@@ -326,13 +326,13 @@ export default function DiaryListView() {
       <header className="page-header relative flex items-center justify-end py-3">
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">全部日记</h1>
         {/* 搜索：点击后弹出全屏搜索层（正文加密，检索只能在客户端解密后完成） */}
-        <button onClick={() => setSearchOpen(true)} aria-label="搜索日记" className="-mr-1 px-1 text-neutral-400 active:opacity-60">
+        <button onClick={() => setSearchOpen(true)} aria-label="搜索日记" className="-mr-1 px-1 text-neutral-500 dark:text-neutral-400 active:opacity-60">
           <SearchIcon />
         </button>
       </header>
       {stats && (
         <>
-          <div className="flex items-baseline justify-between gap-2 pb-2 text-xs tabular-nums text-neutral-400">
+          <div className="flex items-baseline justify-between gap-2 pb-2 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
             {/* 用户名放在最前（名字是懒生成的，未就绪时整段省略，不留空位）；名字过长截断 */}
             <span className="min-w-0 truncate">
               {userName && <>{userName} | </>}{stats.days} 天·共 {stats.count} 篇
@@ -344,7 +344,7 @@ export default function DiaryListView() {
           {stats.count > 0 && <ContributionHeatmap byDay={stats.byDay ?? {}} />}
         </>
       )}
-      <div className="flex flex-col gap-6 pb-10">
+      <div className="flex flex-col gap-6 pb-4">
         {groups.map((g, gi) => (
           <section key={g.key} className={gi > 0 ? 'border-t border-neutral-100 pt-4 dark:border-neutral-800' : ''}>
             {/* 组头：日期（今天/昨天人性化）+ 当天篇数 + 当天总字数（服务端全量聚合，
@@ -358,7 +358,7 @@ export default function DiaryListView() {
                 <li key={item.id}>
                   <Link href={`/entry/${item.id}`} className="flex flex-col gap-1 py-3 active:opacity-60">
                     <span className="flex items-baseline gap-2">
-                      <span className="shrink-0 text-xs tabular-nums text-neutral-400">{item.time}</span>
+                      <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">{item.time}</span>
                       {/* 标题 = 首行加粗 */}
                       <span className="line-clamp-1 font-medium text-neutral-800 dark:text-neutral-200">{item.title}</span>
                       {/* 未同步徽标：离线新增、尚未上传服务器的笔记（断网图标，同步后消失） */}
@@ -379,7 +379,7 @@ export default function DiaryListView() {
                       </span>
                     )}
                     {/* 元信息：定位图标 + 地点名（左），字数右对齐 */}
-                    <div className="mt-0.5 flex items-baseline justify-between gap-2 text-[10px] text-neutral-400">
+                    <div className="mt-0.5 flex items-baseline justify-between gap-2 text-[10px] text-neutral-500 dark:text-neutral-400">
                       <span className="flex min-w-0 items-center gap-1">
                         {item.lat != null && <span>📍</span>}
                         {item.locationName && <span className="truncate">{item.locationName}</span>}
@@ -392,7 +392,7 @@ export default function DiaryListView() {
             </ul>
           </section>
         ))}
-        {items.length === 0 && <p className="pt-20 text-center text-sm text-neutral-400">还没有日记</p>}
+        {items.length === 0 && <p className="pt-20 text-center text-sm text-neutral-500 dark:text-neutral-400">还没有日记</p>}
         {items.length > 0 && (
           <div className="pt-2">
             {hasMore ? (
@@ -404,7 +404,7 @@ export default function DiaryListView() {
                 {loadingMore ? '加载中…' : '加载更多'}
               </button>
             ) : (
-              <p className="py-3 text-center text-xs text-neutral-400">已显示全部</p>
+              <p className="py-3 text-center text-xs text-neutral-500 dark:text-neutral-400">已显示全部</p>
             )}
           </div>
         )}

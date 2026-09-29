@@ -7,9 +7,9 @@ import Link from 'next/link'
 // 注意：本组件内不做任何 console 输出（全项目安全审计要求）。
 export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
-    <main className="mx-auto flex h-full w-full max-w-md flex-col items-center justify-center gap-4 px-5 safe-pt safe-pb">
+    <main className="mx-auto flex h-full w-full max-w-md flex-col items-center justify-center gap-4 px-5 safe-pt pb-safe">
       <p className="text-base font-medium text-neutral-800 dark:text-neutral-100">页面出错了</p>
-      <p className="max-w-xs text-center text-sm leading-relaxed text-neutral-400">
+      <p className="max-w-xs text-center text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">
         你的日记没有被改动，重试一次通常就能继续。
       </p>
       <div className="mt-2 flex items-center gap-3">

@@ -49,7 +49,7 @@ export default function InputConfirmDialog({ title, message, expected, placehold
           <button
             onClick={onConfirm}
             disabled={!matched}
-            className={`flex-1 py-3.5 text-base font-semibold disabled:opacity-40 ${matched ? 'text-red-500' : 'text-neutral-300 dark:text-neutral-500'}`}
+            className={`flex-1 py-3.5 text-base font-semibold disabled:opacity-40 ${matched ? 'text-red-500' : 'text-neutral-500 dark:text-neutral-400'}`}
           >
             {confirmText}
           </button>
