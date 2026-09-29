@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mergeEntriesById, queuedToEntry, remainingAfterFlush } from '@/lib/client/offline'
+import { mergeEntriesById, queuedToEntry, remainingAfterFlush, staleCachedIds, unionWithPending } from '@/lib/client/offline'
 import { diaryCreateSchema } from '@/lib/server/validation'
 import type { EncryptedEntry } from '@/lib/client/entries'
 
@@ -76,6 +76,67 @@ describe('queuedToEntry（队列项 → 条目形态）', () => {
     const e = queuedToEntry({ id: 'u2', ciphertext: 'ct', iv: 'iv', wordCount: 1, timezone: null, queuedAt: 0 })
     const merged = mergeEntriesById([entry('a', '2026-01-01')], [e])
     expect(merged.map((x) => x.id).sort()).toEqual(['a', 'u2'])
+  })
+})
+
+describe('staleCachedIds（服务器为真：缓存里已删条目的判定）', () => {
+  const cached = [
+    entry('a', '2026-09-29T10:00:00.000Z'),
+    entry('c', '2026-09-29T09:30:00.000Z'), // 卡在本页窗口内、但服务器没返回 ⇒ 已删除
+    entry('b', '2026-09-29T09:00:00.000Z'),
+    entry('d', '2026-09-20T08:00:00.000Z'), // 更旧（本页窗口之外）
+  ]
+
+  it('窗口内不在本页 ⇒ 已删除（c 在 b 与 a 之间但服务器没返回）', () => {
+    const page = [entry('a', '2026-09-29T10:00:00.000Z'), entry('b', '2026-09-29T09:00:00.000Z')]
+    expect(staleCachedIds(cached, page, { isFirstPage: false, isLastPage: false })).toEqual(['c'])
+  })
+
+  it('首页 ⇒ 比服务器最新还新的也是已删除（删掉最新那条的常见情形）', () => {
+    const page = [entry('b', '2026-09-29T09:00:00.000Z')] // 服务器最新 = b，a/c 都比它新 ⇒ 已删
+    expect(staleCachedIds(cached, page, { isFirstPage: true, isLastPage: false }).sort()).toEqual(['a', 'c'])
+  })
+
+  it('末页 ⇒ 比本页最旧还旧的也算已删除', () => {
+    const page = [entry('a', '2026-09-29T10:00:00.000Z'), entry('b', '2026-09-29T09:00:00.000Z')]
+    expect(staleCachedIds(cached, page, { isFirstPage: true, isLastPage: true }).sort()).toEqual(['c', 'd'])
+  })
+
+  it('窗口之外的保留（非首页非末页不做越界判断——更旧/更新的留给其它分页）', () => {
+    const page = [entry('b', '2026-09-29T09:00:00.000Z')]
+    expect(staleCachedIds(cached, page, { isFirstPage: false, isLastPage: false })).toEqual([])
+  })
+
+  it('空页不作为证据（异常空响应不得清空缓存）', () => {
+    expect(staleCachedIds(cached, [], { isFirstPage: true, isLastPage: true })).toEqual([])
+  })
+
+  it('服务器仍有的条目不判为删除', () => {
+    const page = [entry('c', '2026-09-29T09:30:00.000Z'), entry('b', '2026-09-29T09:00:00.000Z')]
+    expect(staleCachedIds(cached, page, { isFirstPage: false, isLastPage: false })).toEqual([])
+  })
+})
+
+describe('unionWithPending（列表数据源 = 服务器真值 ∪ 未同步队列）', () => {
+  it('队列条目并进列表（离线刚写的笔记在线也可见）', () => {
+    const server = [entry('s1', '2026-09-29T08:00:00.000Z')]
+    const queued = [entry('q1', '2026-09-29T09:00:00.000Z')]
+    expect(unionWithPending(server, queued).map((e) => e.id)).toEqual(['q1', 's1']) // 新的在前
+  })
+
+  it('同 id 以服务器为准（冲刷已成功、队列未清空的竞态）', () => {
+    const server = [entry('same', '2026-09-29T08:00:00.000Z')]
+    const queued = [{ ...entry('same', '2026-09-29T07:00:00.000Z'), ciphertext: 'queued-ct' }]
+    const merged = unionWithPending(server, queued)
+    expect(merged).toHaveLength(1)
+    expect(merged[0].ciphertext).toBe('ct-same') // 服务器那份
+  })
+
+  it('空队列 = 原列表；空服务器 = 队列', () => {
+    const server = [entry('s1', '2026-09-29T08:00:00.000Z')]
+    expect(unionWithPending(server, [])).toEqual(server)
+    const queued = [entry('q1', '2026-09-29T09:00:00.000Z')]
+    expect(unionWithPending([], queued)).toEqual(queued)
   })
 })
 

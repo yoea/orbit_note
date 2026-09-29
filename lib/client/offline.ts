@@ -86,6 +86,79 @@ export async function isOfflineUnlockAvailable(): Promise<boolean> {
   return Boolean(wrappers?.some((w) => w.wrapperType === 'passkey_prf'))
 }
 
+// ---- 列表数据源一致性（在线列表与离线列表必须给出同一批笔记）----
+//
+// 这两份副本的语义此前是不对称的：在线列表 = 服务器真值，离线列表 = 本地缓存 ∪ 队列。
+// 而本地缓存**只增不减**（此前没有任何代码从 offline:entries 里移除条目），于是
+// 「服务器上已删除的条目」会永远留在本地 —— 表现为「离线模式能看到的笔记，在线模式看不到」。
+// 下面这组函数让本地缓存重新成为服务器的镜像：服务器的每页返回都是删除的证据，
+// 用它把已删条目从缓存里剔除。
+
+// 服务器某页（按 createdAt 倒序的一段连续窗口）能证明「已删除」的缓存 id：
+// - 落在本页窗口内（含边界）却不在本页 ⇒ 服务器已经没有这条
+// - 首页（offset 0，服务器最新的一条就在本页）⇒ 比本页最新的还新的，服务器没有
+//   （最常见的场景：刚在手机上删掉了最新那条，服务器最新时间随之退回，缓存里那条反而「比最新还新」）
+// - 末页（返回不足一页 ⇒ 服务器没有更旧的条目）⇒ 比本页最旧的还旧的也算已删除
+// 页为空时不做任何判断（避免一次异常的空响应就把缓存清空）。
+export function staleCachedIds(
+  cached: EncryptedEntry[],
+  page: EncryptedEntry[],
+  opts: { isFirstPage: boolean; isLastPage: boolean },
+): string[] {
+  if (!page.length) return []
+  const ids = new Set(page.map((e) => e.id))
+  const times = page.map((e) => e.createdAt).sort()
+  const oldest = times[0]
+  const newest = times[times.length - 1]
+  return cached
+    .filter((e) => {
+      if (ids.has(e.id)) return false // 服务器还有这条
+      if (e.createdAt >= oldest && e.createdAt <= newest) return true // 窗口内却不在本页 ⇒ 已删
+      if (opts.isFirstPage && e.createdAt > newest) return true // 比服务器最新还新 ⇒ 已删
+      return opts.isLastPage && e.createdAt < oldest // 末页之外 ⇒ 服务器更旧的都没有了
+    })
+    .map((e) => e.id)
+}
+
+// 按服务器真值清理缓存（列表页每页、全量拉取后都可调用）。
+// 队列里的条目不受影响（它们是「还没上服务器」，不是「已删除」）。
+export async function pruneCachedEntries(
+  page: EncryptedEntry[],
+  opts: { isFirstPage: boolean; isLastPage: boolean },
+): Promise<void> {
+  if (!isOfflineCacheEnabled() || !page.length) return
+  const cached = (await idbGet<EncryptedEntry[]>(ENTRIES_KEY)) ?? []
+  if (!cached.length) return
+  const stale = new Set(staleCachedIds(cached, page, opts))
+  if (!stale.size) return
+  const queueIds = new Set(((await idbGet<QueuedEntry[]>(QUEUE_KEY)) ?? []).map((q) => q.id))
+  const next = cached.filter((e) => !stale.has(e.id) || queueIds.has(e.id))
+  if (next.length !== cached.length) await idbSet(ENTRIES_KEY, next)
+}
+
+// 单条从缓存里剔除（在线删除成功后调用）——否则这条会在离线模式里「复活」。
+export async function removeCachedEntry(id: string): Promise<void> {
+  const cached = (await idbGet<EncryptedEntry[]>(ENTRIES_KEY)) ?? []
+  const next = cached.filter((e) => e.id !== id)
+  if (next.length !== cached.length) await idbSet(ENTRIES_KEY, next)
+}
+
+// 列表数据源 = 服务器真值 ∪ 未同步队列（两端一致：离线刚写的笔记在在线列表也可见，
+// 带「未同步」徽标）。同 id 以服务器行为准——冲刷已成功、队列尚未清空的竞态下，
+// 服务器那份才是权威内容。返回按 createdAt 倒序（与 GET /api/diary 排序一致）。
+export function unionWithPending(server: EncryptedEntry[], queued: EncryptedEntry[]): EncryptedEntry[] {
+  const ids = new Set(server.map((e) => e.id))
+  return [...queued.filter((q) => !ids.has(q.id)), ...server].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+}
+
+// 队列内容变化（冲刷成功、离线删除未同步笔记等）→ 通知界面刷新「未同步」标记，
+// 不必整表重取（列表保持滚动位置，只更新徽标）。
+export const QUEUE_EVENT = 'qo-offline-queue'
+
+function notifyQueueChanged(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(QUEUE_EVENT))
+}
+
 // ---- 日记密文缓存（离线读用）----
 
 export async function cacheEntriesPage(entries: EncryptedEntry[]): Promise<void> {
@@ -196,6 +269,7 @@ export async function removeQueuedEntry(id: string): Promise<boolean> {
   const next = queue.filter((q) => q.id !== id)
   if (next.length === queue.length) return false
   await idbSet(QUEUE_KEY, next)
+  notifyQueueChanged()
   return true
 }
 
@@ -224,7 +298,15 @@ export async function flushOfflineQueue(): Promise<number> {
           timezone: item.timezone,
         }),
       })
-      if (res.ok) { confirmed.add(item.id); continue }
+      if (res.ok) {
+        // 服务器已接收：把它返回的整行写进缓存。两个作用——
+        // ① 本地副本带上服务器认定的 createdAt（队列里只有 queuedAt 估算值）；
+        // ② 冲刷后立刻断网也不会「两边都看不到」（队列已清空，缓存里还没有）。
+        const data = await res.json().catch(() => null) as { entry?: EncryptedEntry } | null
+        if (data?.entry) void cacheEntriesPage([data.entry])
+        confirmed.add(item.id)
+        continue
+      }
       if (res.status === 401 || res.status === 403) { stopAtIndex = i; break }
       // 400（数据校验失败，重传也不会好）/ 429（稍后再试）都不算完成，但可继续尝试后续条目
       if (res.status === 429 || res.status >= 500) { stopAtIndex = i; break }
@@ -237,6 +319,7 @@ export async function flushOfflineQueue(): Promise<number> {
   if (confirmed.size === 0 && stopAtIndex === -1) return 0
   const remaining = remainingAfterFlush(queue, confirmed, stopAtIndex)
   await idbSet(QUEUE_KEY, remaining)
+  if (confirmed.size > 0) notifyQueueChanged()
   return confirmed.size
 }
 

@@ -10,7 +10,7 @@ import { copyText } from '@/lib/client/clipboard'
 import { clientReverseGeocode } from '@/lib/client/geocode'
 import { getPosition, parseCoords } from '@/lib/client/location'
 import { isAutoPlaceNameEnabled } from '@/lib/client/prefs'
-import { cacheEntriesPage, getCachedEntryById, getQueuedEntryById, removeQueuedEntry, updateQueuedEntry } from '@/lib/client/offline'
+import { cacheEntriesPage, getCachedEntryById, getQueuedEntryById, removeCachedEntry, removeQueuedEntry, updateQueuedEntry } from '@/lib/client/offline'
 import { weatherEmoji } from '@/lib/client/weather'
 import { playSaveSound } from '@/lib/client/sound'
 import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
@@ -45,6 +45,9 @@ export default function EntryView({ id }: { id: string }) {
   // 「未同步」标记：条目来自离线写队列（新增后尚未上传服务器）。
   // 这类条目离线可编辑（改队列密文）/可删除（移出队列）；缓存条目离线只读。
   const [pendingSync, setPendingSync] = useState(false)
+  // 条目在服务器上真实存在（加载时 GET 成功）。与 pendingSync 同时为真 =
+  // 「冲刷已成功但队列尚未清空」的竞态：此时删除要两边都清（队列项 + 服务器行）。
+  const [serverBacked, setServerBacked] = useState(false)
   // 网络不可达、数据来自本地（缓存或队列）：此时云端条目不可改（PATCH/DELETE 发不出去）
   const [localReadonly, setLocalReadonly] = useState(false)
   const [coordsCopied, setCoordsCopied] = useState(false)
@@ -193,34 +196,37 @@ export default function EntryView({ id }: { id: string }) {
   useEffect(() => {
     void (async () => {
       try {
+        const dek = getDek()
+        if (!dek) throw new Error('未解锁')
         const res = await fetch(`/api/diary/${id}`).catch(() => null)
-        if (res === null) {
-          // 网络不可达：回退本地——先密文缓存（在线成功时每篇都会顺手缓存），
-          // 再离线写队列（离线新增且未同步的笔记，服务端没有）
-          const cached = (await getCachedEntryById(id)) ?? (await getQueuedEntryById(id))
-          if (!cached) throw new Error('加载失败')
-          // 队列里有 = 未同步（缓存未命中而队列命中的情形）
-          setPendingSync((await getQueuedEntryById(id)) !== null)
-          setLocalReadonly(true)
-          setEntry(cached)
-          try {
-            setPlain(await decryptText(getDek()!, cached.ciphertext, cached.iv))
-            setDecryptFailed(false)
-          } catch {
-            setPlain('(解密失败，数据可能已损坏)')
-            setDecryptFailed(true)
+        // 未同步笔记（离线新增、尚未上传）：服务器上还没有这条，但列表里可见可点开
+        const queued = await getQueuedEntryById(id)
+        let loaded: Entry | null = null
+        let fromServer = false
+        if (res) {
+          if (res.status === 404) {
+            // 服务器没有（未同步笔记，或本地残留）：回退本地队列/缓存，不当作「已删除」跳走
+            loaded = queued ?? (await getCachedEntryById(id))
+          } else if (res.ok) {
+            loaded = ((await res.json()) as { entry: Entry }).entry
+            fromServer = true
+          } else {
+            throw new Error('加载失败')
           }
-          return
+        } else {
+          // 网络不可达：回退本地——密文缓存 + 离线写队列
+          loaded = (await getCachedEntryById(id)) ?? queued
         }
-        if (res.status === 404) { router.replace('/diary'); return }
-        if (!res.ok) throw new Error('加载失败')
-        const { entry } = await res.json() as { entry: Entry }
+        if (!loaded) { router.replace('/diary'); return }
+        const entry = loaded
+        setServerBacked(fromServer)
+        setPendingSync(queued !== null)
+        // 网络不可达且数据来自本地缓存（非未同步笔记）→ 离线只读（PATCH/DELETE 发不出去）
+        setLocalReadonly(res === null && queued === null)
         setEntry(entry)
-        // 在线：若该条目还压在离线队列里（冲刷失败），仍按未同步处理（编辑走队列）
-        setPendingSync((await getQueuedEntryById(id)) !== null)
-        void cacheEntriesPage([entry]) // 在线成功顺手缓存单条（密文）
+        if (fromServer) void cacheEntriesPage([entry]) // 在线成功顺手缓存单条（密文）
         try {
-          setPlain(await decryptText(getDek()!, entry.ciphertext, entry.iv))
+          setPlain(await decryptText(dek, entry.ciphertext, entry.iv))
           setDecryptFailed(false)
         } catch {
           setPlain('(解密失败，数据可能已损坏)')
@@ -307,6 +313,8 @@ export default function EntryView({ id }: { id: string }) {
       if (!res.ok) throw new Error('保存失败')
       const data = await res.json()
       setEntry((prev) => prev ? { ...prev, ...data.entry } : prev)
+      // 本地缓存同步更新：否则离线模式（读缓存）看到的还是修改前的正文
+      void cacheEntriesPage([data.entry as Entry])
       // 收起「添加定位」面板（坐标早已落库，这里没有待保存内容）
       setAddLocationOpen(false)
       setCoordInput('')
@@ -328,9 +336,16 @@ export default function EntryView({ id }: { id: string }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const remove = useCallback(async () => {
-    // 未同步笔记：还没上过服务器，移出本地队列即完成删除
+    // 未同步笔记：还没上过服务器，移出本地队列即完成删除。
+    // 若它同时也已存在于服务器（冲刷已成功、队列尚未清空的竞态），补一次服务端删除。
     if (pendingSync) {
       await removeQueuedEntry(id)
+      if (serverBacked) {
+        try {
+          await fetch(`/api/diary/${id}`, { method: 'DELETE' })
+        } catch { /* 离线：服务器那一条仍在，联网后仍在列表里可见 */ }
+        await removeCachedEntry(id)
+      }
       router.replace('/diary')
       return
     }
@@ -338,7 +353,10 @@ export default function EntryView({ id }: { id: string }) {
       const res = await fetch(`/api/diary/${id}`, { method: 'DELETE' })
       if (res.status === 401) { router.replace('/login'); return }
       if (res.ok) {
-        // IDB 只存草稿（无条目缓存），删除无需清本地
+        // 本地密文缓存必须同步剔除：只删服务器会让这条在离线模式里「复活」
+        // （离线列表读缓存——此前缓存只增不减，正是「在线看不到、离线看得到」的根因）
+        await removeCachedEntry(id)
+        await removeQueuedEntry(id)
         router.replace('/diary')
         return
       }
@@ -347,7 +365,7 @@ export default function EntryView({ id }: { id: string }) {
       setError('删除失败，请重试')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, pendingSync])
+  }, [id, pendingSync, serverBacked])
 
   if (error && !entry) {
     return (

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
 import { useUserName } from '@/lib/client/use-user-name'
-import { cacheEntriesPage, cacheStats, getCachedEntries, getCachedStats, getQueuedEntries } from '@/lib/client/offline'
+import { cacheEntriesPage, cacheStats, getCachedEntries, getCachedStats, getQueuedEntries, pruneCachedEntries, QUEUE_EVENT, unionWithPending } from '@/lib/client/offline'
 import SearchDialog from './SearchDialog'
 import SearchIcon from './SearchIcon'
 import ContributionHeatmap from './ContributionHeatmap'
@@ -137,26 +137,41 @@ export default function DiaryListView() {
     } catch { /* 忽略 */ }
   }, [items, stats])
 
-  // 请求一页（offset 起 10 条）并解密。离线兜底：请求不可达时切本地——
-  // 密文缓存 + 离线写队列（离线新增的笔记保存后立即出现在这里，带「未同步」标记）。
-  const fetchPage = useCallback(async (pageOffset: number): Promise<DecryptedItem[]> => {
+  // 请求一页（服务器偏移 offset 起 10 条）并解密。
+  // 两端数据源保持一致：在线 = 服务器真值 ∪ 未同步队列（首页），离线 = 缓存 ∪ 未同步队列。
+  // 「未同步」的笔记在任何模式都可见（带徽标），不会出现「离线看得见、在线看不见」。
+  // 返回值带 serverCount（本页消耗的服务器条目数）——队列条目并进首页后列表条数
+  // 会多于 PAGE_SIZE，分页游标必须按服务器条目数推进，不能用 items.length。
+  const fetchPage = useCallback(async (pageOffset: number): Promise<{ items: DecryptedItem[]; serverCount: number }> => {
     const dek = getDek()
-    if (!dek) return []
+    if (!dek) return { items: [], serverCount: 0 }
     let entries: Entry[]
+    let serverCount: number
     let pendingIds = new Set<string>()
+    const queued = await getQueuedEntries()
     const res = await fetch(`/api/diary?limit=${PAGE_SIZE}&offset=${pageOffset}`).catch(() => null)
     if (res) {
       if (!res.ok) throw new Error('加载失败')
-      entries = ((await res.json()) as { entries: Entry[] }).entries
-      void cacheEntriesPage(entries) // 在线成功顺手缓存（密文，异步不阻塞）
+      const server = ((await res.json()) as { entries: Entry[] }).entries
+      serverCount = server.length
+      void cacheEntriesPage(server) // 在线成功顺手缓存（密文，异步不阻塞）
+      // 服务器是删除的权威：把本页窗口内已不存在的本地缓存剔除，
+      // 否则离线模式会一直显示「在线列表里早就没有的」条目（本地缓存此前只增不减）
+      void pruneCachedEntries(server, { isFirstPage: pageOffset === 0, isLastPage: server.length < PAGE_SIZE })
+      // 未同步 = 队列里有、且服务器本页没有。服务器本页已有 ⇒ 冲刷已完成，
+      // 不该再打「未同步」（徽标取自这次请求的实时状态，不依赖队列事件的时序）
+      const serverIds = new Set(server.map((e) => e.id))
+      pendingIds = new Set(queued.filter((q) => !serverIds.has(q.id)).map((q) => q.id))
+      // 首页并入未同步队列（同 id 以服务器为准）；后续页只来自服务器
+      entries = pageOffset === 0 ? unionWithPending(server, queued) : server
     } else {
       // 网络不可达：缓存（getCachedEntries 已按 createdAt 倒序）+ 队列（未同步，新→旧），
       // 合并后统一按创建时间倒序再切片（分页语义与在线一致）
-      const [cached, queued] = await Promise.all([getCachedEntries(), getQueuedEntries()])
+      const cached = await getCachedEntries()
       pendingIds = new Set(queued.map((q) => q.id))
-      entries = [...queued, ...cached]
-        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-        .slice(pageOffset, pageOffset + PAGE_SIZE)
+      const union = unionWithPending(cached, queued)
+      entries = union.slice(pageOffset, pageOffset + PAGE_SIZE)
+      serverCount = entries.length
       if (!entries.length) throw new Error('加载失败')
     }
     const decrypted: DecryptedItem[] = []
@@ -182,7 +197,7 @@ export default function DiaryListView() {
         // 单条解密失败跳过（数据损坏不阻塞列表）
       }
     }
-    return decrypted
+    return { items: decrypted, serverCount }
   }, [])
 
   // 初始加载：统计 + 第一页（有滚动恢复状态时循环加载到上次的深度）
@@ -191,7 +206,7 @@ export default function DiaryListView() {
     void (async () => {
       try {
         const restore = readScrollState()
-        const [statsRes, firstPage] = await Promise.all([
+        const [statsRes, first] = await Promise.all([
           fetch('/api/diary/stats')
             .then((r) => (r.ok ? r.json() : null))
             .catch(() => null),
@@ -199,24 +214,43 @@ export default function DiaryListView() {
         ])
         const stats = statsRes ?? (await getCachedStats())
         if (statsRes) void cacheStats(statsRes)
-        let loaded = firstPage
-        if (restore && restore.count > firstPage.length) {
+        let loaded = first.items
+        // 分页游标按服务器条目数推进（首页可能并入未同步队列的多余条目）
+        let serverOffset = first.serverCount
+        let lastServerCount = first.serverCount
+        if (restore && restore.count > loaded.length) {
           // 继续加载直到覆盖上次浏览深度（分页循环）
           while (loaded.length < restore.count) {
-            const more = await fetchPage(loaded.length)
-            if (more.length === 0) break
-            loaded = loaded.concat(more)
+            const more = await fetchPage(serverOffset)
+            if (more.serverCount === 0) break
+            serverOffset += more.serverCount
+            lastServerCount = more.serverCount
+            loaded = loaded.concat(more.items)
           }
         }
         if (stats) setStats(stats)
         setItems(loaded)
-        setOffset(loaded.length)
-        setHasMore(loaded.length % PAGE_SIZE === 0 && loaded.length > 0)
+        setOffset(serverOffset)
+        setHasMore(lastServerCount === PAGE_SIZE)
       } catch {
         setError('连接失败，请检查网络后重试')
       }
     })()
   }, [fetchPage])
+
+  // 队列变化（冲刷成功 / 离线删除未同步笔记）→ 只刷新「未同步」标记，不重取整表
+  // （保持滚动位置与已加载深度）。同步成功后徽标立即消失。
+  useEffect(() => {
+    const onQueueChanged = () => {
+      void (async () => {
+        const queued = await getQueuedEntries()
+        const ids = new Set(queued.map((q) => q.id))
+        setItems((prev) => prev.map((i) => (i.pending === ids.has(i.id) ? i : { ...i, pending: ids.has(i.id) })))
+      })()
+    }
+    window.addEventListener(QUEUE_EVENT, onQueueChanged)
+    return () => window.removeEventListener(QUEUE_EVENT, onQueueChanged)
+  }, [])
 
   // 加载更多（点击按钮）
   async function loadMore() {
@@ -224,9 +258,9 @@ export default function DiaryListView() {
     setLoadingMore(true)
     try {
       const page = await fetchPage(offset)
-      setItems((prev) => [...prev, ...page])
-      setOffset((o) => o + PAGE_SIZE)
-      setHasMore(page.length === PAGE_SIZE)
+      setItems((prev) => [...prev, ...page.items])
+      setOffset((o) => o + page.serverCount)
+      setHasMore(page.serverCount === PAGE_SIZE)
     } catch {
       setError('连接失败，请检查网络后重试')
     } finally {
