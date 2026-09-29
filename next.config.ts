@@ -36,6 +36,18 @@ function getVersion(): string {
 const nextConfig: NextConfig = {
   // 去掉 X-Powered-By: Next.js 响应头（默认携带，纯指纹信息，无任何功能作用）
   poweredByHeader: false,
+  // 自包含产物：构建时把「运行时真正需要的」那部分 node_modules 追踪出来，
+  // 连同 server.js 一起放进 .next/standalone。
+  //
+  // 为什么要这个（2026-09-29 真实事故）：线上服务器 CPU 与磁盘很弱且带 BPS 限速。
+  // 旧流程的上传包不含 node_modules，代价是「lockfile 变化时由服务器端 update.sh 跑
+  // npm ci --omit=dev」——某次功能带进 84 个包，第一次真正触发，直接把线上 IO 打满，
+  // 站点与 SSH 全部不可达，最后靠硬重启才恢复。
+  // 换成 standalone 后：服务器只做「顺序解包 + node server.js」，**永不装依赖、永不构建**。
+  //
+  // 注意：standalone **不会**自动带上 .next/static 与 public，必须由部署脚本复制进去
+  // （scripts/deploy.sh 的 [5/8] 打包步骤负责，见那里的注释）。
+  output: 'standalone',
   env: {
     NEXT_PUBLIC_VERSION: getVersion(),
   },
