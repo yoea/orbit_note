@@ -17,6 +17,7 @@ import {
   type TimeRange,
 } from '@/lib/client/search'
 import type { DecryptedEntry } from '@/lib/client/entries'
+import { toPlainText } from '@/lib/client/markdown'
 
 const TIME_RANGES: TimeRange[] = ['all', '7d', '30d', 'year']
 // 每次渲染的批量——结果多时先给一批，「加载更多」再递增。
@@ -81,7 +82,11 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
       try {
         const dek = getDek()
         if (!dek) throw new Error('未解锁')
-        setEntries(await decryptEntries(dek, await fetchAllEntries()))
+        const decrypted = await decryptEntries(dek, await fetchAllEntries())
+        // 搜索只吃**纯文本派生**：直接拿 Markdown 源码匹配，用户搜「粗体」会命中所有 `**加粗**`，
+        // 摘要里也会露出 # 与星号。这里一次性派生好并保持 DecryptedEntry 的形状，
+        // 于是 lib/client/search.ts 的纯文本契约完全不用动（它的 28 个单测也不用改）。
+        setEntries(decrypted.map((d) => ({ entry: d.entry, plain: toPlainText(d.plain) })))
       } catch {
         setError('搜索失败，请重试')
       } finally {

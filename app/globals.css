@@ -69,6 +69,15 @@ html {
    它只设 height，与 py-3 的 padding 不冲突（box-sizing: border-box，内容盒 20px）。 */
 .page-header { height: 2.75rem; }
 
+/* Markdown 渲染补丁：块级代码块里的 <code> 要去掉「行内代码」的底色与内边距。
+   react-markdown 的 code 组件拿不到「是否在 pre 内」的信息（v9 起移除了 inline 参数），
+   在组件层无法区分，只能靠这条后代选择器。见 components/Markdown.tsx。 */
+.qo-markdown pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
 /* 保存成功的庆祝粒子（游戏获奖感）：向上飘散 + 旋转 + 淡出 */
 @keyframes confetti-fall {
   0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }

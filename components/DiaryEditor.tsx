@@ -1,10 +1,12 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import AutoTextarea from './AutoTextarea'
 import ConfettiBurst from './ConfettiBurst'
 import OrbitLogo from './OrbitLogo'
+import Markdown from './Markdown'
+import { TOOLBAR_ACTIONS, countWords, deriveTitlePreview, toPlainText, toggleLinePrefix, toggleWrap, type ToolbarAction } from '@/lib/client/markdown'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
@@ -21,6 +23,8 @@ import { isOfflineCacheEnabled } from '@/lib/client/prefs'
 
 export default function DiaryEditor() {
   const [text, setText] = useState('')
+  // Markdown 预览态（编辑 / 预览切换）。预览只读，不改变 text。
+  const [preview, setPreview] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [savedTime, setSavedTime] = useState('')
   // 离线保存标记：saved 态下区分「已落库」与「已入离线队列待同步」的文案
@@ -38,6 +42,12 @@ export default function DiaryEditor() {
   // 每日提示：索引初始 0（确定值，SSR/客户端一致），mount 后随机；行始终存在（占位，不跳动）
   const [promptIdx, setPromptIdx] = useState<number>(0)
   const textRef = useRef('')
+  // 真实 <textarea> 节点（工具条要读/还原选区）
+  const editorRef = useRef<HTMLTextAreaElement>(null)
+  // 待还原的选区：工具条插入标记后，必须等 React 把新 value 刷进 DOM 再设选区，
+  // 否则会被 value 更新重置到末尾。用 layout effect 而不是 rAF——前者严格在
+  // DOM 变更后、绘制前执行，顺序确定。
+  const pendingSelectionRef = useRef<[number, number] | null>(null)
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingDraftRef = useRef<{ ciphertext: string; iv: string } | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -180,12 +190,13 @@ export default function DiaryEditor() {
         }
         if (otdEntry) {
           setOnThisDay(otdEntry)
-          // 解密预览（首行标题）
+          // 解密预览（首行标题）。走纯文本派生，否则卡片上会显示 `# ` 与 `**`。
           const dek = getDek()
           if (dek) {
             try {
               const plain = await decryptText(dek, otdEntry.ciphertext, otdEntry.iv)
-              setOnThisDayPreview(plain.split('\n').find((l) => l.trim()) ?? '')
+              const { title } = deriveTitlePreview(toPlainText(plain))
+              setOnThisDayPreview(title)
             } catch { /* 解密失败：卡片只显示日期 */ }
           }
         }
@@ -271,7 +282,7 @@ export default function DiaryEditor() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ciphertext, iv, encryptionVersion: 1,
-          wordCount: body.length, // 解密时计算（与编辑器底部字数一致：trim 后长度）
+          wordCount: countWords(body), // 纯文本口径（剥离 Markdown 标记），与详情页/列表一致
           // 坐标一律先留空：定位在保存成功后异步补写（见 backfillLocation），
           // 避免 2 秒超时把位置直接丢掉，也避免保存按钮长时间转圈
           latitude: null,
@@ -287,7 +298,7 @@ export default function DiaryEditor() {
         await enqueueOfflineEntry({
           id: crypto.randomUUID(),
           ciphertext, iv,
-          wordCount: body.length,
+          wordCount: countWords(body),
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           queuedAt: Date.now(),
         })
@@ -327,6 +338,32 @@ export default function DiaryEditor() {
     } catch {
       setStatus('error')
     }
+  }
+
+  // 工具条插入标记后还原选区（必须在 DOM 已更新、绘制之前）
+  useLayoutEffect(() => {
+    const sel = pendingSelectionRef.current
+    if (!sel) return
+    pendingSelectionRef.current = null
+    const el = editorRef.current
+    if (!el) return
+    el.focus()
+    el.setSelectionRange(sel[0], sel[1])
+  }, [text])
+
+  // Markdown 工具条：读当前选区 → 纯函数变换 → 落回 text（同时同步 textRef 与草稿）
+  function applyToolbar(action: ToolbarAction) {
+    const el = editorRef.current
+    if (!el) return
+    const { selectionStart, selectionEnd } = el
+    const result = action.kind === 'wrap'
+      ? toggleWrap(text, selectionStart, selectionEnd, action.marker)
+      : toggleLinePrefix(text, selectionStart, selectionEnd, action.marker)
+    if (result.text === text) return
+    pendingSelectionRef.current = [result.selStart, result.selEnd]
+    setText(result.text)
+    textRef.current = result.text
+    onDraftChange(result.text)
   }
 
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
@@ -408,13 +445,47 @@ export default function DiaryEditor() {
           <span>{PROMPTS[promptIdx]}</span>
         </button>
       )}
-      <AutoTextarea
-        value={text}
-        onChange={(v) => { setText(v); textRef.current = v; onDraftChange(v) }}
-        placeholder={entryCount === 0 ? '写下第一篇日记吧' : '在此处输入内容...'}
-        autoFocus
-        disabled={status === 'saving'}
-      />
+      {preview ? (
+        <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+          {text.trim()
+            ? <Markdown source={text} />
+            : <p className="text-sm text-neutral-500 dark:text-neutral-400">还没有内容</p>}
+        </div>
+      ) : (
+        <AutoTextarea
+          textareaRef={editorRef}
+          value={text}
+          onChange={(v) => { setText(v); textRef.current = v; onDraftChange(v) }}
+          placeholder={entryCount === 0 ? '写下第一篇日记吧' : '在此处输入内容...'}
+          autoFocus
+          disabled={status === 'saving'}
+        />
+      )}
+      {/* Markdown 工具条：插入标记（纯文本编辑，不做富文本/WYSIWYG——引一个富文本编辑器
+          会带进几十万行第三方 JS，与本项目「零第三方运行时脚本 + 严格 CSP」的立场冲突）。
+          预览态隐藏按钮但保留这一行，切换按钮位置不跳动。 */}
+      <div className="flex shrink-0 items-center gap-0.5 border-t border-neutral-100 pt-2 dark:border-neutral-800">
+        {!preview && TOOLBAR_ACTIONS.map((a) => (
+          <button
+            key={a.key}
+            type="button"
+            onClick={() => applyToolbar(a)}
+            disabled={status === 'saving'}
+            aria-label={a.title}
+            className="rounded-lg px-2 py-1 text-sm text-neutral-500 active:bg-neutral-100 disabled:opacity-50 dark:text-neutral-400 dark:active:bg-neutral-800"
+          >
+            {a.label}
+          </button>
+        ))}
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setPreview((p) => !p)}
+          className="rounded-lg px-2 py-1 text-xs text-neutral-500 active:bg-neutral-100 dark:text-neutral-400 dark:active:bg-neutral-800"
+        >
+          {preview ? '编辑' : '预览'}
+        </button>
+      </div>
       {/* 空状态引导：首次（无任何日记）时显示柔和渐变引导 */}
       {entryCount === 0 && (
         <div className="flex flex-col items-center gap-2 py-5">
@@ -442,7 +513,7 @@ export default function DiaryEditor() {
             </span>
           )}
           {status === 'error' && '保存失败，请重试'}
-          {status === 'idle' && text.trim().length > 0 && `共 ${text.trim().length} 字`}
+          {status === 'idle' && text.trim().length > 0 && `共 ${countWords(text)} 字`}
         </p>
         <button
           onClick={() => void save()}

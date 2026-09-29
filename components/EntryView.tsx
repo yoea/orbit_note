@@ -15,6 +15,8 @@ import { weatherEmoji } from '@/lib/client/weather'
 import { playSaveSound } from '@/lib/client/sound'
 import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import Toast from './Toast'
+import Markdown from './Markdown'
+import { countWords } from '@/lib/client/markdown'
 
 // 行结构 = 服务端整行（含密文）；与 EncryptedEntry 同构（wordCount 为明文计数字段，
 // 详情页虽不用，但列表缓存/离线兜底按整行存取）
@@ -37,7 +39,7 @@ interface Entry {
 export default function EntryView({ id }: { id: string }) {
   const router = useRouter()
   const [entry, setEntry] = useState<Entry | null>(null)
-  const [plain, setPlain] = useState('')
+  const [plain, setPlain] = useState('') // 解密后的正文，现在承载的是 Markdown 源码
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -283,7 +285,7 @@ export default function EntryView({ id }: { id: string }) {
     try {
       const dek = getDek()!
       const { ciphertext, iv } = await encryptText(dek, plain)
-      const wordCount = plain.trim().length
+      const wordCount = countWords(plain)
       // 未同步笔记（离线新增、尚未上传）：编辑直接改写队列项密文，不走 PATCH——
       // 服务器上还没有这条，PATCH 只会 404。同步时上传的自然是最新密文。
       if (pendingSync) {
@@ -428,7 +430,7 @@ export default function EntryView({ id }: { id: string }) {
       <p className="flex flex-wrap items-center gap-2 text-sm tabular-nums text-neutral-500 dark:text-neutral-400">
         {fmtDate(created)}
         {/* 字数在解密时计算（与编辑器底部"共 x 字"一致：trim 后长度） */}
-        {!decryptFailed && <> · {plain.trim().length} 字</>}
+        {!decryptFailed && <> · {countWords(plain)} 字</>}
         {/* 未同步徽标：离线新增、尚未上传服务器的笔记（同步后自动消失） */}
         {pendingSync && (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
@@ -549,12 +551,10 @@ export default function EntryView({ id }: { id: string }) {
         </>
       ) : (
         <>
-          {/* 正文：小一号字体（text-base）+ 每行分段加段间距（单换行也有明显间距；空行自然形成更大间隔） */}
-          <div className="mt-4 text-base leading-relaxed text-neutral-800 dark:text-neutral-200">
-            {plain.split('\n').map((line, i) => (
-              <p key={i} className="mb-2 whitespace-pre-wrap last:mb-0">{line}</p>
-            ))}
-          </div>
+          {/* 正文：Markdown 源码交给共享渲染器（与编辑器预览、列表派生逻辑同源）。
+              改造前是 plain.split('\n').map → 每行一个 <p>；现在换行由 remark-breaks
+              处理成 <br>，段间距只出现在真正的空行分隔处。 */}
+          <Markdown source={plain} className="mt-4" />
         </>
       )}
       {decryptFailed && (

@@ -9,6 +9,7 @@ import { cacheEntriesPage, cacheStats, getCachedEntries, getCachedStats, getQueu
 import SearchDialog from './SearchDialog'
 import SearchIcon from './SearchIcon'
 import ContributionHeatmap from './ContributionHeatmap'
+import { deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
 
 const PAGE_SIZE = 10
 
@@ -178,17 +179,17 @@ export default function DiaryListView() {
     for (const e of entries) {
       try {
         const plain = await decryptText(dek, e.ciphertext, e.iv)
-        // 标题 = 首行非空行；预览 = 其后剩余正文（列表两行截断）
-        const lines = plain.split('\n')
-        const titleIdx = lines.findIndex((l) => l.trim() !== '')
-        const title = titleIdx >= 0 ? lines[titleIdx].trim() : ''
-        const preview = titleIdx >= 0 ? lines.slice(titleIdx + 1).join('\n').trim() : ''
+        // 标题 = 首行非空行；预览 = 其后剩余正文（列表两行截断）。
+        // 输入换成**纯文本派生**（而非 Markdown 源码），否则列表里会直接露出 `# ` 与 `**`。
+        // 这里对同一篇只解析一次，标题/预览/字数全部从同一个纯文本串上取。
+        const text = toPlainText(plain)
+        const { title, preview } = deriveTitlePreview(text)
         decrypted.push({
           id: e.id,
           createdAt: new Date(e.createdAt),
           title,
           preview,
-          wordCount: plain.trim().length,
+          wordCount: text.length,
           lat: e.latitude,
           locationName: e.locationName,
           pending: pendingIds.has(e.id),
