@@ -42,6 +42,8 @@ interface Entry {
   weather: string | null
   timezone: string | null
   starred: boolean
+  /** 打开次数（数据库列，POST /api/diary/[id]/view 原子自增） */
+  viewCount: number
 }
 
 // 日记详情视图（原生路由页 /entry/[id] 渲染；DEK 会话级持久化，导航/重载自动恢复）
@@ -65,8 +67,8 @@ export default function EntryView({ id }: { id: string }) {
   // 网络不可达、数据来自本地（缓存或队列）：此时云端条目不可改（PATCH/DELETE 发不出去）
   const [localReadonly, setLocalReadonly] = useState(false)
   const [coordsCopied, setCoordsCopied] = useState(false)
-  // 本地「打开次数」（见 lib/client/views.ts：纯本地、不写库）。
-  // 0 = 还没数到（或 IndexedDB 不可用），此时尾行不显示这个图标。
+  // 「打开次数」：**数据库列**（见 lib/client/views.ts）。0 = 还没数到（或数不成），
+  // 此时底部不渲染那只眼睛——「0 次」和「没数到」对用户是同一件事，不必显示成「0」。
   const [viewCount, setViewCount] = useState(0)
   const viewCountedRef = useRef(false)
   // —— 定位相关：与正文保存完全解耦 ——
@@ -269,18 +271,30 @@ export default function EntryView({ id }: { id: string }) {
     // 不需要 eslint-disable 抑制 exhaustive-deps（原先抑制是因为里面用了 router）。
   }, [id])
 
-  // 「打开次数」+1：纯本地计数，不上传（见 lib/client/views.ts）。
-  // ★ 三个约束：
+  // 「打开次数」+1：服务器**原子自增**（POST /api/diary/[id]/view），见 lib/client/views.ts。
+  // ★ 四条约束：
   //   1) 只在**正文真正就位**后计（entry 有值）——「打不开」的说明页不算看过；
-  //   2) viewCountedRef 去重：React 开发模式（StrictMode）会双挂载 effect，
-  //      不去重的话每打开一次会 +2；同一篇上的后续 setEntry（改定位 / 编辑保存）
+  //   2) 先把 entry.viewCount 落到界面：离线 / 限流时数不成，显示的就是**上次同步到的值**，
+  //      而不是凭空跳到 0；
+  //   3) viewCountedRef 去重：React 开发模式（StrictMode）会双挂载 effect，
+  //      不去重的话每打开一次会 +2；同一篇上的后续 setEntry（改定位 / 收藏 / 编辑保存）
   //      也会让本 effect 重跑，同样靠它挡住；
-  //   3) 计数失败一律静默——它只是个装饰性数字，绝不能影响阅读或保存流程。
+  //   4) 数不成立刻返回，绝不报错、绝不重试——它只是个装饰性数字，不能影响阅读或保存。
   useEffect(() => {
     if (!entry || viewCountedRef.current) return
     viewCountedRef.current = true
-    void bumpEntryViewCount(entry.id).then(setViewCount).catch(() => { /* 静默 */ })
-  }, [entry])
+    setViewCount(entry.viewCount)
+    // 队列里的条目（离线新增、尚未上传）服务器上还不存在 ⇒ 自增必然 404，直接跳过。
+    // 离线打开任何一篇都不计数（见 views.ts 的取舍说明），不是这里漏了。
+    if (pendingSync) return
+    void bumpEntryViewCount(entry.id).then((updated) => {
+      if (!updated) return // 离线 / 限流 / 已删除：静默，保持上面那个值
+      setViewCount(updated.viewCount)
+      setEntry((prev) => (prev ? { ...prev, ...updated } : prev))
+      // 本地密文缓存同步更新：否则下次离线打开这一篇会读到 +1 之前的旧值
+      void cacheEntriesPage([updated])
+    })
+  }, [entry, pendingSync])
 
   // 打开详情页自动补地名：有坐标但**没有结构化地名** → 反查 → PATCH 存库 + 更新界面。
   // 受「自动补全地点名」开关控制（关闭后不自动外发坐标，点击坐标仍可手动查询）。
@@ -715,7 +729,9 @@ export default function EntryView({ id }: { id: string }) {
               pb-safe 承担，这里不能写 safe-pb（否则叠出双份留白）。 */}
           <div className="mt-auto flex flex-col gap-2 pb-4 pt-2">
             {isEdited && (
-              <p className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">上次编辑 {fmtDate(editedAt)}</p>
+              /* 与查看态的「编辑于」同一档字号（11px）：两处指的是同一个时间戳，
+                 不该一个 12px 一个 11px（用户要求日期再小一档）。 */
+              <p className="text-[11px] tabular-nums text-neutral-500 dark:text-neutral-400">上次编辑 {fmtDate(editedAt)}</p>
             )}
             <button
               onClick={() => void saveEdit()}
@@ -746,50 +762,62 @@ export default function EntryView({ id }: { id: string }) {
       {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
       {!editing && (
         <>
-          {/* 内容尾行：正文与分割线之间的呼吸空间 + 这一篇自己的「状态」。
-              ★ 留白只能加在这里。分割线是下方 footer 的 border-t，它下面那段 py-4 是
-                「图标离分割线」；在那里加 pt 只会把图标往下推，松不开正文。
-                改这块前先看 Markdown.tsx：段落是 `mb-3 last:mb-0`，末段没有下边距，
-                所以这里不给空间的话，正文最后一行与分割线之间就是 0px（长笔记尤其挤）。
-              将来「单篇分享」的入口（🔗）就加在这一行、与打开次数同组——它们都是
-              「这篇内容的状态」；下面那条栏只放「对这个页面的操作」。 */}
-          <div className="flex items-center gap-3 pt-8 pb-4 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
-            {viewCount > 0 && (
-              <span
-                role="img"
-                aria-label={`打开过 ${viewCount} 次`}
-                title={`打开过 ${viewCount} 次`}
-                className="flex items-center gap-1"
-              >
-                {/* 眼睛图标：14px，与 12px 的数字视觉重量相当（内联 SVG 与 TabBar/搜索同一套语言） */}
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0" aria-hidden>
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-                <span aria-hidden="true">{viewCount}</span>
-              </span>
+          {/* 底部行：「编辑于」钉在分割线**正上方**（用户要求），不再跟着正文一起往上浮。
+              ★ `mt-auto` 吃掉剩余空间 —— 正文短时它被压到底部，正文长时它自然接在正文之后，
+                两种情况下它与分割线之间都只有这一段留白。
+              ★ 容器**恒渲染**、只有内容是条件渲染：这段留白原先挂在「内容尾行」上，若跟着
+                「编辑于」一起变成条件渲染，**没编辑过的条目**正文末行又会贴住分割线
+                （Markdown.tsx 的段落是 `mb-3 last:mb-0`，末段没有下边距 ⇒ 间隙 0px）。
+              ★ 字号再降一档到 11px：它是三级信息，不该与正文同级。 */}
+          <div className="mt-auto pt-8 pb-3">
+            {isEdited && (
+              <p className="text-[11px] tabular-nums text-neutral-500 dark:text-neutral-400">
+                编辑于 {fmtDate(editedAt)}
+              </p>
             )}
-            {isEdited && <span>编辑于 {fmtDate(editedAt)}</span>}
           </div>
 
-          {/* 底部操作栏：**左＝收藏（这一篇的状态）**，右＝编辑 / 删除（对这个页面的操作）。
-              「收藏」在本页最底部（用户明确要求的位置），且带文字标签——它是这一页唯一的
-              "正向"操作，只放一颗孤零零的图标容易被当成装饰（星形本身就是评分控件的常见外形）。
-              断网且条目来自云端缓存时禁用（PATCH 发不出去，与编辑/删除同一判据）；
-              未同步笔记走本地写队列，不受此限。 */}
-          <div className="mt-auto flex items-center justify-between border-t border-neutral-100 py-4 dark:border-neutral-800">
-            <button
-              onClick={() => void toggleStar()}
-              disabled={starBusy || (localReadonly && !pendingSync)}
-              aria-pressed={entry.starred}
-              aria-label={entry.starred ? '取消收藏' : '收藏'}
-              title={entry.starred ? '取消收藏' : '收藏'}
-              className="-ml-2 flex shrink-0 items-center gap-1.5 rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
-            >
-              {/* 暖色 Q 版五角星：实心=已收藏，描边=未收藏（同一颗星的两个状态，不用两套图形） */}
-              <StarIcon filled={entry.starred} className="h-[18px] w-[18px]" />
-              <span className="text-sm">{entry.starred ? '已收藏' : '收藏'}</span>
-            </button>
+          {/* 底部操作栏：一行 **4 个图标**（用户指定的布局）——
+              左组 = 这一篇的**状态**（打开次数 → 收藏），右组 = 对这个**页面**的操作（编辑 / 删除）。
+              · 打开次数从内容尾行搬到这里、排在收藏**前面**（用户要求「排在最前」）；
+                眼睛图标由 14px 提到 18px、strokeWidth 2，与星 / 编辑 / 删除**同一套图标语言**
+                （原先它 14px 且配 12px 数字，视觉上属于另一档）。
+              · 收藏**去掉了文字标签**（用户要求）：状态只由星形本身表达（实心 = 已收藏，
+                描边 = 未收藏）。可访问性由 aria-pressed / aria-label / title 保住，
+                桌面端仍有 tooltip（移动端无 hover，图标状态就是唯一信号）。
+              · 左组 `-ml-2` / 右组 `-mr-2`：各自抵消子项的 p-2，让首尾图标与正文左右边缘对齐。
+              · 收藏 / 编辑 / 删除在「断网且条目来自云端缓存」时禁用（请求发不出去）；
+                打开次数不是操作，永远只读。未同步笔记走本地写队列，不受此限。 */}
+          <div className="flex items-center justify-between border-t border-neutral-100 py-4 dark:border-neutral-800">
+            <div className="-ml-2 flex items-center gap-1">
+              {viewCount > 0 && (
+                <span
+                  role="img"
+                  aria-label={`打开过 ${viewCount} 次`}
+                  title={`打开过 ${viewCount} 次`}
+                  className="flex items-center gap-1.5 p-2 text-sm tabular-nums text-neutral-500 dark:text-neutral-400"
+                >
+                  {/* 眼睛图标：18px + strokeWidth 2，与星、编辑、删除统一 */}
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] shrink-0" aria-hidden>
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  <span aria-hidden="true">{viewCount}</span>
+                </span>
+              )}
+              <button
+                onClick={() => void toggleStar()}
+                disabled={starBusy || (localReadonly && !pendingSync)}
+                aria-pressed={entry.starred}
+                aria-label={entry.starred ? '取消收藏' : '收藏'}
+                title={entry.starred ? '取消收藏' : '收藏'}
+                className="rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
+              >
+                {/* 暖色 Q 版五角星：实心=已收藏，描边=未收藏（同一颗星的两个状态，不用两套图形）。
+                    刻意**不带文字**——用户要求「仅通过图标状态变化表示收藏状态」。 */}
+                <StarIcon filled={entry.starred} className="h-[18px] w-[18px]" />
+              </button>
+            </div>
             <div className="-mr-2 flex items-center gap-1">
               {/* 编辑 / 删除：**图标按钮**（原先是「编辑」「删除」两段文字，删除还用了 text-red-500，
                   在查看页底部过于抢眼）。降权三招：去文字、改图标、删除不再用红色

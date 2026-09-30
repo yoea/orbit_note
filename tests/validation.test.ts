@@ -55,14 +55,37 @@ describe('zod 校验', () => {
   it('创建路径**不接受**结构化地名：地点只在 PATCH 补写（POST 时坐标还是 null）', () => {
     expect(diaryCreateSchema.safeParse({ ciphertext: 'x', iv: 'y', locationProvince: '云南省' }).success).toBe(false)
   })
-  it('导入路径接受结构化地名与 starred（备份恢复要能原样写回）', () => {
+  it('导入路径接受结构化地名、starred 与 viewCount（备份恢复要能原样写回）', () => {
     expect(diaryImportEntrySchema.safeParse({
       id: '00000000-0000-4000-8000-000000000000',
       ciphertext: 'x', iv: 'y',
       createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
       starred: true,
       locationProvince: '云南省', locationCity: '昆明市', locationDistrict: '五华区',
+      viewCount: 12,
     }).success).toBe(true)
+  })
+
+  it('打开次数：只有**导入**路径能写；创建/更新一律拒绝（它是服务端原子自增的，客户端不许赋值）', () => {
+    // 客户端能直接赋值 = 能凭空篡改统计，也会在「多标签页读旧值再写回」时丢更新。
+    expect(diaryCreateSchema.safeParse({ ciphertext: 'x', iv: 'y', viewCount: 5 }).success).toBe(false)
+    expect(diaryUpdateSchema.safeParse({ viewCount: 5 }).success).toBe(false)
+    expect(diaryImportEntrySchema.safeParse({
+      id: '00000000-0000-4000-8000-000000000000',
+      ciphertext: 'x', iv: 'y',
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+      viewCount: 5,
+    }).success).toBe(true)
+  })
+
+  it('打开次数：拒绝负数与小数字面量（数据库列是 integer 且语义是非负计数）', () => {
+    const base = {
+      id: '00000000-0000-4000-8000-000000000000',
+      ciphertext: 'x', iv: 'y',
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    expect(diaryImportEntrySchema.safeParse({ ...base, viewCount: -1 }).success).toBe(false)
+    expect(diaryImportEntrySchema.safeParse({ ...base, viewCount: 1.5 }).success).toBe(false)
   })
   it('wrapper: passkey_prf 必须含 credentialId 且不含 recoveryKeyHash', () => {
     expect(wrapperSchema.safeParse({ wrapperType: 'passkey_prf', encryptedDek: 'e', salt: 's' }).success).toBe(false)

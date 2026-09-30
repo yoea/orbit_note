@@ -308,6 +308,10 @@ export async function getQueuedCount(): Promise<number> {
 // 队列项 → 列表/详情可直接消费的条目形态（与 EncryptedEntry 同构）。
 // createdAt/updatedAt 都取 queuedAt（创建时刻）；timezone 之外的定位/天气字段离线拿不到，
 // 置 null（这些字段的补写本来就是保存成功后的服务端异步操作）。收藏是本地就能确定的，照实带出。
+// ★ viewCount 固定 0：打开次数由服务器原子自增（POST /api/diary/[id]/view），
+//   而队列里的条目**服务器上还不存在**（404），离线期间打开它无从计数。
+//   这是刻意的取舍——离线打开任何一篇都不计数（见 lib/client/views.ts），不为「刚写下还没同步」
+//   这一个子集单开一套本地计数（那会造成「未同步的会数、已同步的不会数」这种更怪的语义）。
 export function queuedToEntry(item: QueuedEntry): import('./entries').EncryptedEntry {
   const iso = new Date(item.queuedAt).toISOString()
   return {
@@ -327,6 +331,7 @@ export function queuedToEntry(item: QueuedEntry): import('./entries').EncryptedE
     weather: null,
     timezone: item.timezone,
     starred: item.starred,
+    viewCount: 0,
   }
 }
 

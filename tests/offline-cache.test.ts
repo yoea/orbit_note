@@ -74,6 +74,9 @@ describe('queuedToEntry（队列项 → 条目形态）', () => {
     expect(e.weather).toBeNull()
     // 收藏是离线时就能确定的状态：不在队列里带上，补传后会被服务端默认值抹成未收藏
     expect(e.starred).toBe(true)
+    // 打开次数固定 0：它由服务器原子自增，而队列里的条目服务器上还不存在（自增必然 404）
+    // —— 离线打开任何一篇都不计数，见 lib/client/views.ts 的取舍说明
+    expect(e.viewCount).toBe(0)
   })
 
   it('可直接并入列表数据流（与 EncryptedEntry 同构，解密路径无需分支）', () => {

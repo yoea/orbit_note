@@ -27,6 +27,17 @@ const encryptedPayload = {
 // 字数（解密时计算，明文数字——列表/统计无需解密即可显示）
 const wordCountField = { wordCount: z.number().int().min(0).max(1_000_000).optional() }
 
+// 打开次数（数据库列，2026-09-30 起）。
+// ★ 刻意**不**进 diaryCreateSchema / diaryUpdateSchema：它是服务器**原子自增**的
+//   （POST /api/diary/[id]/view），客户端能直接赋值就等于能凭空篡改统计。
+//   只有导入路径需要它——备份必须把原值带回来（与 createdAt/updatedAt 同一条理由）。
+// ⚠️ 上限必须与客户端 `lib/client/journal-format.ts` 的 MAX_VIEW_COUNT 一致
+//   （tests/journal-fields.test.ts 的 F6 拿这里的真实数字对账）：两边不一致时，
+//   脏文件里的天文数字会从「客户端归 0 照常导入」变成「服务端拒绝整条」。
+const viewCountField = {
+  viewCount: z.number().int().min(0).max(100_000_000).optional(),
+}
+
 // 明确拒绝客户端传 created_at/updated_at（strict 模式会拒绝未知键）。
 // id 例外：离线写队列重传时由客户端生成 UUID 做幂等（重复 POST 同 id 返回已有条目，
 // 网络抖动下的「不确定上次是否成功」重传不会重复入库）
@@ -86,6 +97,7 @@ export const diaryImportEntrySchema = z.strictObject({
   ...placeFields,
   ...locationFields,
   ...wordCountField,
+  ...viewCountField,
   createdAt: isoDate,
   updatedAt: isoDate,
 })

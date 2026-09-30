@@ -105,18 +105,24 @@ describe('S · 收藏（星标）', () => {
     expect(block).toContain('<StarIcon filled')
   })
 
-  it('S6 查看页：收藏按钮在操作栏（最底部），有 aria-pressed 与两态文字标签', () => {
+  it('S6 查看页：收藏按钮在操作栏（最底部）且只有星形两态 —— 不再有文字标签', () => {
     const btn = sliceOrFail(view, '() => void toggleStar()', '</button>', VIEW_FILE)
     expect(btn, '收藏按钮不是星图标').toContain('<StarIcon')
     expect(btn, '星要反映当前状态（实心=已收藏/描边=未收藏）').toContain('filled={entry.starred}')
     expect(btn, '缺少 aria-pressed —— 屏幕阅读器读不出这是可切换状态').toContain('aria-pressed={entry.starred}')
-    // 孤零零一颗星容易被当成装饰/评分控件，必须带文字
-    expect(btn, '缺少两态文字标签').toContain("entry.starred ? '已收藏' : '收藏'")
+    // ★ 2026-09-30 用户要求「移除收藏文字，仅通过图标状态变化表示收藏状态」。
+    //   文字一去掉，star 就成了**唯一**的视觉信号 ⇒ aria-label / title 从「锦上添花」变成必需：
+    //   少了它们，读屏用户听到的只是一个无名按钮，桌面端也没有 hover tooltip 可以救。
+    expect(btn, '收藏按钮里又渲染文字了（用户要求只看图标状态）').not.toMatch(/<span[^>]*>[^<]*收藏/)
+    expect(btn, '缺少 aria-label —— 图标是唯一信号，读屏用户必须知道这按钮是什么').toContain('aria-label=')
+    expect(btn, '缺少 title —— 桌面端没有任何 tooltip 就全靠猜').toContain('title=')
     expect(btn, '没有禁用判据 —— 离线只读时点了会「收藏失败」').toContain('disabled=')
-    // 位置：必须在分割线（内容尾行与操作栏的分界）**下方**
+    // 位置：必须在分割线（「编辑于」行与操作栏的分界）**下方**，且在左组里、排在打开次数之后
     const divider = indexOrFail(view, 'border-t', VIEW_FILE)
     const star = indexOrFail(view, '() => void toggleStar()', VIEW_FILE)
-    expect(star, '收藏按钮跑到内容尾行里去了（用户要求在最底部）').toBeGreaterThan(divider)
+    const eye = indexOrFail(view, 'viewCount > 0', VIEW_FILE)
+    expect(star, '收藏按钮跑到「编辑于」那一行里去了（用户要求在最底部）').toBeGreaterThan(divider)
+    expect(eye, '打开次数没有排在收藏前面（用户要求「排在最前」）').toBeLessThan(star)
   })
 
   it('S7 收藏是元数据更新：PATCH 不带 ciphertext/iv，且离线能收藏', () => {

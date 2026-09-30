@@ -25,6 +25,29 @@ describe('diary API 认证保护', () => {
     }))
     expect(res.status).toBe(401)
   })
+
+  it('无 cookie POST diary/[id]/view → 401（打开次数端点在 db 自增之前就拦住）', async () => {
+    const { POST: viewPost } = await import('../app/api/diary/[id]/view/route')
+    const id = '00000000-0000-4000-8000-000000000000'
+    const res = await viewPost(
+      new Request(`http://localhost:3000/api/diary/${id}/view`, { method: 'POST' }),
+      { params: Promise.resolve({ id }) },
+    )
+    expect(res.status).toBe(401)
+  })
+
+  it('无 cookie POST diary/[id]/view（伪造 cookie）→ 401', async () => {
+    const { POST: viewPost } = await import('../app/api/diary/[id]/view/route')
+    const id = '00000000-0000-4000-8000-000000000001'
+    const res = await viewPost(
+      new Request(`http://localhost:3000/api/diary/${id}/view`, {
+        method: 'POST',
+        headers: { cookie: 'qo_session=forged-token' },
+      }),
+      { params: Promise.resolve({ id }) },
+    )
+    expect(res.status).toBe(401)
+  })
 })
 
 describe('注册保护（C1 回归：必须完整验证 JWT，伪造 cookie 不得绕过）', () => {

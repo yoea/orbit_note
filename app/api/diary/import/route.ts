@@ -77,6 +77,8 @@ export async function POST(req: Request) {
       timezone: d.timezone ?? null,
       wordCount: d.wordCount ?? 0,
       starred: d.starred ?? false,
+      // 打开次数随备份带回（它是数据库列了）。老文件里没有这个字段 ⇒ 从 0 起算。
+      viewCount: d.viewCount ?? 0,
       createdAt: created,
       // updatedAt 不得早于 createdAt（脏文件里见过），否则详情页的"编辑于"会显示成创建之前
       updatedAt: updated.getTime() < created.getTime() ? created : updated,

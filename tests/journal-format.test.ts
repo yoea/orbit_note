@@ -28,6 +28,7 @@ const sample: DecryptedEntry = {
     weather: '晴 25°C',
     timezone: 'Asia/Shanghai',
     starred: true,
+    viewCount: 9,
   }),
   plain: '# 标题\n\n正文 **加粗**',
 }
@@ -63,6 +64,12 @@ describe('导出结构（Day One 兼容）', () => {
     expect(file.entries[0].starred).toBe(true)
     const unstarred = buildJournalFile([{ ...sample, entry: { ...sample.entry, starred: false } }])
     expect(unstarred.entries[0].starred).toBe(false)
+  })
+
+  it('打开次数写进 orbit（Day One 结构里没有对应项，只能放私有命名空间）', () => {
+    expect(file.entries[0].orbit?.viewCount, '打开次数是数据库列，必须随文件往返').toBe(9)
+    // 它不是 Day One 的原生字段：不能污染 entry 顶层（否则外部应用会读到不认识的键）
+    expect(Object.keys(file.entries[0])).not.toContain('viewCount')
   })
 
   it('metadata 明示"坐标未模糊 + 明文"（文件本身要自证风险）', () => {
@@ -109,6 +116,7 @@ describe('往返无损（自家导出再导入）', () => {
     // 有结构化三级时**不**再写单一地名串（否则同一篇会有两套地名、展示口径分裂）
     expect(got.locationName).toBeNull()
     expect(got.weather).toBe(sample.entry.weather)
+    expect(got.viewCount).toBe(sample.entry.viewCount)
   })
 
   it('老数据（只有单一地名串）往返后仍然保留那一串', async () => {

@@ -13,9 +13,13 @@
 // 同时把原文存进 orbit.weatherText，导入时优先取后者 ⇒ 自家往返仍无损。
 //
 // ★ 承诺：「导出包含数据库里的**全部笔记字段**，导入后能完整恢复」。范围**仅限数据库字段**——
-//   本机数据（打开次数等，见 lib/client/views.ts）一律不进文件：它只反映本机阅读行为，
-//   跨设备不准确，写进备份只会误导恢复。这句话靠**台账 + 对账测试**兜底，而不是靠人记得
-//   ——见下面的 ENTRY_COLUMN_COVERAGE。给 diary_entries 加列时先在那里登记。
+//   每一列都要在文件里有位置（唯一例外是密文本体：导出的是**解密后**的正文，见台账），
+//   靠**台账 + 对账测试**兜底（ENTRY_COLUMN_COVERAGE + tests/journal-fields.test.ts），
+//   而不是靠人记得。给 diary_entries 加列时先在那里登记。
+//   ⚠️ 历史（改这条边界前务必读）：打开次数曾经是**纯本机**的 IndexedDB 计数，跨设备不准确，
+//   那时它刻意不进文件。2026-09-30 它变成 database 的一列（migration 0014）⇒ **重新纳入**导出。
+//   「纯本机数据不进备份」这条规则依然成立——只是这个字段已经不在那一类里了。
+//   将来若再出现纯本机字段，仍按老规矩办：留在本机，不写进文件。
 import { countWords } from './markdown'
 import { displayLocationName } from './location'
 import { hex32ToUuid, isUuid, uuidToHex32, uuidV5 } from './uuid-v5'
@@ -23,11 +27,12 @@ import type { DecryptedEntry } from './entries'
 
 /** Day One / Journey 的导入器认这个文件名（放在 zip 根目录） */
 export const JOURNAL_JSON_NAME = 'Journal.json'
-/** 1 = 首版；2 = 曾加入 `orbit.viewCount`（本机打开次数，可选字段）；
- *  3 = 撤出 viewCount —— 导出只含数据库里的笔记字段，不含任何本机数据；
- *  4 = 加入 `starred`（收藏，Day One 原生字段）与结构化地名（`orbit.locationProvince/City/District`）。
+/** 1 = 首版；2 = 曾加入 `orbit.viewCount`（当时是**本机**打开次数，可选字段）；
+ *  3 = 撤出 viewCount —— 那时它还是本机数据，导出只含数据库字段；
+ *  4 = 加入 `starred`（收藏，Day One 原生字段）与结构化地名（`orbit.locationProvince/City/District`）；
+ *  5 = viewCount **回归**：打开次数已改成数据库列（migration 0014），于是重新随文件往返。
  *  解析器不看版本号，各版本文件都能照常导入。 */
-export const FORMAT_VERSION = 4
+export const FORMAT_VERSION = 5
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 「不留字段」台账
@@ -46,6 +51,7 @@ export const ENTRY_COLUMN_COVERAGE: Record<string, { json: string; csv: string |
   iv: { json: 'text（同上）', csv: 'body', note: '同上' },
   encryption_version: { json: '—', csv: null, note: '恒为 1；导入时按当前版本重新加密' },
   starred: { json: 'starred', csv: 'starred', note: 'Day One 原生就有这一位，直接对位（不再恒为 false）' },
+  view_count: { json: 'orbit.viewCount', csv: 'view_count', note: '2026-09-30 起是数据库列（migration 0014）；更早它是纯本机计数，那时刻意不进文件' },
   latitude: { json: 'location.latitude', csv: 'latitude' },
   longitude: { json: 'location.longitude', csv: 'longitude' },
   location_accuracy: { json: 'orbit.locationAccuracy', csv: 'location_accuracy', note: 'Day One 结构里没有这一项' },
@@ -60,10 +66,9 @@ export const ENTRY_COLUMN_COVERAGE: Record<string, { json: string; csv: string |
   updated_at: { json: 'modifiedDate', csv: 'updated_at' },
 }
 
-/** CSV 列顺序（Excel 打开的第一行）。列集合必须与 ENTRY_COLUMN_COVERAGE 的 csv 栏完全一致。
- *  ★ 不含本机字段：打开次数等本机数据不进文件（原因见 lib/client/views.ts 顶部说明）。 */
+/** CSV 列顺序（Excel 打开的第一行）。列集合必须与 ENTRY_COLUMN_COVERAGE 的 csv 栏完全一致。 */
 export const CSV_COLUMNS = [
-  'id', 'created_at', 'updated_at', 'body', 'word_count', 'starred',
+  'id', 'created_at', 'updated_at', 'body', 'word_count', 'starred', 'view_count',
   'latitude', 'longitude', 'location_accuracy',
   'location_province', 'location_city', 'location_district', 'location_name',
   'weather', 'timezone',
@@ -74,6 +79,10 @@ export const CSV_COLUMNS = [
 export const MAX_CIPHERTEXT_CHARS = 300_000
 /** 单次导入条数上限（防止病态文件把浏览器内存打满） */
 export const MAX_IMPORT_ENTRIES = 20_000
+/** 打开次数的合理上限。与服务端 `diaryImportEntrySchema` 的 viewCount 上限**必须一致**
+ *  （tests/journal-fields.test.ts 的 F6 会拿 validation.ts 的真实数字对账）——
+ *  客户端先归零、服务端后拒绝的话，脏文件里的天文数字会变成「整条被拒」而不是「归 0 照常导入」。 */
+export const MAX_VIEW_COUNT = 100_000_000
 
 export interface JournalLocation {
   latitude: number
@@ -97,7 +106,7 @@ export interface JournalEntry {
   location?: JournalLocation
   weather?: { conditionsDescription: string }
   /** 私有命名空间：往返无损所需、Day One 结构里放不下的字段。
-   *  只放**数据库里**的字段——本机数据（打开次数）刻意不进这里。 */
+   *  只放**数据库里**的字段——将来若再出现纯本机字段，仍按老规矩留在本机、不进这里。 */
   orbit?: {
     id: string
     wordCount: number
@@ -110,6 +119,8 @@ export interface JournalEntry {
     /** 已废弃的单一地名串（只有老数据有值）。**照原样带上**：写 null 会让
      *  「导入后能完整恢复所有字段」在这一个字段上出现空洞。 */
     locationName: string | null
+    /** 打开次数（数据库列，2026-09-30 起）——Day One 结构里没有对应项，只能塞进私有命名空间 */
+    viewCount: number
   }
 }
 
@@ -170,6 +181,7 @@ export function buildJournalFile(
         locationCity: e.locationCity,
         locationDistrict: e.locationDistrict,
         locationName: e.locationName,
+        viewCount: e.viewCount,
       },
     }
   })
@@ -212,6 +224,7 @@ export function buildCsv(items: DecryptedEntry[]): string {
       body: plain,
       word_count: e.wordCount,
       starred: e.starred ? 'true' : 'false',
+      view_count: e.viewCount,
       latitude: e.latitude ?? '',
       longitude: e.longitude ?? '',
       location_accuracy: e.locationAccuracy ?? '',
@@ -245,6 +258,8 @@ export interface ParsedImportEntry {
   locationName: string | null
   weather: string | null
   starred: boolean
+  /** 打开次数（数据库列；文件里没有 / 非法时为 0） */
+  viewCount: number
 }
 
 export interface RejectedEntry {
@@ -377,6 +392,15 @@ export async function parseJournal(data: unknown): Promise<ParseResult> {
     const wordCount = orbitWc != null && Number.isInteger(orbitWc) && orbitWc >= 0 ? orbitWc : countWords(text)
     if (orbitWc != null) legacyWordCount++
 
+    // 打开次数：自家往返原样取回；外部文件（Day One / Journey）没有这一项 ⇒ 0。
+    // 严格收成非负整数且不超过上限：脏文件里的负数 / 小数 / 天文数字一律归零，
+    // 别把一个荒唐值写进数据库（与 wordCount 同一套防御，上限两边同步见 MAX_VIEW_COUNT）。
+    const orbitViews = num(orbit.viewCount)
+    const viewCount =
+      orbitViews != null && Number.isInteger(orbitViews) && orbitViews >= 0 && orbitViews <= MAX_VIEW_COUNT
+        ? orbitViews
+        : 0
+
     if (Array.isArray(r.tags) && r.tags.length > 0) tagCount++
     for (const k of ['photos', 'videos', 'audios', 'pdfs']) {
       if (Array.isArray(r[k]) && (r[k] as unknown[]).length > 0) mediaCount++
@@ -400,6 +424,7 @@ export async function parseJournal(data: unknown): Promise<ParseResult> {
       // 收藏：Day One 原生字段。只有明确 true 才算收藏——缺失/非布尔值一律 false
       // （老文件里这个字段恒为 false，Day One 导出里也永远是布尔）。
       starred: r.starred === true,
+      viewCount,
     })
   }
 

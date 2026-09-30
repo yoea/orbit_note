@@ -7,8 +7,9 @@
 //     所以按累计密文字节数切批（目标 ~512KB、最多 50 条）。单条密文上限 300k 字符
 //     ⇒ 每批请求必然远小于 1MB，正常情况不会触发 413。
 //  3. **不碰离线队列**：导入是明确的在线操作（要写服务器），不往本地写队列里塞东西。
-//  4. **只管数据库字段**：本机数据（打开次数等）不在备份里、也不写回，导入只负责把条目
-//     写进服务器（原因见 lib/client/views.ts）。
+//  4. **只管数据库字段**：导入只负责把条目写进服务器。打开次数在 2026-09-30 之前是纯本机
+//     计数（那时不写回也不带走），现在是 diary_entries 的一列 ⇒ 随备份原样恢复
+//     （见 lib/client/journal-format.ts 的文件头说明）。
 import { encryptText } from './crypto/encryption'
 import { fetchAllEntries } from './entries'
 import {
@@ -136,6 +137,7 @@ interface Ready {
   timezone: string | null
   wordCount: number
   starred: boolean
+  viewCount: number
   createdAt: string
   updatedAt: string
   bytes: number
@@ -162,6 +164,7 @@ function toPayload(e: Ready): Omit<Ready, 'bytes'> {
     timezone: e.timezone,
     wordCount: e.wordCount,
     starred: e.starred,
+    viewCount: e.viewCount,
     createdAt: e.createdAt,
     updatedAt: e.updatedAt,
   }
@@ -220,6 +223,7 @@ export async function importJournalFile(opts: {
       timezone: e.timezone,
       wordCount: e.wordCount,
       starred: e.starred,
+      viewCount: e.viewCount,
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
       bytes: ciphertext.length + iv.length + 256,

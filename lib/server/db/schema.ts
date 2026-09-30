@@ -66,6 +66,12 @@ export const diaryEntries = pgTable('diary_entries', {
   // 与位置、天气同级：属于**明文的元数据**（不进加密范围，也不影响 updatedAt——
   // 收藏一篇不算「编辑」，详情页不会因此显示「编辑于」）。
   starred: boolean('starred').notNull().default(false),
+  // 「打开次数」：**我自己**打开这一篇看过几次（不是「被谁看过」）。
+  // 2026-09-30 起改为写进数据库（此前是纯本机 IndexedDB 计数，见 lib/client/views.ts 的历史说明）：
+  // 用户要求跨设备一致，且它既然是数据库列，就应当随导出 / 导入往返（台账见 journal-format.ts）。
+  // ★ 与收藏同一条约定：由 `POST /api/diary/[id]/view` **原子自增**，且**不碰 updatedAt**
+  //   ⇒ 回看一篇不算「编辑」，详情页不会因此冒出「编辑于」。
+  viewCount: integer('view_count').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
