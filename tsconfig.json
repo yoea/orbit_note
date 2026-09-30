@@ -30,5 +30,9 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  // "Temp" 必须显式排除：那是本地一次性探针/备份脚本的目录（已进 .gitignore 与
+  // eslint 的 globalIgnores），但 **tsc 既不读 .gitignore 也不读 ESLint 配置**——
+  // 只要里面落了一个 .ts/.tsx（例如验证守卫时备份的源码副本），
+  // `next build` 的 typecheck 就会去解析它并直接失败（2026-09-30 实测踩到）。
+  "exclude": ["node_modules", "Temp"]
 }

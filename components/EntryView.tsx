@@ -12,6 +12,7 @@ import { getPosition, parseCoords } from '@/lib/client/location'
 import { isAutoPlaceNameEnabled } from '@/lib/client/prefs'
 import { cacheEntriesPage, getCachedEntryById, getQueuedEntryById, removeCachedEntry, removeQueuedEntry, resolveEntryLoad, updateQueuedEntry } from '@/lib/client/offline'
 import { weatherEmoji } from '@/lib/client/weather'
+import { bumpEntryViewCount } from '@/lib/client/views'
 import { playSaveSound } from '@/lib/client/sound'
 import { BRAND_GRADIENT_CLASS, EDITOR_TEXTAREA_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import Toast from './Toast'
@@ -59,6 +60,10 @@ export default function EntryView({ id }: { id: string }) {
   // 网络不可达、数据来自本地（缓存或队列）：此时云端条目不可改（PATCH/DELETE 发不出去）
   const [localReadonly, setLocalReadonly] = useState(false)
   const [coordsCopied, setCoordsCopied] = useState(false)
+  // 本地「打开次数」（见 lib/client/views.ts：纯本地、不写库）。
+  // 0 = 还没数到（或 IndexedDB 不可用），此时尾行不显示这个图标。
+  const [viewCount, setViewCount] = useState(0)
+  const viewCountedRef = useRef(false)
   // —— 定位相关：与正文保存完全解耦 ——
   // 任何定位改动（添加 / 移除 / 补地点名）都立即 PATCH 落库，不经过底部「保存修改」按钮。
   // 该按钮只负责正文内容。
@@ -263,6 +268,19 @@ export default function EntryView({ id }: { id: string }) {
     // 依赖只有 id：本 effect 内引用的其它东西都是模块级函数或 setState（引用稳定），
     // 不需要 eslint-disable 抑制 exhaustive-deps（原先抑制是因为里面用了 router）。
   }, [id])
+
+  // 「打开次数」+1：纯本地计数，不上传（见 lib/client/views.ts）。
+  // ★ 三个约束：
+  //   1) 只在**正文真正就位**后计（entry 有值）——「打不开」的说明页不算看过；
+  //   2) viewCountedRef 去重：React 开发模式（StrictMode）会双挂载 effect，
+  //      不去重的话每打开一次会 +2；同一篇上的后续 setEntry（改定位 / 编辑保存）
+  //      也会让本 effect 重跑，同样靠它挡住；
+  //   3) 计数失败一律静默——它只是个装饰性数字，绝不能影响阅读或保存流程。
+  useEffect(() => {
+    if (!entry || viewCountedRef.current) return
+    viewCountedRef.current = true
+    void bumpEntryViewCount(entry.id).then(setViewCount).catch(() => { /* 静默 */ })
+  }, [entry])
 
   // 打开详情页自动补地点名：有坐标但地点名为空 → 反查 → PATCH 存库 + 更新界面。
   // 受「自动补全地点名」开关控制（关闭后不自动外发坐标，点击坐标仍可手动查询）。
@@ -679,14 +697,38 @@ export default function EntryView({ id }: { id: string }) {
       )}
       {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
       {!editing && (
-        /* 底部操作栏：左「编辑于」（编辑过才显示，小 2 号），右「编辑 / 删除」 */
-        <div className="mt-auto flex items-center justify-between gap-6 border-t border-neutral-100 py-4 dark:border-neutral-800">
-          {isEdited ? (
-            <span className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400">编辑于 {fmtDate(editedAt)}</span>
-          ) : (
-            <span />
-          )}
-          <div className="-mr-2 flex items-center gap-1">
+        <>
+          {/* 内容尾行：正文与分割线之间的呼吸空间 + 这一篇自己的「状态」。
+              ★ 留白只能加在这里。分割线是下方 footer 的 border-t，它下面那段 py-4 是
+                「图标离分割线」；在那里加 pt 只会把图标往下推，松不开正文。
+                改这块前先看 Markdown.tsx：段落是 `mb-3 last:mb-0`，末段没有下边距，
+                所以这里不给空间的话，正文最后一行与分割线之间就是 0px（长笔记尤其挤）。
+              将来「单篇分享」的入口（🔗）就加在这一行、与打开次数同组——它们都是
+              「这篇内容的状态」；下面那条栏只放「对这个页面的操作」。 */}
+          <div className="flex items-center gap-3 pt-8 pb-4 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+            {viewCount > 0 && (
+              <span
+                role="img"
+                aria-label={`打开过 ${viewCount} 次`}
+                title={`打开过 ${viewCount} 次`}
+                className="flex items-center gap-1"
+              >
+                {/* 眼睛图标：14px，与 12px 的数字视觉重量相当（内联 SVG 与 TabBar/搜索同一套语言） */}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 shrink-0" aria-hidden>
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <span aria-hidden="true">{viewCount}</span>
+              </span>
+            )}
+            {isEdited && <span>编辑于 {fmtDate(editedAt)}</span>}
+          </div>
+
+          {/* 底部操作栏：只剩「编辑 / 删除」两个图标（右对齐）。
+              原先这里是 justify-between + 左侧放「编辑于」，靠一个空 <span /> 占位把图标
+              顶到右边；「编辑于」上移到内容尾行之后，占位 span 与 gap-6 都不再需要。 */}
+          <div className="mt-auto flex items-center justify-end border-t border-neutral-100 py-4 dark:border-neutral-800">
+            <div className="-mr-2 flex items-center gap-1">
             {/* 编辑 / 删除：**图标按钮**（原先是「编辑」「删除」两段文字，删除还用了 text-red-500，
                 在查看页底部过于抢眼）。降权三招：去文字、改图标、删除不再用红色
                 ——破坏性由点击后的 ConfirmDialog 二次确认承担，不必靠颜色预警。
@@ -720,8 +762,9 @@ export default function EntryView({ id }: { id: string }) {
                 <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
               </svg>
             </button>
+            </div>
           </div>
-        </div>
+        </>
       )}
       {/* 编辑保存成功通知（小型弹窗，自动消失） */}
       {savedFlash && <Toast message="✓ 已保存" />}

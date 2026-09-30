@@ -1,4 +1,15 @@
-// 极简 Promise 化 IndexedDB 封装（单库单表，key-value）。只存加密数据。
+// 极简 Promise 化 IndexedDB 封装（单库单表，key-value）。
+//
+// 存什么：
+//   · 密文——离线条目缓存（`offline:entries`）、密钥 wrapper（离线解锁用）；
+//   · 不可逆的派生元数据——统计（字数等）、打开次数（`entry-views`）；
+//   · 地名反查缓存（`geo-cache`：模糊到 ≈1km 的坐标 → 区/市名，**明文**）。
+// ★ 最后一项是刻意的例外：区/市名不足以定位到具体地址，而缓存它能把向第三方
+//   （BigDataCloud）的请求减少约 3/4（实测命中率 74.8%，见 geocode.ts）。
+//
+// 为什么这些都放 IndexedDB 而不是 localStorage：`idbClearAll()` 是「设置 → 删除所有
+// 数据」的清理入口，放在这里的都会被清掉；而 localStorage 的 `qo-*` 键在那个流程与
+// 登出时都不会被清。「我去过哪 / 我常看哪几篇」属于行为痕迹，应当能被一次清干净。
 const DB_NAME = 'quiet-orbit'
 const STORE = 'kv'
 
