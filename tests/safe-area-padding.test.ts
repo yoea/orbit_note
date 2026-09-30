@@ -76,6 +76,9 @@ describe('底部留白与安全区', () => {
   })
 
   it('G4 弹窗底部操作按钮统一为 py-3.5', () => {
+    // 前三个弹窗的底部按钮已收敛到 lib/client/ui.ts 的 DIALOG_FOOTER_BUTTON_CLASS，
+    // className 原文里只剩常量名——classAttrsIn 在解析阶段就把常量展开成真实 class 串，
+    // 所以这里仍然按 token 判定（不展开的话这条会因为「查不到 py-3.5」而静默变红/空转）。
     const targets = [
       'components/AboutDialog.tsx',
       'components/PasskeysDialog.tsx',

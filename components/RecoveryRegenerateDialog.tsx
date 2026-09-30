@@ -6,6 +6,7 @@ import { fetchSession, fetchWrappers } from '@/lib/client/session'
 import { createWrappedDek, unwrapWithRecoveryKey } from '@/lib/client/crypto/setup'
 import { decodeRecoveryKey, generateRecoveryKey, sha256Hex } from '@/lib/client/crypto/recovery-key'
 import { copyText } from '@/lib/client/clipboard'
+import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
 
 // 重新生成恢复密钥弹窗（iOS Alert 风格卡片）：输入当前密钥验证（能解开 wrapper 才算正确）→
 // 生成新密钥 → 用新密钥重新包裹 DEK 并更新服务器（wrapper + SHA-256 哈希）。旧密钥立即失效。
@@ -105,14 +106,16 @@ export default function RecoveryRegenerateDialog({ onClose }: { onClose: () => v
             </>
           )}
         </div>
-        {/* 底部单按钮（完成 / 取消）：直贴卡片边缘的一整行，与 AboutDialog、PasskeysDialog、
-            PrefsDialog 的「完成」同一种结构（border-t + py-3.5，约 52px）。 */}
+        {/* 底部单按钮（完成 / 取消）：直贴卡片边缘的一整行，样式取共享常量。
+            ★ 本卡片是**普通块级**容器，<button> 默认 inline-block，必须靠常量里的 w-full
+              撑满，否则按钮会缩成两个字宽贴在左边（2026-09-30 用户反馈的「恢复密钥弹窗
+              按钮错乱」）。 */}
         <button
           onClick={() => {
             if (result) void copyText(result) // 尽力复制，失败不阻塞关闭
             onClose()
           }}
-          className="shrink-0 border-t border-neutral-200 py-3.5 text-base font-medium text-neutral-500 active:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:active:bg-neutral-700"
+          className={DIALOG_FOOTER_BUTTON_CLASS}
         >
           {result ? '完成' : '取消'}
         </button>

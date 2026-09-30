@@ -45,19 +45,30 @@ export default function NameEditDialog({ current, onSaved, onClose }: {
         <div className="px-5 pb-4 pt-5">
           <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">修改名字</p>
           <p className="mt-2 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-            名字会加密后同步到你的其他设备，服务器看不到明文
+            名字会加密后同步到你的其他设备
           </p>
-          <input
-            value={value}
-            onChange={(e) => { setValue(e.target.value); setError(null) }}
-            maxLength={USER_NAME_MAX}
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            className="mt-3 w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-base outline-none focus:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-          />
-          <div className="mt-1.5 text-right">
-            <span className="text-[10px] tabular-nums text-neutral-500 dark:text-neutral-400">{trimmed.length}/{USER_NAME_MAX}</span>
+          {/* 字数计数内嵌在输入框里（不再单独占一行）：
+              原来它另起一行右对齐，弹窗里凭空多出一行高度、输入框与底部按钮之间也多一段空档。
+              现在绝对定位贴在输入框右内侧；输入框因此要留出右侧内边距（pr-12 = 48px，
+              够放 "20/20" 这串 10px 数字），否则光标走到末尾时文字会钻到计数底下。
+              inset-y-0 + flex items-center 让它在输入框里垂直居中，与行高无关。
+              pointer-events-none：计数不该抢走点击/长按选词——点它应该落在输入框上。 */}
+          <div className="relative mt-3">
+            <input
+              value={value}
+              onChange={(e) => { setValue(e.target.value); setError(null) }}
+              maxLength={USER_NAME_MAX}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="w-full rounded-xl border border-neutral-200 py-2.5 pl-3 pr-12 text-base outline-none focus:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+            />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[10px] tabular-nums text-neutral-500 dark:text-neutral-400"
+            >
+              {trimmed.length}/{USER_NAME_MAX}
+            </span>
           </div>
           {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
         </div>

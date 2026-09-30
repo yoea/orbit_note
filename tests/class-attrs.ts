@@ -60,8 +60,32 @@ function readAttr(src: string, idx: number): { text: string; end: number } {
   return { text: '', end: idx + 1 }
 }
 
+// lib/client/ui.ts 里导出的 class 常量表（`export const XXX_CLASS = '…'`）。
+//
+// 为什么解析阶段就要展开：组件把样式收敛成常量之后，className 属性原文里只剩
+// `{DIALOG_FOOTER_BUTTON_CLASS}` 这样的标识符——不展开的话，所有「按 token 找 py-3.5」
+// 「不许出现 p-3」的断言都会**静默空转**（查不到就当作没有违规），比断言失败危险得多。
+// 2026-09-30 实测踩到：弹窗底部按钮改用共享常量后，safe-area-padding 的 G4 立刻变红，
+// 而 dialog-footer 的「不许 p-3」那条反倒更"稳"了（空转）。
+//
+// 这里**自动扫常量表**而不是硬编码常量名：将来往 ui.ts 里加新常量无需回来改这个文件。
+function classConstantTable(): Record<string, string> {
+  const src = readFileSync(join(projectRoot, 'lib/client/ui.ts'), 'utf8')
+  const table: Record<string, string> = {}
+  for (const m of src.matchAll(/export const (\w+)\s*=\s*'([^']*)'/g)) table[m[1]] = m[2]
+  return table
+}
+const CLASS_CONSTANTS = classConstantTable()
+
+/** 把 className 属性原文里的 class 常量名展开成真实 class 串 */
+export function expandClassConstants(text: string): string {
+  let out = text
+  for (const [name, value] of Object.entries(CLASS_CONSTANTS)) out = out.replaceAll(name, value)
+  return out
+}
+
 export interface ClassAttr {
-  /** 属性原文（可能跨多行、含模板字符串表达式） */
+  /** 属性原文（可能跨多行、含模板字符串表达式）；**class 常量已展开成真实 class 串** */
   text: string
   /** className 关键字所在行号（1-based） */
   line: number
@@ -84,7 +108,7 @@ export function classAttrsIn(relFile: string, src: string): ClassAttr[] {
       const before = src[idx - 1]
       if (before && /[\w$]/.test(before)) { idx += needle.length; continue }
       const { text, end } = readAttr(src, idx)
-      if (text) out.push({ text, line: src.slice(0, idx).split('\n').length, file: rel })
+      if (text) out.push({ text: expandClassConstants(text), line: src.slice(0, idx).split('\n').length, file: rel })
       idx = end
     }
   }

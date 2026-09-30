@@ -51,7 +51,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* 离线指示：断网时顶部悬浮的琥珀色 wifi-off 圆标（在线时不渲染）。
           位置按页面自适应空位（见 OfflineBadge），悬浮不占内容空间 */}
       <OfflineBadge />
-      <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+      {/* 页面淡入**只挂在这里**，不要挂到各页面自己的根节点上（2026-09-30 修复）。
+          原因：TabBar 的三个目的地是三个不同的 page 组件，切换时会**卸载/重新挂载**；
+          动画类挂在页面根节点上时每次切换都会重放一遍 0.3s 的 opacity 0 → 1，
+          用户看到的就是「每切一次都白屏闪一下」。而本 layout 在同一路由组内**不会重新挂载**
+          （(app) 下所有页面共享它），所以挂在这里等于「整个应用就绪时淡入一次」，
+          之后切 tab 是瞬时的。
+          加在 children 包裹层而不是 TabBar：底部导航栏不该跟着淡入。
+          顺带：这也让首屏淡入与「解锁完成」对齐（state !== 'ready' 时渲染的是空占位，
+          内容真正出现就是在这一支开始渲染的那一刻）。 */}
+      <div className="animate-fade-in flex min-h-0 flex-1 flex-col">{children}</div>
       <TabBar />
     </>
   )

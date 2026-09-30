@@ -3,6 +3,7 @@
 import { useLayoutEffect, useState } from 'react'
 import { GEOCODE_KEY, LOCATION_KEY, OFFLINE_KEY, OTD_KEY, PROMPT_KEY, STREAK_KEY, WEATHER_KEY, syncPrefToServer } from '@/lib/client/prefs'
 import { clearOfflineData, getQueuedCount } from '@/lib/client/offline'
+import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
 
 // 偏好开关组件：未加载时渲染中性占位（圆点居中，视觉上非开非关——
 // 避免「先渲染默认开启、再变关闭」的闪烁）；加载完成后才是真实可切换开关
@@ -122,10 +123,12 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
             </li>
           ))}
         </ul>
-        <button
-          onClick={onClose}
-          className="shrink-0 border-t border-neutral-200 py-3.5 text-base font-medium text-neutral-500 dark:text-neutral-400 active:bg-neutral-100 dark:border-neutral-700 dark:active:bg-neutral-700"
-        >
+        {/* 底部「完成」：整宽一行，样式取共享常量（与 AboutDialog / PasskeysDialog /
+            RecoveryRegenerateDialog 的「完成」同一份）。
+            注：本卡片是 flex flex-col，按钮作为 flex item 本来就会被拉满，
+            但**不能因此省掉常量里的 w-full**——同族的其余三个弹窗卡片是块级容器，
+            在那里没有 w-full 就会收缩（见常量注释）。统一用一份才不会再各自漂移。 */}
+        <button onClick={onClose} className={DIALOG_FOOTER_BUTTON_CLASS}>
           完成
         </button>
       </div>

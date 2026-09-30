@@ -116,7 +116,17 @@ export default function Markdown({ source, className = '' }: { source: string; c
           // 块级标签本身（p / h1-h3 / ul / ol / blockquote / hr）与**围栏代码块的内层 <code>**
           // ——mdast-util-to-hast 把 hProperties 应用在 code 上而不是外层 pre（实测）。
           // li / a / strong / em 是行内或必然嵌套的元素，拿不到顶层锚点，透传只是顺带。
-          p: ({ children, ...rest }) => <p className="mb-3 whitespace-pre-wrap last:mb-0" {...dataAttrs(rest)}>{children}</p>,
+          // ★ 段落**不能**加 whitespace-pre-wrap（2026-09-30 实测踩到，用户反馈
+          //   「查看页段间距过大，像凭空多出一个空行」）：
+          //   mdast-util-to-hast 的 break 处理器在**每个 <br> 之后又补了一个值为 "\n" 的
+          //   文本节点**（node_modules/mdast-util-to-hast/lib/handlers/break.js 的
+          //   `[state.applyData(...), {type: 'text', value: '\n'}]`）。它是给「序列化成
+          //   HTML 字符串」看的——HTML 默认折叠空白，看不见——但只要段落带上
+          //   whitespace-pre-wrap，这个 "\n" 就被原样渲染成**第二次换行**：
+          //   用户敲一个回车，查看页变成两个空行，且编辑页只有一个 ⇒ 既不紧凑也不所见即所得。
+          //   换行语义本来就由 remark-breaks 全权承担（\n → <br>），CSS 侧不需要也不该再保留空白。
+          //   tests/markdown-render.test.ts 的「每个换行恰好一行」守着这条。
+          p: ({ children, ...rest }) => <p className="mb-3 last:mb-0" {...dataAttrs(rest)}>{children}</p>,
           // 标题阶梯：24 / 20 / 18，正文是 16（外层容器的 text-base）。
           //
           // 改造前是 18 / 16 / 16 —— h2 与 h3 字号**完全相同**，只差一个字重级别；

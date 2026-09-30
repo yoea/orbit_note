@@ -50,6 +50,28 @@ interface Group {
   statWords: number
 }
 
+interface Stats {
+  count: number
+  days: number
+  byDay: Record<string, { count: number; words: number }>
+}
+
+// 会话级内存快照（stale-while-revalidate 里的 "stale" 那一半）。
+//
+// 为什么需要（2026-09-30 用户反馈「切到列表页白屏闪一下、疑似从服务器全量刷新」）：
+// TabBar 的三个目的地是三个独立的 page 组件，切走再切回时本组件会**重新挂载**——
+// 没有快照就要重跑一遍「两个请求 + 逐条 AES-GCM 解密」，这段时间页面只有页头，
+// 内容稍后才突然出现。有了快照就先渲染上一次的内容（零延迟、无闪动），
+// 同时在后台照常重取并整体覆盖——**服务器始终是权威**，快照只影响首帧。
+//
+// 刻意只放内存（模块级变量，不落 sessionStorage / IndexedDB）：
+//   · 刷新与冷启动自然清空，不会留下跨会话的过期数据；列表内容是**解密后的明文**，
+//     落盘就违背了本项目的立场；
+//   · 也就不需要任何失效逻辑——每次挂载都会重取一遍。
+// 唯一的"陈旧窗口"是「刚保存完一篇就切到列表」：新条目要等这次后台重取回来才出现，
+// 也就是一个请求往返（此时列表是**有内容的**，不会白屏）；代价远小于每次进来都空一下。
+let snapshot: { items: DecryptedItem[]; stats: Stats | null; offset: number; hasMore: boolean } | null = null
+
 // 本地日期 key（分组与"今天/昨天"判断同口径）
 function dayKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -68,12 +90,20 @@ function dayLabel(key: string): string {
 
 // 全部日记视图（原生路由页 /diary 渲染；DEK 会话级持久化，导航/重载自动恢复）
 export default function DiaryListView() {
-  const [items, setItems] = useState<DecryptedItem[]>([])
-  const [stats, setStats] = useState<{ count: number; days: number; byDay: Record<string, { count: number; words: number }> } | null>(null)
-  const [offset, setOffset] = useState(0)
-  const [hasMore, setHasMore] = useState(true)
+  // 首帧直接用会话快照（上一次离开本页时的内容）：切 tab 回来时立刻有内容，
+  // 不再经历「空列表 → 数据到齐」那段可感知的空白。随后照常重取覆盖。
+  const [items, setItems] = useState<DecryptedItem[]>(() => snapshot?.items ?? [])
+  const [stats, setStats] = useState<Stats | null>(() => snapshot?.stats ?? null)
+  const [offset, setOffset] = useState(() => snapshot?.offset ?? 0)
+  const [hasMore, setHasMore] = useState(() => snapshot?.hasMore ?? true)
   const [loadingMore, setLoadingMore] = useState(false)
+  // 首次进入（无快照可渲染）时列表本来就是空的——那不是「没有日记」，是数据还在路上。
+  // 原先没有这个标志，于是会先闪一行「还没有日记」再被真实列表顶掉。
+  const [loading, setLoading] = useState(() => snapshot == null)
   const [error, setError] = useState<string | null>(null)
+  // 挂载时的既有深度：重取时至少要补齐到这里，否则后台刷新一回来列表会「缩水」、
+  // 滚动位置跟着跳（快照深度可能大于 sessionStorage 里记的上次浏览深度）。
+  const seededDepthRef = useRef(snapshot ? snapshot.items.length : 0)
   const userName = useUserName()
   const [searchOpen, setSearchOpen] = useState(false)
   // 滚动位置保持：sessionStorage 存 { y: 滚动值, count: 已加载条数 }
@@ -88,6 +118,10 @@ export default function DiaryListView() {
   // 不要写回渲染期赋值（itemsRef.current = items）——渲染期写 ref 会在并发渲染下读到
   // 尚未提交的值，也是 react-hooks/refs 明确禁止的。
   useEffect(() => { itemsRef.current = items }, [items])
+
+  // 快照回写：状态一变就覆盖（组件随后被卸载也无妨——模块级变量本就该继续持有最后的内容）。
+  // 卸载时不需要清理：下一次挂载要的就是这份「上次离开时的样子」。
+  useEffect(() => { snapshot = { items, stats, offset, hasMore } }, [items, stats, offset, hasMore])
 
   // 读取恢复状态：{ y, count } 或 null
   const readScrollState = (): { y: number; count: number } | null => {
@@ -201,7 +235,7 @@ export default function DiaryListView() {
     return { items: decrypted, serverCount }
   }, [])
 
-  // 初始加载：统计 + 第一页（有滚动恢复状态时循环加载到上次的深度）
+  // 初始加载：统计 + 第一页（有滚动恢复状态 / 会话快照时循环加载到对应深度）
   // 统计离线兜底：请求失败（.catch → null）时回退缓存值。
   useEffect(() => {
     void (async () => {
@@ -219,9 +253,12 @@ export default function DiaryListView() {
         // 分页游标按服务器条目数推进（首页可能并入未同步队列的多余条目）
         let serverOffset = first.serverCount
         let lastServerCount = first.serverCount
-        if (restore && restore.count > loaded.length) {
-          // 继续加载直到覆盖上次浏览深度（分页循环）
-          while (loaded.length < restore.count) {
+        // 目标深度 = max(上次浏览深度, 本次挂载时快照已有条数)：既要覆盖滚动恢复，
+        // 也不能让列表比首帧渲染出来的更短。
+        const target = Math.max(restore?.count ?? 0, seededDepthRef.current)
+        if (target > loaded.length) {
+          // 继续加载直到覆盖目标深度（分页循环）
+          while (loaded.length < target) {
             const more = await fetchPage(serverOffset)
             if (more.serverCount === 0) break
             serverOffset += more.serverCount
@@ -235,6 +272,10 @@ export default function DiaryListView() {
         setHasMore(lastServerCount === PAGE_SIZE)
       } catch {
         setError('连接失败，请检查网络后重试')
+      } finally {
+        // 无论成功失败都要收掉 loading：失败会走 error 分支（整页提示），
+        // 成功则不再有「数据还在路上」的阶段。
+        setLoading(false)
       }
     })()
   }, [fetchPage])
@@ -319,7 +360,7 @@ export default function DiaryListView() {
        若继续用 window 滚动，列表内容会把 TabBar 挤到文档末尾——必须滚动到底才能看到它。
        代价：失去 iOS「点状态栏回到顶部」的原生行为（那作用于 window 滚动），
        换来与其余页面（/settings、/entry、/settings/*）一致的滚动模型。 */
-    <main ref={scrollRef} className="animate-fade-in mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt">
+    <main ref={scrollRef} className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt">
       {/* 电脑版与主页同宽（手机视图宽度），不随屏幕拉伸 */}
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       {/* 本页是 tab 目的地之一，不再放返回箭头（回首页由 TabBar 的「写」承担）；
@@ -393,7 +434,9 @@ export default function DiaryListView() {
             </ul>
           </section>
         ))}
-        {items.length === 0 && <p className="pt-20 text-center text-sm text-neutral-500 dark:text-neutral-400">还没有日记</p>}
+        {/* 空态只在「确实取完了、而且真的一条都没有」时显示。加载中不能显示它——
+            那是把「数据还在路上」说成「你没有日记」，也是切 tab 时最容易看到的错误闪现。 */}
+        {!loading && items.length === 0 && <p className="pt-20 text-center text-sm text-neutral-500 dark:text-neutral-400">还没有日记</p>}
         {items.length > 0 && (
           <div className="pt-2">
             {hasMore ? (

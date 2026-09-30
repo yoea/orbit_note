@@ -47,6 +47,35 @@ describe('Markdown 渲染：基础语法', () => {
   })
 })
 
+describe('Markdown 渲染：换行与段间距（每个换行恰好一行）', () => {
+  // 真实事故（2026-09-30，用户反馈「查看页段间距过大，像凭空多出一个空行」）：
+  // mdast-util-to-hast 的 break 处理器会在**每个 <br> 之后又补一个值为 "\n" 的文本节点**
+  // （见 node_modules/mdast-util-to-hast/lib/handlers/break.js 的
+  //  `[state.applyData(node, result), { type: 'text', value: '\n' }]`）。
+  // 它本来是给「序列化成 HTML 字符串」看的（HTML 默认折叠空白，谁也看不见），
+  // 但只要段落带了 whitespace-pre-wrap，这个 "\n" 就会被原样渲染成**第二次换行**：
+  // 用户敲一个回车，编辑页是一行、查看页变成两行（中间白出一整行）。
+  // 换行语义本来就由 remark-breaks 全权负责（\n → <br>），CSS 侧不需要也不该再保留空白。
+  it('段落不得使用 whitespace-pre*（否则 <br> 后面那个 "\\n" 会变成第二次换行）', () => {
+    const out = html('第一行\n第二行')
+    expect(out, 'remark-breaks 没生效，本守卫的前提不成立').toContain('<br')
+    const pOpen = out.match(/<p[^>]*>/)?.[0] ?? ''
+    expect(pOpen, '解析不到段落开始标签，这条断言会空转').toMatch(/^<p[\s>]/)
+    expect(
+      pOpen,
+      '段落带了 whitespace-pre* ⇒ 每个换行会被渲染成两个空行（编辑页一行、查看页两行）',
+    ).not.toMatch(/whitespace-pre/)
+  })
+
+  it('整篇渲染产物里不存在任何保留空白的块（含列表 / 引用 / 代码块）', () => {
+    const out = html('# 标题\n\n段落一\n第二行\n\n- 甲\n- 乙\n\n> 引用\n\n```js\nconst a = 1\n```\n')
+    expect(out, '渲染产物为空，断言会空转').toContain('<br')
+    for (const tag of out.match(/<[a-z][a-z0-9]*[^>]*>/g) ?? []) {
+      expect(tag, `产物里出现了 whitespace-pre*：${tag}`).not.toMatch(/whitespace-pre/)
+    }
+  })
+})
+
 describe('Markdown 渲染：安全前提（升级依赖后必须仍然成立）', () => {
   it('块级 raw HTML 不产生元素，只以转义文本呈现', () => {
     const out = html('<script>alert(1)</script>')

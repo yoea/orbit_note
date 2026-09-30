@@ -1,6 +1,7 @@
 'use client'
 
 import OrbitLogo from './OrbitLogo'
+import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
 
 // 关于弹窗：iOS Alert 风格居中卡片（内容可滚动），展示项目最值得了解的信息。
 // 从设置页「关于 Orbit」项进入；遮罩点击或「完成」按钮关闭。
@@ -66,14 +67,12 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
             © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'}
           </p>
         </div>
-        {/* 底部「完成」：直贴卡片边缘的一整行（iOS Alert 惯例）——与 ConfirmDialog 的双按钮行、
-            PrefsDialog / PasskeysDialog 的「完成」是同一种结构（border-t + py-3.5，约 52px）。
-            此前这里是「p-3 包裹 + rounded-xl 胶囊」，总高约 76px，比同族的「完成」高出 24px，
-            同一个「关闭」动作在几个弹窗里大小不一。 */}
-        <button
-          onClick={onClose}
-          className="shrink-0 border-t border-neutral-200 py-3.5 text-base font-medium text-neutral-500 active:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:active:bg-neutral-700"
-        >
+        {/* 底部「完成」：直贴卡片边缘的一整行（iOS Alert 惯例），样式取共享常量。
+            此前这里是「p-3 包裹 + rounded-xl 胶囊」（总高约 76px，比同族的「完成」高 24px）。
+            ★ 换成裸按钮后必须靠常量里的 w-full 撑满：本卡片是**普通块级**容器，
+              <button> 默认 inline-block，没有 w-full 就会缩成「两个字宽的小块」贴在左边
+              （2026-09-30 用户反馈的「完成按钮显示异常」）。 */}
+        <button onClick={onClose} className={DIALOG_FOOTER_BUTTON_CLASS}>
           完成
         </button>
       </div>

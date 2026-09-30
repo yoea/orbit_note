@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useUserName } from '@/lib/client/use-user-name'
 import AddPasskeyPanel from './AddPasskeyPanel'
 import ConfirmDialog from './ConfirmDialog'
+import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
 
 export interface PasskeyInfo {
   id: string
@@ -185,13 +186,12 @@ export default function PasskeysDialog({ initialData, onClose }: {
           </>
           )}
         </div>
-        {/* 底部单按钮（完成 / 返回列表）：直贴卡片边缘的一整行，与 AboutDialog、PrefsDialog
-            的「完成」同一种结构（border-t + py-3.5，约 52px）。此前是「p-3 包裹 + 圆角胶囊」
-            （约 76px），同一族弹窗的关闭按钮高度不一致。 */}
-        <button
-          onClick={view === 'list' ? onClose : () => setView('list')}
-          className="shrink-0 border-t border-neutral-200 py-3.5 text-base font-medium text-neutral-500 active:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:active:bg-neutral-700"
-        >
+        {/* 底部单按钮（完成 / 返回列表）：直贴卡片边缘的一整行，样式取共享常量。
+            ★ 本卡片是**普通块级**容器，<button> 默认 inline-block，必须靠常量里的 w-full
+              撑满——否则「完成」两个字会缩成一小块贴在左边（2026-09-30 用户反馈的
+              「通行密钥弹窗按钮错乱」）。此前还是「p-3 包裹 + 圆角胶囊」（约 76px），
+              与 PrefsDialog 的「完成」高度不一致。 */}
+        <button onClick={view === 'list' ? onClose : () => setView('list')} className={DIALOG_FOOTER_BUTTON_CLASS}>
           {view === 'list' ? '完成' : '返回列表'}
         </button>
       </div>
