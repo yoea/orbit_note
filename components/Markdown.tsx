@@ -42,9 +42,24 @@ export default function Markdown({ source, className = '' }: { source: string; c
             <span className="text-neutral-500 dark:text-neutral-400">［图片：{alt || '未命名'}］</span>
           ),
           p: ({ children }) => <p className="mb-3 whitespace-pre-wrap last:mb-0">{children}</p>,
-          h1: ({ children }) => <h1 className="mb-2 mt-4 text-lg font-semibold first:mt-0">{children}</h1>,
-          h2: ({ children }) => <h2 className="mb-2 mt-4 text-base font-semibold first:mt-0">{children}</h2>,
-          h3: ({ children }) => <h3 className="mb-1.5 mt-3 text-base font-medium first:mt-0">{children}</h3>,
+          // 标题阶梯：24 / 20 / 18，正文是 16（外层容器的 text-base）。
+          //
+          // 改造前是 18 / 16 / 16 —— h2 与 h3 字号**完全相同**，只差一个字重级别；
+          // 而 h3 又和正文同为 16px（仅 500 vs 400），等于三级标题实际只有两级。
+          // 现在三级全部高于正文且逐级递减，层级由「字号」独立承担，字重统一为 600
+          // （原先 h3 是 500，与 h2 的字重差让层级更糊）。
+          //
+          // 为什么 h1 取 24：正文基准 16，24 是 1.5 倍，正好是 Obsidian（1.6em）与
+          // GitHub（2em）之间偏克制的一档；在 375px 宽的手机上每行仍能放下 14 个汉字。
+          //
+          // leading-snug：容器是 leading-relaxed（1.625），对大字号标题太松——
+          // 24px × 1.625 = 39px 行高会把标题和它下面的内容推开，削弱"标题属于下方内容"的视觉归属。
+          //
+          // mt 逐级递减（28/24/20）、mb 也递减（12/10/8）且**都小于段落的 mb-3(12px)**：
+          // 标题与上方内容留得多、与自己下方的内容贴得近，这是标题的常规排版逻辑。
+          h1: ({ children }) => <h1 className="mb-3 mt-7 text-2xl font-semibold leading-snug first:mt-0">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-2.5 mt-6 text-xl font-semibold leading-snug first:mt-0">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-2 mt-5 text-lg font-semibold leading-snug first:mt-0">{children}</h3>,
           ul: ({ children }) => <ul className="mb-3 list-disc pl-5 last:mb-0">{children}</ul>,
           ol: ({ children }) => <ol className="mb-3 list-decimal pl-5 last:mb-0">{children}</ol>,
           li: ({ children }) => <li className="mb-1 last:mb-0">{children}</li>,
