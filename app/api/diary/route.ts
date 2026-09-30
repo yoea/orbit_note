@@ -12,7 +12,16 @@ export async function GET(req: Request) {
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 100) || 100, 1), 200)
   // 分页：offset（客户端"加载更多"）
   const offset = Math.max(Number(url.searchParams.get('offset') ?? 0) || 0, 0)
-  const entries = await db.select().from(diaryEntries).orderBy(desc(diaryEntries.createdAt)).limit(limit).offset(offset)
+  // ★ 排序必须是**全序**：created_at 相同（导入的 Day One/Journey 备份是秒级精度，
+  // 同一批导入里很容易撞上）时，只按 created_at 排序的结果在 LIMIT/OFFSET 分页下不保证稳定：
+  // 同一行可能在两次查询里落到不同页（被跳过或重复），客户端「加载更多」就会漏条目。
+  // 漏条目本身已经够糟，更糟的是它会牵连本地缓存：列表页用「服务器某页的窗口」判定
+  // 缓存里哪些条目已被删除（lib/client/offline.ts 的 staleCachedIds），被分页跳过的那条
+  // 会被误判成「已删除」而从缓存里清掉 —— 离线点开它就只能「没反应」。
+  // 补一个 id 次级键（uuid 可比较）即得到确定的全序，分页从此稳定。
+  const entries = await db.select().from(diaryEntries)
+    .orderBy(desc(diaryEntries.createdAt), desc(diaryEntries.id))
+    .limit(limit).offset(offset)
   return NextResponse.json({ entries })
 }
 

@@ -10,12 +10,13 @@ import { copyText } from '@/lib/client/clipboard'
 import { clientReverseGeocode } from '@/lib/client/geocode'
 import { getPosition, parseCoords } from '@/lib/client/location'
 import { isAutoPlaceNameEnabled } from '@/lib/client/prefs'
-import { cacheEntriesPage, getCachedEntryById, getQueuedEntryById, removeCachedEntry, removeQueuedEntry, updateQueuedEntry } from '@/lib/client/offline'
+import { cacheEntriesPage, getCachedEntryById, getQueuedEntryById, removeCachedEntry, removeQueuedEntry, resolveEntryLoad, updateQueuedEntry } from '@/lib/client/offline'
 import { weatherEmoji } from '@/lib/client/weather'
 import { playSaveSound } from '@/lib/client/sound'
 import { BRAND_GRADIENT_CLASS, EDITOR_TEXTAREA_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import Toast from './Toast'
 import Markdown from './Markdown'
+import MarkdownBoundary from './MarkdownBoundary'
 import MarkdownToolbar from './MarkdownToolbar'
 import { countWords } from '@/lib/client/markdown'
 import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
@@ -45,6 +46,9 @@ export default function EntryView({ id }: { id: string }) {
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 「打不开」的两种明确原因（见 resolveEntryLoad）：以前这两种都走静默 router.replace('/diary')，
+  // 用户只觉得「点了没反应」。现在各自渲染说明页 + 诊断码，便于用户反馈与线上归因。
+  const [miss, setMiss] = useState<'deleted' | 'offline-missing' | null>(null)
   const [decryptFailed, setDecryptFailed] = useState(false)
   // 「未同步」标记：条目来自离线写队列（新增后尚未上传服务器）。
   // 这类条目离线可编辑（改队列密文）/可删除（移出队列）；缓存条目离线只读。
@@ -210,37 +214,43 @@ export default function EntryView({ id }: { id: string }) {
   useEffect(() => {
     void (async () => {
       try {
+        setMiss(null)
         const dek = getDek()
         if (!dek) throw new Error('未解锁')
         const res = await fetch(`/api/diary/${id}`).catch(() => null)
         // 未同步笔记（离线新增、尚未上传）：服务器上还没有这条，但列表里可见可点开
         const queued = await getQueuedEntryById(id)
-        let loaded: Entry | null = null
-        let fromServer = false
-        if (res) {
-          if (res.status === 404) {
-            // 服务器没有（未同步笔记，或本地残留）：回退本地队列/缓存，不当作「已删除」跳走
-            loaded = queued ?? (await getCachedEntryById(id))
-          } else if (res.ok) {
-            loaded = ((await res.json()) as { entry: Entry }).entry
-            fromServer = true
-          } else {
-            throw new Error('加载失败')
-          }
-        } else {
-          // 网络不可达：回退本地——密文缓存 + 离线写队列
-          loaded = (await getCachedEntryById(id)) ?? queued
+        // 服务器给出 200 时不需要读本地缓存（少一次 IndexedDB 往返）；其余情形都要读
+        const cached = res?.status === 200 ? null : await getCachedEntryById(id)
+        // 数据来源判定统一走纯函数（真值表见 tests/entry-load.test.ts）：
+        // 五种情形各自有名字，组件只负责渲染——**不再有静默跳转**那条路径。
+        const plan = resolveEntryLoad({
+          serverStatus: res ? res.status : null,
+          hasQueued: queued !== null,
+          hasCached: cached !== null,
+        })
+        if (plan.kind === 'error') throw new Error('加载失败')
+        if (plan.kind === 'deleted' || plan.kind === 'offline-missing') {
+          // ★ 原来这里是 `if (!loaded) { router.replace('/diary'); return }`——静默跳回列表，
+          // 用户看到的就是「点击没反应、无法查看」，而服务端日志里什么都没有，线上无法归因。
+          // 现在显式渲染一个说明页（含诊断码），把「为什么打不开」直接告诉用户。
+          setMiss(plan.kind)
+          return
         }
-        if (!loaded) { router.replace('/diary'); return }
-        const entry = loaded
-        setServerBacked(fromServer)
+        const loaded: Entry = plan.kind === 'server'
+          ? ((await res!.json()) as { entry: Entry }).entry
+          : plan.kind === 'local-queue' ? queued! : cached!
+        setServerBacked(plan.kind === 'server')
         setPendingSync(queued !== null)
         // 网络不可达且数据来自本地缓存（非未同步笔记）→ 离线只读（PATCH/DELETE 发不出去）
         setLocalReadonly(res === null && queued === null)
-        setEntry(entry)
-        if (fromServer) void cacheEntriesPage([entry]) // 在线成功顺手缓存单条（密文）
+        setEntry(loaded)
+        // ★ 必须 await：与列表页同一条不变量——**能被读到的条目，本地必须已有密文**。
+        // 原文是 `void cacheEntriesPage([entry])`，写完之前就断网/被 iOS 挂起，这条就永远
+        // 没进缓存，之后离线点开它只会「没反应」。
+        if (plan.kind === 'server') await cacheEntriesPage([loaded])
         try {
-          setPlain(await decryptText(dek, entry.ciphertext, entry.iv))
+          setPlain(await decryptText(dek, loaded.ciphertext, loaded.iv))
           setDecryptFailed(false)
         } catch {
           setPlain('(解密失败，数据可能已损坏)')
@@ -250,7 +260,8 @@ export default function EntryView({ id }: { id: string }) {
         setError('连接失败，请检查网络后重试')
       }
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // 依赖只有 id：本 effect 内引用的其它东西都是模块级函数或 setState（引用稳定），
+    // 不需要 eslint-disable 抑制 exhaustive-deps（原先抑制是因为里面用了 router）。
   }, [id])
 
   // 打开详情页自动补地点名：有坐标但地点名为空 → 反查 → PATCH 存库 + 更新界面。
@@ -407,6 +418,34 @@ export default function EntryView({ id }: { id: string }) {
     )
   }
 
+  // ★ 打不开时的明确说明（替代原来的静默跳回列表）。
+  // 文案刻意解释「为什么」与「怎么办」：离线缺缓存是**可以自愈**的（联网打开一次即可），
+  // 「不在了」则不可逆——两者混在一起只会让用户以为是同一个 bug。
+  // 诊断码与登录页的「诊断 no-dek」、error.tsx 的「诊断码」同风格：只有类别，不含任何内容信息。
+  if (miss) {
+    return (
+      <main className="mx-auto flex h-full w-full max-w-md flex-col items-center justify-center gap-3 px-5 safe-pt">
+        <p className="text-base font-medium text-neutral-800 dark:text-neutral-100">
+          {miss === 'deleted' ? '这篇日记不在了' : '这篇还没缓存到本机'}
+        </p>
+        <p className="max-w-xs text-center text-sm leading-relaxed text-neutral-500 dark:text-neutral-400">
+          {miss === 'deleted'
+            ? '服务器上已经没有这篇日记（可能在其他设备上删除过）。'
+            : '现在连不上服务器，本机也没有这篇的离线副本。联网后打开一次，它就会缓存下来，之后离线也能读。'}
+        </p>
+        <Link
+          href="/diary"
+          className="mt-1 rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white active:opacity-90"
+        >
+          返回列表
+        </Link>
+        <p className="mt-1 text-[10px] text-neutral-500 dark:text-neutral-400">
+          诊断 {miss === 'deleted' ? 'notfound' : 'nocache'}
+        </p>
+      </main>
+    )
+  }
+
   if (!entry) return <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt" />
 
   const created = new Date(entry.createdAt)
@@ -547,14 +586,25 @@ export default function EntryView({ id }: { id: string }) {
       ) : null}
       {editing ? (
         <>
+          {/* Markdown 工具条：放在**编辑区顶部**（输入框/预览区之上）。
+              原先在输入框下方——手机输入时键盘从底部弹出会把整条盖住，工具条等于不可用
+              （2026-09-30 用户反馈）。与写页共用同一份组件，两页位置一致。
+              预览态隐藏动作按钮但保留这一行，按钮位置不跳动。 */}
+          <MarkdownToolbar
+            preview={preview}
+            disabled={busy}
+            onAction={applyToolbar}
+            onTogglePreview={togglePreview}
+          />
           {/* 编辑区：flex-1 弹性填充剩余空间（min-h-0 允许收缩）——编辑区完整填满视口。
               预览态换成渲染结果（只读，不改 plain）——与写页「预览」同一套交互。
               输入框字号/行高来自 EDITOR_TEXTAREA_CLASS，与写页 AutoTextarea 同源
-              （text-base = 查看页 qo-markdown 容器）——编辑与查看必须逐行对齐。 */}
+              （text-base = 查看页 qo-markdown 容器）——编辑与查看必须逐行对齐。
+              上下不再写 mt-3：上间距由工具条的 mb-2 承担，下间距由底部区承担。 */}
           {preview ? (
-            <div ref={previewRef} className="mt-3 min-h-0 flex-1 overflow-y-auto">
+            <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto">
               {plain.trim()
-                ? <Markdown source={plain} />
+                ? <MarkdownBoundary source={plain}><Markdown source={plain} /></MarkdownBoundary>
                 : <p className="text-sm text-neutral-500 dark:text-neutral-400">还没有内容</p>}
             </div>
           ) : (
@@ -563,17 +613,9 @@ export default function EntryView({ id }: { id: string }) {
               value={plain}
               onChange={(e) => setPlain(e.target.value)}
               disabled={busy}
-              className={`mt-3 ${EDITOR_TEXTAREA_CLASS}`}
+              className={EDITOR_TEXTAREA_CLASS}
             />
           )}
-          {/* Markdown 工具条（与写页共用 components/MarkdownToolbar.tsx）：
-              插入标记 + 编辑/预览切换。预览态隐藏动作按钮但保留这一行，按钮位置不跳动。 */}
-          <MarkdownToolbar
-            preview={preview}
-            disabled={busy}
-            onAction={applyToolbar}
-            onTogglePreview={togglePreview}
-          />
           {/* 底部区：整体贴底（上次编辑 + 保存按钮），输入框弹性占中间。
               必须有下内边距：main 自身没有 pb，而 TabBar 就紧贴在它下方（(app)/layout 里
               两者是相邻的兄弟节点，中间没有任何间隔）——少了这段留白，渐变实心按钮的下边缘
@@ -600,8 +642,12 @@ export default function EntryView({ id }: { id: string }) {
         <>
           {/* 正文：Markdown 源码交给共享渲染器（与编辑器预览、列表派生逻辑同源）。
               改造前是 plain.split('\n').map → 每行一个 <p>；现在换行由 remark-breaks
-              处理成 <br>，段间距只出现在真正的空行分隔处。 */}
-          <Markdown source={plain} className="mt-4" />
+              处理成 <br>，段间距只出现在真正的空行分隔处。
+              外面包一层 MarkdownBoundary：渲染器异常时退化成「原文可读」，
+              绝不让一篇笔记因为格式解析失败而变成「打不开」（见该组件注释）。 */}
+          <MarkdownBoundary source={plain}>
+            <Markdown source={plain} className="mt-4" />
+          </MarkdownBoundary>
         </>
       )}
       {decryptFailed && (

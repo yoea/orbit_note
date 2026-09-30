@@ -189,10 +189,15 @@ export default function DiaryListView() {
       if (!res.ok) throw new Error('加载失败')
       const server = ((await res.json()) as { entries: Entry[] }).entries
       serverCount = server.length
-      void cacheEntriesPage(server) // 在线成功顺手缓存（密文，异步不阻塞）
-      // 服务器是删除的权威：把本页窗口内已不存在的本地缓存剔除，
-      // 否则离线模式会一直显示「在线列表里早就没有的」条目（本地缓存此前只增不减）
-      void pruneCachedEntries(server, { isFirstPage: pageOffset === 0, isLastPage: server.length < PAGE_SIZE })
+      // ★ 必须 await：这是「离线可读性」的不变量——**列表里出现过的条目，本地必须已有密文**。
+      // 原文是 `void cacheEntriesPage(server)`（不等待），于是存在一个窗口：列表已经渲染出
+      // 这些条目，而密文还没落 IndexedDB。用户此时断网（或 iOS 把页面挂起、写入再也没提交）
+      // 再点开这篇，详情页在本地找不到密文 ⇒ 表现为「点了没反应」（2026-09-30 定位）。
+      // 代价是每页一次 IndexedDB 写（几毫秒），换的是离线可读性的确定性。
+      // prune 同理：串行化 + 等它结束，避免它在渲染后又改动缓存（并发 RMW 会互相覆盖，
+      // 见 lib/client/offline.ts 的 withEntriesLock）。
+      await cacheEntriesPage(server)
+      await pruneCachedEntries(server, { isFirstPage: pageOffset === 0, isLastPage: server.length < PAGE_SIZE })
       // 未同步 = 队列里有、且服务器本页没有。服务器本页已有 ⇒ 冲刷已完成，
       // 不该再打「未同步」（徽标取自这次请求的实时状态，不依赖队列事件的时序）
       const serverIds = new Set(server.map((e) => e.id))

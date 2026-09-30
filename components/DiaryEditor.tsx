@@ -426,6 +426,15 @@ export default function DiaryEditor() {
           <span>{PROMPTS[promptIdx]}</span>
         </button>
       )}
+      {/* Markdown 工具条：放在**编辑区顶部**（输入框之上）。
+          原先在输入框下方——手机输入时键盘从底部弹出会把整条盖住，工具条等于不可用
+          （2026-09-30 用户反馈）。横条本身与详情页编辑态共用 components/MarkdownToolbar.tsx。 */}
+      <MarkdownToolbar
+        preview={preview}
+        disabled={status === 'saving'}
+        onAction={applyToolbar}
+        onTogglePreview={togglePreview}
+      />
       {preview ? (
         <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto pb-2">
           {text.trim()
@@ -442,13 +451,6 @@ export default function DiaryEditor() {
           disabled={status === 'saving'}
         />
       )}
-      {/* Markdown 工具条（横条本身与详情页编辑态共用 components/MarkdownToolbar.tsx） */}
-      <MarkdownToolbar
-        preview={preview}
-        disabled={status === 'saving'}
-        onAction={applyToolbar}
-        onTogglePreview={togglePreview}
-      />
       {/* 空状态引导：首次（无任何日记）时显示柔和渐变引导 */}
       {entryCount === 0 && (
         <div className="flex flex-col items-center gap-2 py-5">

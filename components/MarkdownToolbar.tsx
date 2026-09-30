@@ -11,6 +11,12 @@ import { TOOLBAR_ACTIONS, type ToolbarAction } from '@/lib/client/markdown'
 // 两处共用一份后，按钮集合（lib/client/markdown.ts 的 TOOLBAR_ACTIONS）、样式与
 // 「预览态隐藏按钮但保留这一行」的行为都不可能再各自漂移。
 //
+// ★ 位置：**编辑区顶部**（输入框/预览区之上），不是底部。
+// 原因（2026-09-30 用户反馈）：手机输入时键盘从底部弹出，会把输入框下方的横条整个盖住，
+// 工具条等于不可用。放到编辑区顶部后，键盘只影响下半屏，工具条始终露在键盘之上；
+// 桌面端位置同理（仍是页头之下、正文之上），两处布局一致。
+// 因此分隔线是 border-b（把工具条与它下方的正文分开），不再是 border-t。
+//
 // 预览态刻意不渲染动作按钮，但**保留这一行**（右侧「编辑 / 预览」按钮位置不动）：
 // 否则切换时按钮会左右跳一下。
 
@@ -21,7 +27,7 @@ export default function MarkdownToolbar({ preview, disabled, onAction, onToggleP
   onTogglePreview: () => void
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-0.5 border-t border-neutral-100 pt-2 dark:border-neutral-800">
+    <div className="mb-2 flex shrink-0 items-center gap-0.5 border-b border-neutral-100 pb-2 dark:border-neutral-800">
       {!preview && TOOLBAR_ACTIONS.map((a) => (
         <button
           key={a.key}

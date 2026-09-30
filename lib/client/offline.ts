@@ -127,20 +127,25 @@ export async function pruneCachedEntries(
   opts: { isFirstPage: boolean; isLastPage: boolean },
 ): Promise<void> {
   if (!isOfflineCacheEnabled() || !page.length) return
-  const cached = (await idbGet<EncryptedEntry[]>(ENTRIES_KEY)) ?? []
-  if (!cached.length) return
-  const stale = new Set(staleCachedIds(cached, page, opts))
-  if (!stale.size) return
-  const queueIds = new Set(((await idbGet<QueuedEntry[]>(QUEUE_KEY)) ?? []).map((q) => q.id))
-  const next = cached.filter((e) => !stale.has(e.id) || queueIds.has(e.id))
-  if (next.length !== cached.length) await idbSet(ENTRIES_KEY, next)
+  // 读-改-写整段进锁：否则会和并发的 cacheEntriesPage 互相覆盖（见 withEntriesLock 注释）
+  return withEntriesLock(async () => {
+    const cached = (await idbGet<EncryptedEntry[]>(ENTRIES_KEY)) ?? []
+    if (!cached.length) return
+    const stale = new Set(staleCachedIds(cached, page, opts))
+    if (!stale.size) return
+    const queueIds = new Set(((await idbGet<QueuedEntry[]>(QUEUE_KEY)) ?? []).map((q) => q.id))
+    const next = cached.filter((e) => !stale.has(e.id) || queueIds.has(e.id))
+    if (next.length !== cached.length) await idbSet(ENTRIES_KEY, next)
+  })
 }
 
 // 单条从缓存里剔除（在线删除成功后调用）——否则这条会在离线模式里「复活」。
 export async function removeCachedEntry(id: string): Promise<void> {
-  const cached = (await idbGet<EncryptedEntry[]>(ENTRIES_KEY)) ?? []
-  const next = cached.filter((e) => e.id !== id)
-  if (next.length !== cached.length) await idbSet(ENTRIES_KEY, next)
+  return withEntriesLock(async () => {
+    const cached = (await idbGet<EncryptedEntry[]>(ENTRIES_KEY)) ?? []
+    const next = cached.filter((e) => e.id !== id)
+    if (next.length !== cached.length) await idbSet(ENTRIES_KEY, next)
+  })
 }
 
 // 列表数据源 = 服务器真值 ∪ 未同步队列（两端一致：离线刚写的笔记在在线列表也可见，
@@ -151,6 +156,53 @@ export function unionWithPending(server: EncryptedEntry[], queued: EncryptedEntr
   return [...queued.filter((q) => !ids.has(q.id)), ...server].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
 }
 
+// ---- 详情页数据来源判定（纯函数，可单测）----
+//
+// ★ 为什么值得单独抽出来（2026-09-30「离线点开部分笔记无反应」的定位结果）：
+// 这个判定决定「点开一篇笔记会发生什么」，而它原来的失败模式是**完全静默的**——
+// 网络不可达且本地没有副本时直接 `router.replace('/diary')`，用户看到的就是
+// 「点了没反应、打不开」，既没有报错也没有诊断信息，线上无法归因。
+// 抽成纯函数后五种情形各有名字，组件只负责按名字渲染，测试能逐一钉住真值表
+// （tests/entry-load.test.ts），以后不再出现「某种组合没人处理」。
+//
+// 与正文格式**无关**：本地缓存里存的是密文，解密与渲染全在客户端完成，
+// 不依赖网络、不依赖 Markdown 解析结果——所以「在线写的 markdown 笔记离线打不开」
+// 这个猜想在数据链路上不成立（详见 tests/entry-load.test.ts 的不变量断言）。
+export type EntryLoadPlan =
+  /** 服务器 200：以服务器为准（顺手写回本地缓存） */
+  | { kind: 'server' }
+  /** 服务器没有这条 / 网络不可达，但本地写队列里有（离线新增、尚未同步） */
+  | { kind: 'local-queue' }
+  /** 网络不可达，用本地密文缓存兜底（离线只读：PATCH/DELETE 发不出去） */
+  | { kind: 'local-cache' }
+  /** 服务器明确 404 且本地也没有：这篇已经不在了（别处删过） */
+  | { kind: 'deleted' }
+  /** 网络不可达且本地没有缓存：这篇还没缓存到本机 */
+  | { kind: 'offline-missing' }
+  /** 其它服务器错误（401/5xx…）：按加载失败处理 */
+  | { kind: 'error' }
+
+export function resolveEntryLoad(input: {
+  /** 服务器响应状态码；网络不可达时为 null */
+  serverStatus: number | null
+  hasQueued: boolean
+  hasCached: boolean
+}): EntryLoadPlan {
+  const { serverStatus, hasQueued, hasCached } = input
+  if (serverStatus === 200) return { kind: 'server' }
+  // 404 优先信队列（服务器没这条 ⇒ 它就是「未同步」那批），再退缓存
+  if (serverStatus === 404) {
+    if (hasQueued) return { kind: 'local-queue' }
+    return hasCached ? { kind: 'local-cache' } : { kind: 'deleted' }
+  }
+  // 网络不可达：优先信缓存（服务器那份可能就是拿不到），再退队列
+  if (serverStatus === null) {
+    if (hasCached) return { kind: 'local-cache' }
+    return hasQueued ? { kind: 'local-queue' } : { kind: 'offline-missing' }
+  }
+  return { kind: 'error' }
+}
+
 // 队列内容变化（冲刷成功、离线删除未同步笔记等）→ 通知界面刷新「未同步」标记，
 // 不必整表重取（列表保持滚动位置，只更新徽标）。
 export const QUEUE_EVENT = 'qo-offline-queue'
@@ -159,12 +211,45 @@ function notifyQueueChanged(): void {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(QUEUE_EVENT))
 }
 
+// ---- 离线缓存写入的串行化（ENTRIES_KEY 的写锁）----
+//
+// ★ 为什么必须串行（2026-09-30 定位到的真缺陷）：
+// 本模块对 `offline:entries` 的操作**全是「读-改-写」**——cacheEntriesPage 合并、
+// pruneCachedEntries 过滤、removeCachedEntry 删除——而调用方清一色是
+// `void cacheEntriesPage(...)` / `void pruneCachedEntries(...)` 这种**不等待的并发调用**
+// （DiaryListView.fetchPage 每次分页都同时发这两个）。
+//
+// 两个 RMW 交叠的后果是**丢失更新**：后提交的那次拿的是自己读到的旧快照，
+// 整表覆盖时会抹掉另一次刚写进去的条目。fetchPage 的现场尤其典型——
+// pruneCachedEntries 读到的 cached 里没有本页新条目，它一旦真的判定出 stale
+// （stale.size > 0 才写），写回的就是「本页之前」的整张表。
+//
+// 为什么这条不能只当成「少缓存了一条」：**列表是能看见这些条目的**（条目来自组件内存里的
+// items），而离线点开一篇笔记要在本地缓存里按 id 取密文（EntryView 的 getCachedEntryById）。
+// 缓存里没有 ⇒ 详情页拿不到数据 ⇒ 用户看到的是「点了没反应、打不开」。
+// 也就是说：缓存的完整性 = 离线可读性，必须当成不变量来守。
+//
+// 实现：模块级 promise 链，把每次读-改-写排成串行。失败不阻塞后续（链上吞掉异常）。
+let entriesLock: Promise<unknown> = Promise.resolve()
+
+/** 把一次对 ENTRIES_KEY 的读-改-写排进串行队列（内部用；测试里通过公开函数间接验证） */
+export function withEntriesLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = entriesLock.then(fn, fn)
+  entriesLock = next.then(
+    () => undefined,
+    () => undefined,
+  )
+  return next
+}
+
 // ---- 日记密文缓存（离线读用）----
 
 export async function cacheEntriesPage(entries: EncryptedEntry[]): Promise<void> {
   if (!isOfflineCacheEnabled() || !entries.length) return
-  const existing = (await idbGet<EncryptedEntry[]>(ENTRIES_KEY)) ?? []
-  await idbSet(ENTRIES_KEY, mergeEntriesById(existing, entries))
+  return withEntriesLock(async () => {
+    const existing = (await idbGet<EncryptedEntry[]>(ENTRIES_KEY)) ?? []
+    await idbSet(ENTRIES_KEY, mergeEntriesById(existing, entries))
+  })
 }
 
 // 读取时按 createdAt 倒序（与 GET /api/diary 的排序一致——缓存来自多条路径的合并，顺序不可信）
