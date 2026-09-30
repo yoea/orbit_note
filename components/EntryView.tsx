@@ -281,6 +281,21 @@ export default function EntryView({ id }: { id: string }) {
 
   const saveEdit = useCallback(async () => {
     if (!entry || !plain.trim()) return
+    // 无改动拦截（必须在 setBusy 之前，否则会先闪一下「保存中…」）：
+    // 正文与「进入编辑态时的快照」逐字符相同 ⇒ 没有任何要写的东西，
+    // 直接退出编辑态、**不发任何请求**。
+    // 不请求就不会碰 updatedAt —— 服务端只在 PATCH 带 ciphertext 时才更新它
+    // （app/api/diary/[id]/route.ts），所以「拦住保存」等价于「编辑时间不变」。
+    // 判据用严格相等，且与右上角「取消」按钮共用同一个快照（editSnapshotRef）：
+    // 保存的就是原文，客户端与服务端都不做 trim / 规范化 ⇒ 首尾空白、换行、空格的
+    // 任何差异都属于真实改动，必须放行——不能"宽容"地判为无改动，否则会静默吞掉修改。
+    if (plain === editSnapshotRef.current) {
+      setAddLocationOpen(false)
+      setCoordInput('')
+      setCoordError(null)
+      setEditing(false)
+      return
+    }
     setBusy(true)
     try {
       const dek = getDek()!
