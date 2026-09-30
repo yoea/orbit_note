@@ -686,23 +686,39 @@ export default function EntryView({ id }: { id: string }) {
           ) : (
             <span />
           )}
-          <div className="flex items-center gap-6">
-            {/* 离线只读：云端缓存条目在断网时不可编辑/删除（PATCH/DELETE 发不出去，
+          <div className="-mr-2 flex items-center gap-1">
+            {/* 编辑 / 删除：**图标按钮**（原先是「编辑」「删除」两段文字，删除还用了 text-red-500，
+                在查看页底部过于抢眼）。降权三招：去文字、改图标、删除不再用红色
+                ——破坏性由点击后的 ConfirmDialog 二次确认承担，不必靠颜色预警。
+                图标 18px + 中性色，与页面其它次级元素同级；aria-label/title 保住
+                可访问性与桌面端 tooltip（移动端无 hover）。
+                离线只读：云端缓存条目在断网时不可编辑/删除（PATCH/DELETE 发不出去，
                 硬点只会「保存失败」）。未同步笔记（pendingSync）不受限——编辑/删除
                 都在本地队列完成。 */}
             <button
               onClick={() => { editSnapshotRef.current = plain; closeAddLocation(); resetPreview(); setEditing(true) }}
               disabled={decryptFailed || (localReadonly && !pendingSync)}
-              className="text-sm text-neutral-500 dark:text-neutral-400 active:opacity-60 disabled:opacity-40"
+              aria-label="编辑"
+              title="编辑"
+              className="rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
             >
-              编辑
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]" aria-hidden>
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+              </svg>
             </button>
             <button
               onClick={() => setConfirmingDelete(true)}
               disabled={localReadonly && !pendingSync}
-              className="text-sm text-red-500 active:opacity-60 disabled:opacity-40"
+              aria-label="删除"
+              title="删除"
+              className="rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
             >
-              删除
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]" aria-hidden>
+                <path d="M3 6h18" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
             </button>
           </div>
         </div>
