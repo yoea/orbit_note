@@ -513,33 +513,43 @@ export default function EntryView({ id }: { id: string }) {
       {hasCoords ? (
         <div className="mt-1">
           {/* 定位信息（左）+ 实时天气（右，同行两端对齐） */}
-          <div className="flex items-baseline justify-between gap-2">
-            {/* 点击复制精确坐标（有地址时复制坐标；无地址时同时触发地点补查） */}
-            <button
-              onClick={() => void copyCoords()}
-              className="text-xs tabular-nums text-neutral-500 dark:text-neutral-400 active:opacity-60"
-            >
-              <span className="mr-0.5 text-[10px]">📍</span>
-              {/* 有地址信息只显示地址；没有则只显示经纬度（不显示精度） */}
-              {entry.locationName ?? displayCoords}
-              {/* 已复制提示：跟在地点名/坐标后面 */}
-              {coordsCopied && <span className="ml-1.5 text-[10px] font-medium text-emerald-500">已复制坐标</span>}
-            </button>
+          <div className="flex items-center justify-between gap-2">
+            {/* 定位（点击复制坐标）+ 编辑态紧随其后的移除小按钮，合成一组、保持左对齐 */}
+            <div className="flex min-w-0 items-center gap-1">
+              {/* 点击复制精确坐标（有地址时复制坐标；无地址时同时触发地点补查） */}
+              <button
+                onClick={() => void copyCoords()}
+                className="min-w-0 truncate text-xs tabular-nums text-neutral-500 dark:text-neutral-400 active:opacity-60"
+              >
+                <span className="mr-0.5 text-[10px]">📍</span>
+                {/* 有地址信息只显示地址；没有则只显示经纬度（不显示精度） */}
+                {entry.locationName ?? displayCoords}
+                {/* 已复制提示：跟在地点名/坐标后面 */}
+                {coordsCopied && <span className="ml-1.5 text-[10px] font-medium text-emerald-500">已复制坐标</span>}
+              </button>
+              {/* 移除定位：**小小的图标按钮，紧跟地点名之后**（原先是一条下划线文字、独占一行，太重）。
+                  未同步笔记不提供：定位走服务端 PATCH，而这条还没上服务器。
+                  移除不可逆 ⇒ 点击后仍走 ConfirmDialog 二次确认。 */}
+              {editing && !pendingSync && (
+                <button
+                  onClick={() => setConfirmRemoveLocation(true)}
+                  disabled={locationBusy}
+                  aria-label="移除定位"
+                  title="移除定位"
+                  className="shrink-0 rounded-full p-1 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-50 dark:text-neutral-400 dark:active:bg-neutral-800"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden>
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              )}
+            </div>
             {/* 保存时记录的实时天气（有则显示，右对齐） */}
             {entry.weather && (
               <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">{weatherEmoji(entry.weather)}{entry.weather}</span>
             )}
           </div>
-          {/* 未同步笔记不提供定位增删：定位走服务端 PATCH，而这条还没上服务器 */}
-          {editing && !pendingSync && (
-            <button
-              onClick={() => setConfirmRemoveLocation(true)}
-              disabled={locationBusy}
-              className="ml-2 text-xs text-red-500 underline disabled:opacity-50"
-            >
-              移除定位信息
-            </button>
-          )}
         </div>
       ) : editing && !pendingSync ? (
         <div className="mt-1">
@@ -548,15 +558,32 @@ export default function EntryView({ id }: { id: string }) {
               ＋ 添加定位
             </button>
           ) : (
-            <div className="flex flex-col gap-2 rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
+            /* 添加定位面板：与全站同一套语言——主操作吃品牌渐变、次要操作用描边；
+               关闭按钮移到**标题行右上角**（原先是一条下划线「取消」孤立在面板最底部，
+               既白占一行高度，又在浅色下几乎看不见）。
+               面板本身不再套灰底：384px 宽的窄栏里叠底色只会更碎，靠边框 + 标题行分区即可。 */
+            <div className="rounded-xl border border-neutral-200 p-3 dark:border-neutral-800">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs font-medium text-neutral-700 dark:text-neutral-200">添加定位</p>
+                <button
+                  onClick={closeAddLocation}
+                  aria-label="关闭"
+                  className="-mr-1 -mt-1 shrink-0 rounded-full p-1 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 dark:text-neutral-400 dark:active:bg-neutral-800"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden>
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
               <button
                 onClick={() => void applyCurrentLocation()}
                 disabled={locationBusy}
-                className="rounded-lg bg-neutral-100 py-2 text-xs text-neutral-700 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200"
+                className={`w-full rounded-lg py-2 text-xs font-medium text-white transition-colors active:scale-[0.99] disabled:opacity-50 ${BRAND_GRADIENT_CLASS}`}
               >
                 {locating ? '正在定位…' : savingLocation ? '正在保存…' : '读取当前定位'}
               </button>
-              <div className="flex items-center gap-2">
+              <div className="mt-2 flex items-center gap-2">
                 <input
                   value={coordInput}
                   onChange={(e) => { setCoordInput(e.target.value); setCoordError(null) }}
@@ -570,16 +597,13 @@ export default function EntryView({ id }: { id: string }) {
                 <button
                   onClick={() => void applyManualCoords()}
                   disabled={!coordInput.trim() || locationBusy}
-                  className="shrink-0 rounded-lg bg-neutral-100 px-3 py-2 text-xs text-neutral-700 disabled:opacity-50 dark:bg-neutral-800 dark:text-neutral-200"
+                  className="shrink-0 rounded-lg border border-neutral-200 px-3 py-2 text-xs font-medium text-neutral-700 active:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200 dark:active:bg-neutral-800"
                 >
                   确定
                 </button>
               </div>
-              <p className="text-[10px] text-neutral-500 dark:text-neutral-400">粘贴「纬度, 经度」即可，确定后立即保存</p>
-              {coordError && <p className="text-[10px] text-red-500">{coordError}</p>}
-              <button onClick={closeAddLocation} className="self-start text-[10px] text-neutral-500 dark:text-neutral-400 underline">
-                取消
-              </button>
+              <p className="mt-2 text-[10px] text-neutral-500 dark:text-neutral-400">粘贴「纬度, 经度」即可，确定后立即保存</p>
+              {coordError && <p className="mt-1 text-[10px] text-red-500">{coordError}</p>}
             </div>
           )}
         </div>
