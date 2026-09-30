@@ -61,10 +61,10 @@ describe('设置页信息架构', () => {
     expect(logout).toBeLessThan(pos(src, '>通用</p>'))
   })
 
-  it('P3 备份与恢复是单一入口，设置页不再直接暴露导出 / 导入', () => {
+  it('P3 导出与导入是单一入口，设置页不再直接暴露导出 / 导入两项', () => {
     const src = code(SETTINGS)
     expect(src).toContain('href="/settings/backup"')
-    expect(src).toContain('>备份与恢复</p>')
+    expect(src).toContain('>导出与导入</p>')
     expect(src).not.toContain('href="/settings/export"')
     expect(src).not.toContain('href="/settings/import"')
   })
@@ -128,5 +128,48 @@ describe('设置页信息架构', () => {
     expect(dialog).toContain('AddPasskeyPanel')
     // 子视图必须把"添加成功"回传给弹窗（用于刷新列表 + 切回列表视图）
     expect(code('components/AddPasskeyPanel.tsx')).toContain('onAdded')
+  })
+})
+
+// ============================================================================
+// 「删除所有数据」的折叠（2026-09-30）
+//
+// 这个功能的使用频率极低，却曾经是设置页最后一行、红字带副标题——权重过高，且正好停在
+// 拇指滑到底的位置。改成默认收起后有三条容易悄悄退回去的性质，各钉一条：
+//   1. 默认视图里只有中性色的折叠触发器，红色删除项要展开才出现；
+//   2. 触发器是"展开/收起"，不该被离线态置灰（它不联网）；
+//   3. 折叠不能破坏 WipeDataAction「就是一个 <li>」的契约（设置页把它直接塞进 <ul>）。
+// ============================================================================
+const WIPE = 'components/WipeDataAction.tsx'
+
+describe('删除所有数据的折叠', () => {
+  it('P9 解析自检：触发器与删除项都能读到（防空转）', () => {
+    const src = code(WIPE)
+    expect(src).toContain('>危险操作</p>')
+    expect(src).toContain('>删除所有数据</p>')
+  })
+
+  it('P10 删除项在展开分支内，触发器不可见红字', () => {
+    const src = code(WIPE)
+    // 触发器靠 aria-expanded + 状态位控制；删除项必须排在展开条件之后
+    expect(src).toContain('aria-expanded={open}')
+    expect(pos(src, 'aria-expanded={open}')).toBeLessThan(pos(src, '>删除所有数据</p>'))
+    expect(pos(src, 'open &&')).toBeLessThan(pos(src, '>删除所有数据</p>'))
+    // 默认收起：状态初值必须是 false（写成 true 等于没折）
+    expect(src).toMatch(/useState\(false\)/)
+  })
+
+  it('P11 折叠触发器不被离线态置灰（置灰只作用在展开后的删除行）', () => {
+    const src = code(WIPE)
+    const trigger = src.slice(pos(src, "onClick={() => setOpen"), pos(src, 'aria-expanded={open}'))
+    expect(trigger, '触发器上出现了禁用相关样式').not.toMatch(/opacity-50|disabled/)
+    // 而删除行仍保留离线置灰（disabled 由 prop 传入）
+    expect(src).toContain('if (disabled) { onBlocked?.(); return }')
+  })
+
+  it('P12 仍然是单个 <li>（设置页把它直接放进 <ul>，嵌套 li 是非法结构）', () => {
+    const src = code(WIPE)
+    expect((src.match(/<li>/g) ?? []).length).toBe(1)
+    expect(src).not.toMatch(/<li>[^]*?<li>/)
   })
 })

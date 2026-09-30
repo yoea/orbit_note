@@ -5,11 +5,16 @@ import Link from 'next/link'
 import ExportView from './ExportView'
 import ImportView from './ImportView'
 
-// 备份与恢复页（/settings/backup）：把「导出笔记」与「导入笔记」收进同一个入口。
+// 导出与导入页（/settings/backup）：把「导出笔记」与「导入笔记」收进同一个入口。
 //
-// 为什么合并：两者是同一件事的两端（备份出去 / 恢复回来），用户的心智是"把我的日记搬走"
-// 或"把备份拿回来"，而不是"导出功能"和"导入功能"。设置页里分成两行会让它们看起来无关，
-// 而它们本质上是一对。合并后设置页「数据」组从三行降到两行（另一行是「删除所有数据」）。
+// 为什么合并：两者是同一件事的两端（导出带走 / 导入拿回），用户的心智是"把我的日记搬走"
+// 或"把文件拿回来"，而不是"导出功能"和"导入功能"。设置页里分成两行会让它们看起来无关，
+// 而它们本质上是一对。合并后设置页「数据」组从三行降到两行（另一行是「危险操作」折叠）。
+//
+// ★ 命名（2026-09-30 统一）：**功能名必须与页内动词同词根**。原先入口叫「备份与恢复」、
+//   页内分段与按钮却叫「导出 / 导入」，两套词并存（本文件标题还一度与入口名不一致）。
+//   现已全部统一为「导出 / 导入」——它也是机制上唯一准确的叫法：CSV 明确不能导回本应用、
+//   从 Day One 迁入属于「导入」而非「恢复」。守卫 tests/export-terms.test.ts。
 //
 // 为什么用分段切换而不是上下堆叠：两个操作流的步数差得多——导出是"验证 → 下载"两步，
 // 导入是"选文件 → 预览 → 导入 → 看报告"四步。堆叠会让页面很长，且导入的报告区被推到
@@ -35,12 +40,12 @@ export default function BackupRestoreView() {
         <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-500 dark:text-neutral-400">
           ‹
         </Link>
-        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">备份与恢复</h1>
+        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">导出与导入</h1>
         <span className="w-8" />
       </header>
 
       {/* 分段切换：iOS 风格（灰底 + 选中项浮白）。用 role=tablist 让读屏能识别这是二选一 */}
-      <div role="tablist" aria-label="备份与恢复" className="flex gap-1 rounded-xl bg-neutral-100 p-1 dark:bg-neutral-800">
+      <div role="tablist" aria-label="导出与导入" className="flex gap-1 rounded-xl bg-neutral-100 p-1 dark:bg-neutral-800">
         <button
           role="tab"
           aria-selected={mode === 'export'}

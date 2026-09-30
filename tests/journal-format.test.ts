@@ -30,7 +30,7 @@ const sample: DecryptedEntry = {
 }
 
 describe('导出结构（Day One 兼容）', () => {
-  const file = buildJournalFile([sample], new Date('2026-09-30T00:00:00.000Z'))
+  const file = buildJournalFile([sample], { now: new Date('2026-09-30T00:00:00.000Z') })
 
   it('文件名常量符合 Day One / Journey 的约定', () => {
     expect(JOURNAL_JSON_NAME).toBe('Journal.json')

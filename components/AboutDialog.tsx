@@ -124,7 +124,7 @@ const MORE = [
   { Icon: GridIcon, label: '写作热力图' },
   { Icon: PenIcon, label: '草稿不丢' },
   { Icon: MapPinIcon, label: '地点天气' },
-  { Icon: DownloadIcon, label: '备份恢复' },
+  { Icon: DownloadIcon, label: '导出导入' },
 ]
 
 export default function AboutDialog({ onClose }: { onClose: () => void }) {

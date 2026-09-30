@@ -27,7 +27,9 @@ const PHASE_LABEL: Record<ImportProgress['phase'], string> = {
   done: '完成',
 }
 
-// 导入面板：选择 JSON 备份包（.zip/.json）→ 本地解析预览 → 逐条加密上传。
+// 导入面板：选择文件（.zip / .json）→ 本地解析预览 → 逐条加密上传。
+//
+// 措辞与导出侧同源：全流程只用「导出 / 导入」（见 tests/export-terms.test.ts）。
 //
 // 它**不是整页**：页头与「导出 / 导入」分段切换由 BackupRestoreView 提供。
 //
@@ -94,7 +96,7 @@ export default function ImportView() {
   return (
     <div>
       <p className="mt-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
-        导入本应用导出的 <span className="font-medium">JSON 备份包（.zip / .json）</span>，
+        导入本应用导出的 <span className="font-medium">.zip / .json 文件</span>，
         以及 <span className="font-medium">Day One、Journey</span> 导出的日记文件。
       </p>
       <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
@@ -106,6 +108,11 @@ export default function ImportView() {
       <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
         导入不需要再次验证身份：你已经在解锁状态，写入的是你自己的账号（导出方向相反，
         是把明文带出设备，所以那一侧要再验一次）。
+      </p>
+      {/* 打开次数是**本机**数据（不在服务器上），写入规则与其它字段不同——不说清楚会让人以为没恢复成功 */}
+      <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+        正文、时间、地点、天气、字数与打开次数等<span className="font-medium">全部字段</span>都会一并恢复
+        （打开次数属本机数据，只在本机没有记录时写入）。
       </p>
 
       {offline && (
@@ -132,7 +139,7 @@ export default function ImportView() {
         disabled={offline || importing || reading}
         className="mt-4 w-full rounded-2xl border border-neutral-300 py-3.5 text-sm font-medium text-neutral-700 disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-300"
       >
-        {reading ? '解析中…' : file ? '重新选择文件' : '选择备份文件'}
+        {reading ? '解析中…' : file ? '重新选择文件' : '选择文件'}
       </button>
 
       {file && (

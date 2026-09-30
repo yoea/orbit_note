@@ -7,6 +7,8 @@
 //     所以按累计密文字节数切批（目标 ~512KB、最多 50 条）。单条密文上限 300k 字符
 //     ⇒ 每批请求必然远小于 1MB，正常情况不会触发 413。
 //  3. **不碰离线队列**：导入是明确的在线操作（要写服务器），不往本地写队列里塞东西。
+//  4. **本机字段单独写回**：打开次数不在服务器上（见 lib/client/views.ts），备份里带了就写回
+//     IndexedDB，且**只补本机没有的**（本机计数是真实阅读行为，不能被旧快照覆盖）。
 import { encryptText } from './crypto/encryption'
 import { fetchAllEntries } from './entries'
 import {
@@ -15,6 +17,7 @@ import {
   parseJournal,
   type RejectedEntry,
 } from './journal-format'
+import { restoreEntryViewCounts } from './views'
 import { listZipEntries, readZipEntry } from './zip'
 
 /** 单批目标体积：留一半余量给反代的 1MB 默认上限（JSON 包装 + 其它字段也要占地方） */
@@ -69,7 +72,7 @@ function isZip(bytes: Uint8Array): boolean {
   return bytes.length > 3 && bytes[0] === 0x50 && bytes[1] === 0x4b && (bytes[2] === 0x03 || bytes[2] === 0x05)
 }
 
-/** 从文件里取出 JSON 文本：支持裸 .json 与 .zip（Day One / 本应用的备份包） */
+/** 从文件里取出 JSON 文本：支持裸 .json 与 .zip（Day One / 本应用导出的压缩包） */
 export async function readJournalText(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer())
   if (!isZip(bytes)) {
@@ -226,7 +229,7 @@ export async function importJournalFile(opts: {
     if (!res.ok) {
       throw new Error(
         res.status === 413
-          ? '单批数据过大被服务器拒绝（请把备份文件拆小后分批导入）'
+          ? '单批数据过大被服务器拒绝（请把文件拆小后分批导入）'
           : `导入请求失败（HTTP ${res.status}）`,
       )
     }
@@ -244,6 +247,18 @@ export async function importJournalFile(opts: {
       await fetchAllEntries()
     } catch {
       report.warnings.push('本地缓存刷新失败（条目已入库，联网后打开列表会自动同步）')
+    }
+    // —— 写回「打开次数」：这是**本机**数据（不在服务器上），只在设备上没有记录时写入 ——
+    // 放在刷新之后：此时条目已确定入库。失败静默——恢复一个统计数字不能影响导入结果。
+    try {
+      const counts: Record<string, number> = {}
+      for (const e of parsed.entries) {
+        // 老备份文件没有 orbit.viewCount（解析为 null）⇒ 跳过，不当作 0 写入
+        if (e.viewCount != null && e.viewCount > 0) counts[e.id] = e.viewCount
+      }
+      await restoreEntryViewCounts(counts)
+    } catch {
+      report.warnings.push('打开次数未能写回本机（其它数据不受影响）')
     }
   }
 

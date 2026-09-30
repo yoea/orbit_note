@@ -4,39 +4,44 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getDek } from '@/lib/client/session'
 import { decryptEntries, fetchAllEntries } from '@/lib/client/entries'
-import { buildJournalFile, JOURNAL_JSON_NAME, serializeJournal } from '@/lib/client/journal-format'
+import { buildCsv, buildJournalFile, JOURNAL_JSON_NAME, serializeJournal } from '@/lib/client/journal-format'
+import { getAllEntryViewCounts } from '@/lib/client/views'
 import { createZip } from '@/lib/client/zip'
 import { verifyWithPasskey, verifyWithRecoveryKey } from '@/lib/client/verify'
 import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import { useUserName } from '@/lib/client/use-user-name'
 
-// CSV 字段转义（RFC 4180）：含逗号/引号/换行的字段用双引号包裹，内部引号翻倍
-function csvField(v: string | number | null): string {
-  const s = v == null ? '' : String(v)
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
 type ExportFormat = 'json-zip' | 'json' | 'csv'
 
 // 三种格式各自的价值，写清楚免得用户选错：
-// - JSON 备份包（.zip）：**主推**。Day One / Journey 能直接导入，也是本应用能再导入回来的格式
+// - JSON 压缩包（.zip）：**主推**。Day One / Journey 能直接导入，也是本应用能再导入回来的格式
 //   （唯一支持"导出 → 再导入"往返无损的格式）。zip 内固定放 Journal.json，符合 Day One 的目录约定。
 // - JSON（.json）：同样的内容，单文件，给只想要一个文件或要写脚本处理的人。
 // - CSV：给 Excel / 表格用户，字段扁平可读，但**不能导回本应用**（也没有日记 App 认它）。
+//
+// ★ 措辞（2026-09-30 统一）：全流程只用「导出 / 导入」一个词根。这里刻意**不再叫「备份包」**——
+//   功能名、页标题、分段、按钮、提示都已是「导出与导入」，「备份」只会又造出第二套叫法。
+//   「这份文件是你的备份」这层意思由面板正文承担（"重新导入即完整恢复"）。
+//   守卫 tests/export-terms.test.ts 会拦回退。
 const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string; ext: string }[] = [
-  { id: 'json-zip', label: 'JSON 备份包（.zip）', hint: '推荐：Day One / Journey 可直接导入，也能导回本应用', ext: 'zip' },
+  { id: 'json-zip', label: 'JSON 压缩包（.zip）', hint: '推荐：Day One / Journey 可直接导入，也能导回本应用', ext: 'zip' },
   { id: 'json', label: 'JSON 文件（.json）', hint: '同上内容，单文件，便于自己写脚本处理', ext: 'json' },
   { id: 'csv', label: 'CSV 表格（.csv）', hint: '给 Excel 看，字段扁平；不能导回本应用', ext: 'csv' },
 ]
 
 // 导出面板：验证身份（通行密钥或恢复密钥二选一）→ 拉取全部密文 → 客户端解密 →
-// 生成 JSON 备份包 / JSON / CSV 下载。明文只在本地生成，不上传服务器。
+// 生成 JSON 压缩包 / JSON / CSV 下载。明文只在本地生成，不上传服务器。
 //
 // 它**不是整页**：页头与「导出 / 导入」分段切换由 BackupRestoreView 提供（点击入口只有一个，
 // 页面内再分两侧）。这里因此没有 <main> 与返回箭头。
 //
-// 「删除所有数据」曾经挂在本组件底部——那是个错位：本组件的语义是"备份"，而它是"不可逆销毁"。
-// 已抽成 WipeDataAction 挂在设置页的「数据」组末行，勿搬回来（tests/settings-structure.test.ts 守着）。
+// 「删除所有数据」曾经挂在本组件底部——那是个错位：本组件的语义是"导出"，而它是"不可逆销毁"。
+// 已抽成 WipeDataAction，挂在设置页「数据」组的「危险操作」折叠里，勿搬回来
+// （tests/settings-structure.test.ts 守着）。
+//
+// ★ 字段承诺：导出的是「全部笔记数据」——每一条的每个字段都要在文件里，导入后能完整恢复。
+//   字段台账见 journal-format.ts 的 ENTRY_COLUMN_COVERAGE，由 tests/journal-fields.test.ts
+//   拿 schema.ts 的真实列名对账（新增列忘了导出会直接红）。打开次数是本机字段，也随文件走。
 export default function ExportView() {
   const router = useRouter()
   const [verified, setVerified] = useState(false)
@@ -119,23 +124,14 @@ export default function ExportView() {
       // 拉取 + 逐条解密与搜索弹窗共用同一套逻辑（lib/client/entries.ts），避免分页约定各自演化。
       // 保持服务端顺序（createdAt 倒序）。
       const all = await decryptEntries(dek, await fetchAllEntries())
+      // 打开次数是**本机**数据（不在服务器上，见 lib/client/views.ts），所以要单独读一次带进文件。
+      const viewCounts = await getAllEntryViewCounts()
 
       if (format === 'csv') {
-        const rows: string[][] = all.map(({ entry: e, plain: body }) => [
-          e.id, e.createdAt, e.updatedAt, body,
-          e.wordCount,
-          e.latitude == null ? '' : String(e.latitude),
-          e.longitude == null ? '' : String(e.longitude),
-          e.locationName ?? '',
-          e.weather ?? '',
-          e.timezone ?? '',
-        ].map(csvField))
-        // 带 BOM：Excel 打开中文不乱码
-        const header = ['id', 'created_at', 'updated_at', 'body', 'word_count', 'latitude', 'longitude', 'location_name', 'weather', 'timezone'].join(',')
-        const csv = '\uFEFF' + header + '\n' + rows.map((r) => r.join(',')).join('\n')
-        download(new Blob([csv], { type: 'text/csv;charset=utf-8' }), fileName)
+        // 列集合与转义都在 journal-format.ts（纯函数，逐列取值 ⇒ 加列忘了给值 typecheck 会报错）
+        download(new Blob([buildCsv(all, viewCounts)], { type: 'text/csv;charset=utf-8' }), fileName)
       } else {
-        const json = serializeJournal(buildJournalFile(all))
+        const json = serializeJournal(buildJournalFile(all, { viewCounts }))
         if (format === 'json') {
           download(new Blob([json], { type: 'application/json;charset=utf-8' }), fileName)
         } else {
@@ -158,11 +154,15 @@ export default function ExportView() {
   return (
     <div>
       <p className="mt-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
-        将{userName ? `${userName}的` : ''}全部日记导出为 <span className="font-medium">JSON 备份包</span>（默认）或 CSV。
+        将{userName ? `${userName}的` : ''}全部日记导出为 <span className="font-medium">JSON 压缩包</span>（默认）或 CSV 表格。
         JSON 采用标准 Day One 结构，<span className="font-medium">Day One、Journey 都能直接导入</span>，也能重新导回本应用。
       </p>
       <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
         正文以加密状态存储，导出时在本地解密——明文只在你设备上生成下载，不会上传服务器。
+      </p>
+      {/* 「全部字段」是承诺，得让用户看得见（否则恢复时才发现少了东西） */}
+      <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+        含每条日记的<span className="font-medium">全部字段</span>：正文、创建与修改时间、坐标与地点名、定位精度、天气、时区、字数与打开次数；重新导入即完整恢复。
       </p>
       {/* 坐标不模糊是刻意的决策（模糊会损失数据），但必须显式告知后果 */}
       <p className="mt-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">

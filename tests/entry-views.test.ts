@@ -25,7 +25,7 @@ vi.mock('@/lib/client/idb', () => ({
   idbClearAll: async () => { h.store.clear() },
 }))
 
-const { bumpEntryViewCount, getEntryViewCount } = await import('@/lib/client/views')
+const { bumpEntryViewCount, getEntryViewCount, getAllEntryViewCounts, restoreEntryViewCounts } = await import('@/lib/client/views')
 
 const KEY = 'entry-views'
 function map(): Record<string, number> {
@@ -71,5 +71,53 @@ describe('V · 本地打开次数', () => {
     expect(keys.length).toBe(500)
     expect(keys, '最早的记录没被裁掉').not.toContain('e0')
     expect(keys, '最新的记录被裁掉了').toContain('e500')
+  })
+})
+
+// 导出 / 导入（恢复）两个出入口。
+//
+// 语义要点（写在这里免得以后被"顺手改成覆盖"）：本机计数是**真实阅读行为**，
+// 恢复时只补本机没有的；备份里的数字只是导出那一刻的快照。
+describe('V · 打开次数的导出与恢复', () => {
+  beforeEach(() => { h.store.clear() })
+
+  it('V5 导出入口一次读出全部计数（空库给空对象，不是 undefined）', async () => {
+    expect(await getAllEntryViewCounts()).toEqual({})
+    await bumpEntryViewCount('e1')
+    await bumpEntryViewCount('e1')
+    await bumpEntryViewCount('e2')
+    expect(await getAllEntryViewCounts()).toEqual({ e1: 2, e2: 1 })
+  })
+
+  it('V6 恢复到空库时完整写回（清库/换设备后的主场景）', async () => {
+    expect(await restoreEntryViewCounts({ e1: 9, e2: 4 })).toBe(2)
+    expect(map()).toEqual({ e1: 9, e2: 4 })
+  })
+
+  it('V7 不覆盖本机已有的计数（本机行为优先于备份快照）', async () => {
+    await bumpEntryViewCount('e1') // 本机 1 次
+    expect(await restoreEntryViewCounts({ e1: 9, e2: 4 })).toBe(1)
+    expect(map()).toEqual({ e1: 1, e2: 4 })
+  })
+
+  it('V8 非法值与 0 不写库（0 等于"没打开过"，写进去只会白占一格）', async () => {
+    expect(await restoreEntryViewCounts({ a: 0, b: -3, c: Number.NaN, d: 2.7 } as Record<string, number>)).toBe(1)
+    expect(map()).toEqual({ d: 2 }) // 小数向下取整
+  })
+
+  it('V9 恢复与 +1 并发时不互相覆盖（同一个写锁）', async () => {
+    await Promise.all([
+      restoreEntryViewCounts({ x: 5 }),
+      bumpEntryViewCount('y'),
+      restoreEntryViewCounts({ z: 7 }),
+    ])
+    expect(map()).toEqual({ x: 5, y: 1, z: 7 })
+  })
+
+  it('V10 恢复也守 500 条上限', async () => {
+    const big: Record<string, number> = {}
+    for (let i = 0; i < 520; i++) big[`r${i}`] = 1
+    await restoreEntryViewCounts(big)
+    expect(Object.keys(map()).length).toBe(500)
   })
 })

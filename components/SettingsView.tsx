@@ -24,7 +24,7 @@ import { useOffline } from '@/lib/client/use-offline'
 // 分组与排序（每次改动都要同步 tests/settings-structure.test.ts）：
 //   1) 账号与安全 —— 通行密钥 / 恢复密钥 / 退出登录
 //   2) 通用       —— 偏好设置 / 关于 Orbit
-//   3) 数据       —— 备份与恢复（导入+导出的单一入口）/ 删除所有数据
+//   3) 数据       —— 导出与导入（单一入口）/ 危险操作（折叠，内含「删除所有数据」）
 //
 // 两条纠错记录（都是"归位"，不是审美）：
 //   - 「退出登录」原先在「数据」组的第三行、紧跟在「导出笔记」后面。它是会话/账号操作，
@@ -32,10 +32,10 @@ import { useOffline } from '@/lib/client/use-offline'
 //     已移入「账号与安全」。
 //   - 「删除所有数据」原先藏在导出页底部（且是在未验证身份的阶段），而那个页面的语义是"备份"，
 //     正好相反。已抽成 WipeDataAction 挂在本页「数据」组末行。
-//   另外「导入笔记」「导出笔记」合并为单行「备份与恢复」——两者是同一件事的两端，
+//   另外「导入笔记」「导出笔记」合并为单行入口——两者是同一件事的两端，
 //   分成两行会让它们看起来无关。页面内用分段切换，数据层没有任何改动。
 //
-// 离线权限：改昵称 / 改恢复密钥 / 改通行密钥 / 改偏好设置 / 退出登录 / 备份与恢复 / 删除数据
+// 离线权限：改昵称 / 改恢复密钥 / 改通行密钥 / 改偏好设置 / 退出登录 / 导出与导入 / 删除数据
 // 都依赖服务器写操作或需拉取服务器数据，离线时置灰并提示「该功能离线模式暂不可用」——
 // 与其让用户点进去撞一次「保存失败」，不如入口处就说明白。「关于」不受限（纯本地只读）。
 // 退出登录为何也禁：其本质是撤销服务器会话（POST /api/auth/logout），离线发不出去；
@@ -182,18 +182,21 @@ export default function SettingsView() {
       <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">数据</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
-          {/* 备份与恢复：导入与导出合并为单一入口（页面内分段切换），数据层毫无改动——
-              它们本来就是同一件事的两端，分成两行会让它们看起来无关。
-              离线禁用：导出要拉服务器全量密文（本地缓存不保证完整）、导入必须写服务器。
-              拦截导航 + 提示 */}
+          {/* 导出与导入：导出与导入本来就是同一件事的两端，合并为单一入口（页面内分段切换），
+              数据层毫无改动——分成两行会让它们看起来无关。
+              命名（2026-09-30 统一）：功能名与页内动词**必须同词根**。原先入口叫「备份与恢复」、
+              页内按钮却叫「导出 / 导入」，两套词并存；现已全部统一到「导出 / 导入」——
+              它也是机制上唯一准确的叫法：CSV 明确不能导回本应用、从 Day One 迁入属于「导入」
+              而非「恢复」。守卫 tests/export-terms.test.ts。
+              离线禁用：导出要拉服务器全量密文（本地缓存不保证完整）、导入必须写服务器。 */}
           <Link
             href="/settings/backup"
             onClick={(e) => { if (offline) { e.preventDefault(); notifyOffline() } }}
             className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}
           >
             <div>
-              <p className="text-neutral-800 dark:text-neutral-200">备份与恢复</p>
-              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">导出加密备份到本地，或从备份文件恢复</p>
+              <p className="text-neutral-800 dark:text-neutral-200">导出与导入</p>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">把日记导出为文件，或从文件导入</p>
             </div>
             <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </Link>
