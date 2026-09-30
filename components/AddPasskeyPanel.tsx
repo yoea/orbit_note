@@ -1,20 +1,26 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { registerPasskey, authenticatePasskey } from '@/lib/client/webauthn'
 import { detectDeviceName } from '@/lib/client/device'
 import { getDek } from '@/lib/client/session'
 import { derivePrfKek, wrapWithKek } from '@/lib/client/crypto/setup'
 import { fromBase64Url } from '@/lib/client/crypto/base64'
+import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 
-// 解锁守卫统一在 (app)/layout.tsx 处理。
-export default function AddPasskeyPage() {
-  return <AddPasskeyInner />
-}
-
-function AddPasskeyInner() {
+// 「在这台设备上注册一把新的通行密钥」——PasskeysDialog 的子视图。
+//
+// 原先这是一个独立整页（/settings/passkey），由弹窗右上角的 ＋ 跳过去。那是混合导航：
+// 用户在弹窗里点一下变成整页，返回时落回设置页而不是那个弹窗，体感是断的。
+// 现在改成弹窗内的视图切换，返回即回到列表，不动路由。
+//
+// PRF 不变量（别改）：所有通行密钥必须共用**同一个** PRF eval 输入 S，即第一个 wrapper 的 salt。
+// 新注册时把现有 S 注入 registration，之后用同一个 S 派生 KEK 包裹 DEK——若这里生成新 S，
+// 新旧凭据将解不开同一份 DEK。
+export default function AddPasskeyPanel({ onAdded }: {
+  onAdded: () => void
+}) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -70,7 +76,9 @@ function AddPasskeyInner() {
         }),
       })
       if (!wrapRes.ok) throw new Error('保存包装失败')
-      router.replace('/settings')
+
+      // 成功后交回上层：它负责刷新列表并切回列表视图（不再跳转路由）
+      onAdded()
     } catch (e) {
       setError(e instanceof Error ? e.message : '添加失败')
     } finally {
@@ -79,28 +87,19 @@ function AddPasskeyInner() {
   }
 
   return (
-    <main className="flex flex-1 min-h-0 flex-col px-6 safe-pt">
-      {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
-      <header className="page-header relative flex items-center justify-between py-3">
-        {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-500 dark:text-neutral-400">
-          ‹
-        </Link>
-        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">添加通行密钥</h1>
-        <span className="w-8" />
-      </header>
-      {/* m-auto：按钮整体垂直居中；描述文字在按钮下方 */}
-      <div className="m-auto flex w-full max-w-xs flex-col gap-4">
-        <button
-          onClick={() => void add()}
-          disabled={busy}
-          className="w-full rounded-2xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-4 text-base font-medium text-white active:scale-[0.98] disabled:opacity-50"
-        >
-          {busy ? '添加中…' : '注册新的通行密钥'}
-        </button>
-        <p className="text-center text-xs text-neutral-500 dark:text-neutral-400">新增一个通行密钥后，将可以用它解锁同一份日记</p>
-        {error && <p className="text-center text-sm text-red-500">{error}</p>}
-      </div>
-    </main>
+    <div className="mt-4 flex flex-col gap-4">
+      <p className="text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+        新增一个通行密钥后，将可以用它解锁同一份日记。请在这台设备上完成系统的
+        指纹 / Face ID / Windows Hello 验证。
+      </p>
+      <button
+        onClick={() => void add()}
+        disabled={busy}
+        className={`${PRIMARY_BUTTON_CLASS} ${BRAND_GRADIENT_CLASS}`}
+      >
+        {busy ? '添加中…' : '注册新的通行密钥'}
+      </button>
+      {error && <p className="text-center text-sm text-red-500">{error}</p>}
+    </div>
   )
 }

@@ -1,20 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import InputConfirmDialog from '@/components/InputConfirmDialog'
-import { clearDek, getDek } from '@/lib/client/session'
+import { getDek } from '@/lib/client/session'
 import { decryptEntries, fetchAllEntries } from '@/lib/client/entries'
 import { buildJournalFile, JOURNAL_JSON_NAME, serializeJournal } from '@/lib/client/journal-format'
 import { createZip } from '@/lib/client/zip'
 import { verifyWithPasskey, verifyWithRecoveryKey } from '@/lib/client/verify'
-import { idbClearAll } from '@/lib/client/idb'
 import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import { useUserName } from '@/lib/client/use-user-name'
-
-// 删除所有数据：必须手动输入这段文字才能通过（防误触强确认）
-const WIPE_CONFIRM_TEXT = '永久删除'
 
 // CSV 字段转义（RFC 4180）：含逗号/引号/换行的字段用双引号包裹，内部引号翻倍
 function csvField(v: string | number | null): string {
@@ -35,9 +29,14 @@ const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string; ext: stri
   { id: 'csv', label: 'CSV 表格（.csv）', hint: '给 Excel 看，字段扁平；不能导回本应用', ext: 'csv' },
 ]
 
-// 导出笔记页（/settings/export）：验证身份（通行密钥或恢复密钥二选一）→ 拉取全部密文 →
-// 客户端解密 → 生成 JSON 备份包 / JSON / CSV 下载。明文只在本地生成，不上传服务器。
-// 删除所有数据入口弱化置于本页底部（验证身份阶段）。
+// 导出面板：验证身份（通行密钥或恢复密钥二选一）→ 拉取全部密文 → 客户端解密 →
+// 生成 JSON 备份包 / JSON / CSV 下载。明文只在本地生成，不上传服务器。
+//
+// 它**不是整页**：页头与「导出 / 导入」分段切换由 BackupRestoreView 提供（点击入口只有一个，
+// 页面内再分两侧）。这里因此没有 <main> 与返回箭头。
+//
+// 「删除所有数据」曾经挂在本组件底部——那是个错位：本组件的语义是"备份"，而它是"不可逆销毁"。
+// 已抽成 WipeDataAction 挂在设置页的「数据」组末行，勿搬回来（tests/settings-structure.test.ts 守着）。
 export default function ExportView() {
   const router = useRouter()
   const [verified, setVerified] = useState(false)
@@ -47,8 +46,6 @@ export default function ExportView() {
   const [exported, setExported] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [format, setFormat] = useState<ExportFormat>('json-zip')
-  const [wipeConfirmStep, setWipeConfirmStep] = useState<0 | 1>(0)
-  const [wiping, setWiping] = useState(false)
   // 导出成功后的返回倒计时（明文文件已下载，提示谨慎保存并自动返回设置页释放内存）
   const [countdown, setCountdown] = useState(0)
   const userName = useUserName()
@@ -158,39 +155,9 @@ export default function ExportView() {
     }
   }
 
-  // 删除所有数据（物理删除，入口弱化置于本页底部）
-  async function wipe() {
-    setWiping(true)
-    try {
-      const ok = await verifyWithPasskey()
-      if (!ok) {
-        window.alert('身份验证未完成，未执行删除')
-        return
-      }
-      const res = await fetch('/api/admin/wipe', { method: 'POST' })
-      if (!res.ok) throw new Error()
-      await idbClearAll()
-      clearDek()
-      router.replace('/setup')
-    } catch {
-      window.alert('删除失败，请重试')
-    } finally {
-      setWiping(false)
-    }
-  }
-
   return (
-    <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 pb-4 safe-pt">
-      <header className="page-header relative flex items-center justify-between py-3">
-        {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}
-        <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-500 dark:text-neutral-400">
-          ‹
-        </Link>
-        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">导出笔记</h1>
-        <span className="w-8" />
-      </header>
-
-      <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
+    <div>
+      <p className="mt-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
         将{userName ? `${userName}的` : ''}全部日记导出为 <span className="font-medium">JSON 备份包</span>（默认）或 CSV。
         JSON 采用标准 Day One 结构，<span className="font-medium">Day One、Journey 都能直接导入</span>，也能重新导回本应用。
       </p>
@@ -205,7 +172,8 @@ export default function ExportView() {
 
       {!verified ? (
         <>
-          {/* 验证阶段 */}
+          {/* 验证阶段：导出是"把全部明文带出设备"，所以比导入多一道身份验证。
+              这个不对称是刻意的——另一侧（导入）不验，并在那里写明了原因 */}
           <p className="mt-4 text-sm font-medium text-neutral-800 dark:text-neutral-200">先验证身份（二选一）</p>
           <div className="mt-2 flex flex-col gap-3">
             <button
@@ -235,16 +203,6 @@ export default function ExportView() {
               {busy ? '正在验证…' : '使用恢复密钥验证'}
             </button>
             {error && <p className="text-center text-sm text-red-500">{error}</p>}
-          </div>
-          {/* 危险操作弱化入口：小字置底，防误触（真正删除还需文字验证 + 通行密钥验证） */}
-          <div className="pt-10 text-center">
-            <button
-              onClick={() => setWipeConfirmStep(1)}
-              disabled={wiping}
-              className="text-xs text-neutral-500 dark:text-neutral-400 disabled:opacity-50"
-            >
-              {wiping ? '验证中…' : '删除所有数据'}
-            </button>
           </div>
         </>
       ) : (
@@ -306,23 +264,6 @@ export default function ExportView() {
           {error && <p className="mt-2 text-center text-sm text-red-500">{error}</p>}
         </>
       )}
-
-      {wipeConfirmStep === 1 && (
-        <InputConfirmDialog
-          title="删除确认"
-          message={
-            <>
-              {userName ? `${userName}的` : ''}所有日记、通行密钥与恢复密钥将全部删除，<span className="font-semibold text-red-500">无法恢复</span>，账号也将被删除。请输入「{WIPE_CONFIRM_TEXT}」确认，之后将通过通行密钥验证身份。
-            </>
-          }
-          expected={WIPE_CONFIRM_TEXT}
-          placeholder={WIPE_CONFIRM_TEXT}
-          confirmText="删除"
-          destructive
-          onConfirm={() => { setWipeConfirmStep(0); void wipe() }}
-          onCancel={() => setWipeConfirmStep(0)}
-        />
-      )}
-    </main>
+    </div>
   )
 }

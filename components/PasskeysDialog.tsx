@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { useUserName } from '@/lib/client/use-user-name'
+import AddPasskeyPanel from './AddPasskeyPanel'
 import ConfirmDialog from './ConfirmDialog'
 
 export interface PasskeyInfo {
@@ -19,20 +19,23 @@ export interface PasskeyInfo {
 // 禁用 = 软禁用（该设备无法登录，凭证保留，可随时重新启用）。
 // 数据由设置页预取后传入（initialData）——弹窗打开第一帧即完整列表，无加载闪烁；
 // 预取失败（initialData=null）时显示错误 + 重试。
+//
+// 两个视图（列表 / 添加）都在本弹窗内切换：原先右上角的 ＋ 会跳转整页 /settings/passkey，
+// 返回时落回设置页而不是这个弹窗——用户在弹窗里点一下突然变成整页，体感是断的。
 export default function PasskeysDialog({ initialData, onClose }: {
   initialData: PasskeyInfo[] | null
   onClose: () => void
 }) {
-  const router = useRouter()
   const userName = useUserName()
+  const [view, setView] = useState<'list' | 'add'>('list')
   const [passkeys, setPasskeys] = useState<PasskeyInfo[]>(initialData ?? [])
   const [loadFailed, setLoadFailed] = useState(initialData == null)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<PasskeyInfo | null>(null)
   const [busy, setBusy] = useState(false)
 
-  // 预取失败后的手动重试
-  async function retry() {
+  // 拉取列表：初始预取失败后的重试、以及添加新凭据成功后刷新，共用这一条
+  async function load() {
     setLoadFailed(false)
     try {
       const res = await fetch('/api/keys/passkeys')
@@ -95,17 +98,26 @@ export default function PasskeysDialog({ initialData, onClose }: {
         className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-neutral-800"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
-        aria-label={userName ? `${userName}的通行密钥` : '通行密钥'}
+        aria-label={view === 'add' ? '添加通行密钥' : userName ? `${userName}的通行密钥` : '通行密钥'}
       >
         <div className="max-h-[70dvh] overflow-y-auto px-5 py-6">
+          {view === 'add' ? (
+            <>
+              <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">添加通行密钥</p>
+              <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">在这台设备上注册</p>
+              <AddPasskeyPanel onAdded={() => { setView('list'); void load() }} />
+            </>
+          ) : (
+          <>
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{userName ? `${userName}的通行密钥` : '通行密钥'}</p>
               <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">管理各设备上的通行密钥</p>
             </div>
-            {/* 添加新 Passkey：弱化为右上角加号，跳转注册页（带前进方向动画） */}
+            {/* 添加新 Passkey：弱化为右上角加号，切到本弹窗的添加视图（不动路由——
+                原先跳 /settings/passkey 整页，返回时落回设置页而不是这个弹窗） */}
             <button
-              onClick={() => router.push('/settings/passkey')}
+              onClick={() => setView('add')}
               aria-label="注册新的通行密钥"
               className="shrink-0 text-2xl font-light leading-6 text-neutral-500 dark:text-neutral-400 active:opacity-60"
             >
@@ -115,7 +127,7 @@ export default function PasskeysDialog({ initialData, onClose }: {
           {loadFailed ? (
             <div className="flex flex-col items-center gap-2 py-6">
               <p className="text-sm text-neutral-500 dark:text-neutral-400">加载失败</p>
-              <button onClick={() => void retry()} className="rounded-lg bg-neutral-100 px-4 py-1.5 text-sm text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
+              <button onClick={() => void load()} className="rounded-lg bg-neutral-100 px-4 py-1.5 text-sm text-neutral-600 dark:bg-neutral-700 dark:text-neutral-300">
                 重试
               </button>
             </div>
@@ -170,13 +182,15 @@ export default function PasskeysDialog({ initialData, onClose }: {
           )}
           {error && <p className="mt-3 text-center text-sm text-red-500">{error}</p>}
           <p className="mt-4 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">禁用后该设备无法登录，可随时重新启用</p>
+          </>
+          )}
         </div>
         <div className="border-t border-neutral-200 p-3 dark:border-neutral-700">
           <button
-            onClick={onClose}
+            onClick={view === 'list' ? onClose : () => setView('list')}
             className="w-full rounded-xl py-3.5 text-base font-medium text-neutral-500 dark:text-neutral-400 active:bg-neutral-100 dark:active:bg-neutral-700"
           >
-            完成
+            {view === 'list' ? '完成' : '返回列表'}
           </button>
         </div>
       </div>

@@ -80,6 +80,25 @@ const nextConfig: NextConfig = {
       })),
     ];
   },
+  // 旧路由兼容（2026-09-30）：导出 / 导入合并为「备份与恢复」单入口，添加通行密钥改为
+  // 「通行密钥」弹窗内的子视图，于是留下三个旧地址（书签、浏览器历史、PWA 的本地记录）。
+  //
+  // 为什么写在这里、而不是像 app/history/page.tsx 那样用一个 redirect() 页面：
+  // `(app)/layout.tsx` 是客户端组件且有**条件返回**（预渲染时 state 不是 'ready'，直接返回
+  // 占位 <main>，children 根本没被渲染）⇒ 放在 (app) 组内的 page.tsx，其 `redirect()`
+  // 在预渲染时**不会执行**。实测：/history 的产物 .meta 里有 `status: 307` + location，
+  // 而 (app) 组内的三个 redirect 页 .meta 里连 status 字段都没有。
+  // 写在 next.config 的 redirects 里由路由层处理，绕开 React 渲染，稳定拿到 307。
+  //
+  // permanent: false（307）与 Next 的 redirect() 默认值一致；不用 308 是为了避免浏览器
+  // 永久缓存——万一将来要收回某个旧路径，308 会让已经缓存过的用户卡住。
+  async redirects() {
+    return [
+      { source: '/settings/export', destination: '/settings/backup', permanent: false },
+      { source: '/settings/import', destination: '/settings/backup', permanent: false },
+      { source: '/settings/passkey', destination: '/settings', permanent: false },
+    ]
+  },
 };
 
 export default nextConfig;

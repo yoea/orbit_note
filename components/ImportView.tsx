@@ -1,7 +1,6 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { getDek } from '@/lib/client/session'
 import { importJournalFile, readJournalText, type ImportProgress, type ImportReport } from '@/lib/client/import'
@@ -28,10 +27,13 @@ const PHASE_LABEL: Record<ImportProgress['phase'], string> = {
   done: '完成',
 }
 
-// 导入笔记页（/settings/import）：选择 JSON 备份包（.zip/.json）→ 本地解析预览 → 逐条加密上传。
+// 导入面板：选择 JSON 备份包（.zip/.json）→ 本地解析预览 → 逐条加密上传。
 //
-// 与导出页的差异（刻意）：**不做二次身份验证**。导出是"把全部明文带出设备"，所以要再验一次身份；
+// 它**不是整页**：页头与「导出 / 导入」分段切换由 BackupRestoreView 提供。
+//
+// 与导出侧的差异（刻意）：**不做二次身份验证**。导出是"把全部明文带出设备"，所以要再验一次身份；
 // 导入是"把文件写进自己账号"，解锁态已经是本人，多验一次只是添麻烦。
+// 这个不对称会让合并入口后的用户困惑，所以下面在说明里显式写了原因——别删那句话。
 //
 // 幂等：同一份文件导入两次不会翻倍——条目 id 由源标识确定性派生（UUIDv5），
 // 服务端 ON CONFLICT DO NOTHING 直接跳过已存在的，报告里体现为「已存在，跳过」。
@@ -90,22 +92,20 @@ export default function ImportView() {
   const percent = progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : null
 
   return (
-    <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 pb-4 safe-pt">
-      <header className="page-header relative flex items-center justify-between py-3">
-        <Link href="/settings" aria-label="返回" className="-ml-1 px-1 text-2xl leading-none text-neutral-500 dark:text-neutral-400">
-          ‹
-        </Link>
-        <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">导入笔记</h1>
-        <span className="w-8" />
-      </header>
-
-      <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
+    <div>
+      <p className="mt-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
         导入本应用导出的 <span className="font-medium">JSON 备份包（.zip / .json）</span>，
         以及 <span className="font-medium">Day One、Journey</span> 导出的日记文件。
       </p>
       <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
         导入是<span className="font-medium">合并</span>而不是覆盖：已有的日记不受影响；同一条重复导入会被跳过（按条目内容确定性识别）。
         文件在你设备上解密并重新加密后才上传，服务器拿到的仍是密文。
+      </p>
+      {/* 解释与导出侧的不对称：导出要再验一次身份、导入不用。用户合并入口后一定会注意到，
+          与其让人猜，不如直接说明——否则会显得像是漏做了 */}
+      <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+        导入不需要再次验证身份：你已经在解锁状态，写入的是你自己的账号（导出方向相反，
+        是把明文带出设备，所以那一侧要再验一次）。
       </p>
 
       {offline && (
@@ -243,6 +243,6 @@ export default function ImportView() {
       )}
 
       {error && <p className="mt-3 text-center text-sm text-red-500">{error}</p>}
-    </main>
+    </div>
   )
 }

@@ -20,6 +20,10 @@ import { classTokens, projectClassAttrs } from './class-attrs'
 //   底部留白曾有四种取值——ExportView 无、DiaryEditor/EntryView pb-4、
 //   SettingsView <div class="h-10"> 占位、DiaryListView pb-10；
 //   弹窗底部操作按钮有 py-2.5 / py-3.5 两种。现在全部收敛。
+//
+// 2026-09-30：导出 / 导入合并为「备份与恢复」单入口后，容器角色从 ExportView / ImportView
+//   转移到 BackupRestoreView（前两者降级为嵌在分段里的面板，不再有 <main> 与页面级留白）。
+//   G3 的目标列表随之替换——这是这条守卫唯一一次"换靶心"，不是放宽。
 // ============================================================================
 
 const attrs = projectClassAttrs()
@@ -62,7 +66,7 @@ describe('底部留白与安全区', () => {
   it('G3 (app) 组内页面内容区底部留白统一为 pb-4', () => {
     const targets = [
       'components/SettingsView.tsx',
-      'components/ExportView.tsx',
+      'components/BackupRestoreView.tsx',
       'components/DiaryListView.tsx',
       'components/DiaryEditor.tsx',
       'components/EntryView.tsx',
