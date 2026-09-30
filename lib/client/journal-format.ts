@@ -12,16 +12,20 @@
 // （conditionsDescription + temperatureCelsius）。导出时整段文本放进 conditionsDescription，
 // 同时把原文存进 orbit.weatherText，导入时优先取后者 ⇒ 自家往返仍无损。
 //
-// ★ 承诺：「备份包含全部笔记数据，导入后能恢复所有字段」。这句话靠**台账 + 对账测试**兜底，
-//   而不是靠人记得——见下面的 ENTRY_COLUMN_COVERAGE。给 diary_entries 加列时先在那里登记。
+// ★ 承诺：「导出包含数据库里的**全部笔记字段**，导入后能完整恢复」。范围**仅限数据库字段**——
+//   本机数据（打开次数等，见 lib/client/views.ts）一律不进文件：它只反映本机阅读行为，
+//   跨设备不准确，写进备份只会误导恢复。这句话靠**台账 + 对账测试**兜底，而不是靠人记得
+//   ——见下面的 ENTRY_COLUMN_COVERAGE。给 diary_entries 加列时先在那里登记。
 import { countWords } from './markdown'
 import { hex32ToUuid, isUuid, uuidToHex32, uuidV5 } from './uuid-v5'
 import type { DecryptedEntry } from './entries'
 
 /** Day One / Journey 的导入器认这个文件名（放在 zip 根目录） */
 export const JOURNAL_JSON_NAME = 'Journal.json'
-/** 1 = 首版；2 = 增加 `orbit.viewCount`（可选字段，老文件没有它照样导入） */
-export const FORMAT_VERSION = 2
+/** 1 = 首版；2 = 曾加入 `orbit.viewCount`（本机打开次数，可选字段）；
+ *  3 = 撤出 viewCount —— 导出只含数据库里的笔记字段，不含任何本机数据。
+ *  解析器不看版本号，各版本文件都能照常导入。 */
+export const FORMAT_VERSION = 3
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 「不留字段」台账
@@ -50,14 +54,10 @@ export const ENTRY_COLUMN_COVERAGE: Record<string, { json: string; csv: string |
   updated_at: { json: 'modifiedDate', csv: 'updated_at' },
 }
 
-/** 不在数据库里、但同样随备份往返的**本机字段**（目前只有打开次数，见 lib/client/views.ts） */
-export const LOCAL_ONLY_FIELDS: Record<string, { json: string; csv: string }> = {
-  viewCount: { json: 'orbit.viewCount', csv: 'view_count' },
-}
-
-/** CSV 列顺序（Excel 打开的第一行）。列集合必须与上面两张台账的 csv 栏完全一致。 */
+/** CSV 列顺序（Excel 打开的第一行）。列集合必须与 ENTRY_COLUMN_COVERAGE 的 csv 栏完全一致。
+ *  ★ 不含本机字段：打开次数等本机数据不进文件（原因见 lib/client/views.ts 顶部说明）。 */
 export const CSV_COLUMNS = [
-  'id', 'created_at', 'updated_at', 'body', 'word_count', 'view_count',
+  'id', 'created_at', 'updated_at', 'body', 'word_count',
   'latitude', 'longitude', 'location_accuracy', 'location_name', 'weather', 'timezone',
 ] as const
 
@@ -82,17 +82,13 @@ export interface JournalEntry {
   starred: boolean
   location?: JournalLocation
   weather?: { conditionsDescription: string }
-  /** 私有命名空间：往返无损所需、Day One 结构里放不下的字段 */
+  /** 私有命名空间：往返无损所需、Day One 结构里放不下的字段。
+   *  只放**数据库里**的字段——本机数据（打开次数）刻意不进这里。 */
   orbit?: {
     id: string
     wordCount: number
     weatherText: string | null
     locationAccuracy: number | null
-    /**
-     * 「我自己打开过几次」——**纯本机计数**（不在服务器上，见 lib/client/views.ts）。
-     * Day One / Journey 会忽略整个 orbit 块，所以这个字段只服务于「自家导出 → 再导入」。
-     */
-    viewCount?: number
   }
 }
 
@@ -115,13 +111,12 @@ function iso(v: string | Date): string {
 }
 
 /** 导出：把「已解密的条目」映射成 Day One 结构，保持传入顺序（服务端为 createdAt 倒序）。
- *  `viewCounts` 是**本机**的打开次数表（id → 次数），由调用方从 IndexedDB 读出后传入——
- *  本函数保持纯函数，不自己去读存储（否则无法单测）。 */
+ *  **纯函数**：只吃数据库字段，不自己去读任何本地存储（也不该持有本机数据）。 */
 export function buildJournalFile(
   items: DecryptedEntry[],
-  opts: { now?: Date; viewCounts?: Record<string, number> } = {},
+  opts: { now?: Date } = {},
 ): JournalFile {
-  const { now = new Date(), viewCounts = {} } = opts
+  const { now = new Date() } = opts
   const entries: JournalEntry[] = items.map(({ entry: e, plain }) => ({
     uuid: uuidToHex32(e.id),
     creationDate: iso(e.createdAt),
@@ -144,7 +139,6 @@ export function buildJournalFile(
       wordCount: e.wordCount,
       weatherText: e.weather,
       locationAccuracy: e.locationAccuracy,
-      viewCount: viewCounts[e.id] ?? 0,
     },
   }))
   return {
@@ -177,7 +171,7 @@ function csvField(v: string | number | null): string {
  * 却忘了给值，**typecheck 就会报错**（数组写法只会静默错位）。
  * 带 BOM：Excel 打开中文不乱码。
  */
-export function buildCsv(items: DecryptedEntry[], viewCounts: Record<string, number> = {}): string {
+export function buildCsv(items: DecryptedEntry[]): string {
   const rows = items.map(({ entry: e, plain }) => {
     const cells: Record<(typeof CSV_COLUMNS)[number], string | number> = {
       id: e.id,
@@ -185,7 +179,6 @@ export function buildCsv(items: DecryptedEntry[], viewCounts: Record<string, num
       updated_at: e.updatedAt,
       body: plain,
       word_count: e.wordCount,
-      view_count: viewCounts[e.id] ?? 0,
       latitude: e.latitude ?? '',
       longitude: e.longitude ?? '',
       location_accuracy: e.locationAccuracy ?? '',
@@ -211,8 +204,6 @@ export interface ParsedImportEntry {
   locationAccuracy: number | null
   locationName: string | null
   weather: string | null
-  /** 本机打开次数（老备份文件没有这个字段 → null，不是错误）；写回见 import.ts */
-  viewCount: number | null
 }
 
 export interface RejectedEntry {
@@ -234,11 +225,6 @@ function num(v: unknown): number | null {
 
 function str(v: unknown): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null
-}
-
-/** 打开次数：只接受非负整数；其它一律当「没有」（老文件 / 被手改过的文件都不会因此报错） */
-function viewCountOf(v: unknown): number | null {
-  return typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null
 }
 
 /** 天气文本：优先自家往返字段，其次 Day One 结构（有温度就拼上） */
@@ -355,8 +341,6 @@ export async function parseJournal(data: unknown): Promise<ParseResult> {
       locationAccuracy: num(orbit.locationAccuracy),
       locationName,
       weather,
-      // 打开次数：只认自家导出的整数字段；缺失/非法一律 null（外部文件本来就没有）
-      viewCount: viewCountOf(orbit.viewCount),
     })
   }
 

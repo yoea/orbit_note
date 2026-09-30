@@ -7,8 +7,8 @@
 //     所以按累计密文字节数切批（目标 ~512KB、最多 50 条）。单条密文上限 300k 字符
 //     ⇒ 每批请求必然远小于 1MB，正常情况不会触发 413。
 //  3. **不碰离线队列**：导入是明确的在线操作（要写服务器），不往本地写队列里塞东西。
-//  4. **本机字段单独写回**：打开次数不在服务器上（见 lib/client/views.ts），备份里带了就写回
-//     IndexedDB，且**只补本机没有的**（本机计数是真实阅读行为，不能被旧快照覆盖）。
+//  4. **只管数据库字段**：本机数据（打开次数等）不在备份里、也不写回，导入只负责把条目
+//     写进服务器（原因见 lib/client/views.ts）。
 import { encryptText } from './crypto/encryption'
 import { fetchAllEntries } from './entries'
 import {
@@ -17,7 +17,6 @@ import {
   parseJournal,
   type RejectedEntry,
 } from './journal-format'
-import { restoreEntryViewCounts } from './views'
 import { listZipEntries, readZipEntry } from './zip'
 
 /** 单批目标体积：留一半余量给反代的 1MB 默认上限（JSON 包装 + 其它字段也要占地方） */
@@ -247,18 +246,6 @@ export async function importJournalFile(opts: {
       await fetchAllEntries()
     } catch {
       report.warnings.push('本地缓存刷新失败（条目已入库，联网后打开列表会自动同步）')
-    }
-    // —— 写回「打开次数」：这是**本机**数据（不在服务器上），只在设备上没有记录时写入 ——
-    // 放在刷新之后：此时条目已确定入库。失败静默——恢复一个统计数字不能影响导入结果。
-    try {
-      const counts: Record<string, number> = {}
-      for (const e of parsed.entries) {
-        // 老备份文件没有 orbit.viewCount（解析为 null）⇒ 跳过，不当作 0 写入
-        if (e.viewCount != null && e.viewCount > 0) counts[e.id] = e.viewCount
-      }
-      await restoreEntryViewCounts(counts)
-    } catch {
-      report.warnings.push('打开次数未能写回本机（其它数据不受影响）')
     }
   }
 

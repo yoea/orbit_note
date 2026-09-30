@@ -3,7 +3,8 @@
 // 语义提醒（见 lib/client/views.ts）：这个数字是「**我自己**打开这一篇看过几次」，
 // 纯本地、不上传。所以本文件只钉两件事，都不涉及隐私面：
 //   1. 计数正确且**并发不丢**（React 开发模式双挂载 effect、多标签页同时打开都要算对）；
-//   2. 有上限，不会无限增长。
+//   2. 有上限，不会无限增长；
+//   3. 它**不随导出 / 导入往返**——备份只含数据库字段（见文末说明）。
 //
 // 与 offline-cache-race.test.ts 用同一套内存 idb 替身（含结构化克隆语义）：
 // 真机上的失败是「两次读-改-写交叠」，只有带时序的替身才看得见。
@@ -25,7 +26,7 @@ vi.mock('@/lib/client/idb', () => ({
   idbClearAll: async () => { h.store.clear() },
 }))
 
-const { bumpEntryViewCount, getEntryViewCount, getAllEntryViewCounts, restoreEntryViewCounts } = await import('@/lib/client/views')
+const { bumpEntryViewCount, getEntryViewCount } = await import('@/lib/client/views')
 
 const KEY = 'entry-views'
 function map(): Record<string, number> {
@@ -74,50 +75,6 @@ describe('V · 本地打开次数', () => {
   })
 })
 
-// 导出 / 导入（恢复）两个出入口。
-//
-// 语义要点（写在这里免得以后被"顺手改成覆盖"）：本机计数是**真实阅读行为**，
-// 恢复时只补本机没有的；备份里的数字只是导出那一刻的快照。
-describe('V · 打开次数的导出与恢复', () => {
-  beforeEach(() => { h.store.clear() })
-
-  it('V5 导出入口一次读出全部计数（空库给空对象，不是 undefined）', async () => {
-    expect(await getAllEntryViewCounts()).toEqual({})
-    await bumpEntryViewCount('e1')
-    await bumpEntryViewCount('e1')
-    await bumpEntryViewCount('e2')
-    expect(await getAllEntryViewCounts()).toEqual({ e1: 2, e2: 1 })
-  })
-
-  it('V6 恢复到空库时完整写回（清库/换设备后的主场景）', async () => {
-    expect(await restoreEntryViewCounts({ e1: 9, e2: 4 })).toBe(2)
-    expect(map()).toEqual({ e1: 9, e2: 4 })
-  })
-
-  it('V7 不覆盖本机已有的计数（本机行为优先于备份快照）', async () => {
-    await bumpEntryViewCount('e1') // 本机 1 次
-    expect(await restoreEntryViewCounts({ e1: 9, e2: 4 })).toBe(1)
-    expect(map()).toEqual({ e1: 1, e2: 4 })
-  })
-
-  it('V8 非法值与 0 不写库（0 等于"没打开过"，写进去只会白占一格）', async () => {
-    expect(await restoreEntryViewCounts({ a: 0, b: -3, c: Number.NaN, d: 2.7 } as Record<string, number>)).toBe(1)
-    expect(map()).toEqual({ d: 2 }) // 小数向下取整
-  })
-
-  it('V9 恢复与 +1 并发时不互相覆盖（同一个写锁）', async () => {
-    await Promise.all([
-      restoreEntryViewCounts({ x: 5 }),
-      bumpEntryViewCount('y'),
-      restoreEntryViewCounts({ z: 7 }),
-    ])
-    expect(map()).toEqual({ x: 5, y: 1, z: 7 })
-  })
-
-  it('V10 恢复也守 500 条上限', async () => {
-    const big: Record<string, number> = {}
-    for (let i = 0; i < 520; i++) big[`r${i}`] = 1
-    await restoreEntryViewCounts(big)
-    expect(Object.keys(map()).length).toBe(500)
-  })
-})
+// 打开次数**不随导出 / 导入往返**（2026-09-30）：它跨设备不准确，写进备份只会误导恢复。
+// 原先这里守的「导出 / 恢复两个出入口」（V5~V10）已随 views.ts 里那两个函数一起撤下，
+// 本文件现在只守纯本机的计数行为（V0~V4）。

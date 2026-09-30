@@ -6,7 +6,6 @@ import {
   buildJournalFile,
   CSV_COLUMNS,
   ENTRY_COLUMN_COVERAGE,
-  LOCAL_ONLY_FIELDS,
   parseJournal,
   serializeJournal,
 } from '@/lib/client/journal-format'
@@ -14,11 +13,14 @@ import { projectRoot } from './class-attrs'
 import type { DecryptedEntry } from '@/lib/client/entries'
 
 // ============================================================================
-// 「备份包含全部笔记数据，导入后能恢复所有字段」——把这条承诺变成可核验的断言。
+// 「导出包含数据库里的全部笔记字段，导入后能完整恢复」——把这条承诺变成可核验的断言。
 //
 // 背景：这条承诺原本只活在注释里。于是「给 diary_entries 加一列、导出忘了带上」这种
 // 静默漏数据的事故没有任何守卫——导出文件看起来一切正常，只是少了一个字段，
 // 要等用户真的去恢复时才发现。
+//
+// 范围：**只覆盖数据库字段**。本机数据（打开次数）刻意不进文件——它跨设备不准确，
+// 纳入备份只会误导恢复（见 lib/client/views.ts），所以本文件不再有它的往返断言。
 //
 // 做法：把「每一列去哪了」写成台账（ENTRY_COLUMN_COVERAGE），再拿 schema.ts 里
 // **真实的列名**来对账：对不上就红，并在报错里直接点出是哪一列。
@@ -77,11 +79,12 @@ describe('导出字段台账（对账 schema.ts）', () => {
     expect(extra, `台账里登记了 schema 中已不存在的列：${extra.join(', ')}`).toEqual([])
   })
 
-  it('F2 CSV 列集合 = 台账里所有非 null 的 csv 栏（+ 本机字段）', () => {
-    const declared = new Set([
-      ...Object.values(ENTRY_COLUMN_COVERAGE).map((v) => v.csv),
-      ...Object.values(LOCAL_ONLY_FIELDS).map((v) => v.csv),
-    ].filter((c): c is string => c != null))
+  it('F2 CSV 列集合 = 台账里所有非 null 的 csv 栏（不含本机字段）', () => {
+    const declared = new Set(
+      Object.values(ENTRY_COLUMN_COVERAGE)
+        .map((v) => v.csv)
+        .filter((c): c is string => c != null),
+    )
     expect([...CSV_COLUMNS].sort()).toEqual([...declared].sort())
   })
 
@@ -94,50 +97,64 @@ describe('导出字段台账（对账 schema.ts）', () => {
   })
 })
 
-describe('打开次数随备份往返', () => {
-  it('F4 导出写进 orbit.viewCount，导入原样取回', async () => {
-    const file = buildJournalFile([sample], { viewCounts: { [ID]: 7 } })
-    expect(file.entries[0].orbit?.viewCount).toBe(7)
+// 打开次数「随备份往返」的断言已随功能撤下：本机数据不进备份。这里改为钉住
+// 「数据库字段的往返无损」——这才是导出功能真正的承诺。
+describe('自家导出 → 再导入 往返无损（数据库字段）', () => {
+  it('F4 导出文件能被 parseJournal 原样取回（id / 正文 / 时间 / 地点 / 天气 / 字数）', async () => {
+    const file = buildJournalFile([sample])
     const parsed = await parseJournal(JSON.parse(serializeJournal(file)))
     expect(parsed.rejected).toHaveLength(0)
-    expect(parsed.entries[0].viewCount).toBe(7)
+    const e = parsed.entries[0]
+    expect(e.id).toBe(ID)
+    expect(e.text).toBe('# 标题\n\n正文 **加粗**')
+    expect(e.createdAt).toBe('2024-03-05T01:02:03.000Z')
+    expect(e.updatedAt).toBe('2024-04-06T07:08:09.000Z')
+    expect(e.wordCount).toBe(42)
+    expect(e.latitude).toBe(31.2304)
+    expect(e.longitude).toBe(121.4737)
+    expect(e.locationAccuracy).toBe(25)
+    expect(e.locationName).toBe('上海市黄浦区')
+    expect(e.weather).toBe('晴 25°C')
+    expect(e.timezone).toBe('Asia/Shanghai')
   })
 
-  it('F5 本机没有该条的计数 → 导出 0（而不是 undefined，Day One 那边也不会看到 null）', () => {
-    const file = buildJournalFile([sample], { viewCounts: {} })
-    expect(file.entries[0].orbit?.viewCount).toBe(0)
-  })
-
-  it('F6 老备份文件（没有 viewCount 字段）→ 解析为 null，不报错、不拒绝', async () => {
-    const legacy = { entries: [{ uuid: 'AA7A6A77946547449ED0BBC99349537C', creationDate: '2020-01-01T00:00:00Z', text: '旧文件', orbit: { id: ID, wordCount: 3 } }] }
+  it('F5 导出不含任何本机字段，旧文件里残留也不会让解析报错', async () => {
+    const file = buildJournalFile([sample])
+    expect(file.entries[0].orbit).not.toHaveProperty('viewCount')
+    expect(JSON.stringify(file)).not.toContain('viewCount')
+    expect(CSV_COLUMNS).not.toContain('view_count')
+    // 旧版本导出的文件里可能还留着 orbit.viewCount——解析必须照常，不因此拒绝整条
+    const legacy = {
+      entries: [
+        {
+          uuid: 'AA7A6A77946547449ED0BBC99349537C',
+          creationDate: '2020-01-01T00:00:00Z',
+          text: '旧文件',
+          orbit: { id: ID, wordCount: 3, viewCount: 7 },
+        },
+      ],
+    }
     const r = await parseJournal(legacy)
     expect(r.rejected).toHaveLength(0)
-    expect(r.entries[0].viewCount).toBeNull()
-  })
-
-  it('F7 非法值（负数 / 小数 / 字符串）一律当没有，不污染导入', async () => {
-    for (const bad of [-1, 1.5, '12', null]) {
-      const r = await parseJournal({ entries: [{ text: 'x', creationDate: '2020-01-01T00:00:00Z', orbit: { viewCount: bad } }] })
-      expect(r.entries[0].viewCount, `${String(bad)} 应被忽略`).toBeNull()
-    }
+    expect(r.entries[0].id).toBe(ID)
   })
 })
 
 describe('CSV 字段覆盖', () => {
   // 用**单行**正文，避免「正文里含换行」干扰按行断言（那是 F10 专门覆盖的事）
   const flat: DecryptedEntry = { entry: sample.entry, plain: '单行正文' }
-  const csv = buildCsv([flat], { [ID]: 7 })
+  const csv = buildCsv([flat])
   const lines = csv.replace(/^\uFEFF/, '').split('\n')
 
-  it('F8 表头与列顺序一致，且含 view_count / location_accuracy', () => {
+  it('F8 表头与列顺序一致，含 location_accuracy 且不含本机字段 view_count', () => {
     expect(lines[0]).toBe(CSV_COLUMNS.join(','))
-    expect(lines[0]).toContain('view_count')
     expect(lines[0]).toContain('location_accuracy')
+    expect(lines[0]).not.toContain('view_count')
   })
 
-  it('F9 数据行按列顺序取值（含打开次数与精度）', () => {
+  it('F9 数据行按列顺序取值（含定位精度）', () => {
     expect(lines[1].split(',')).toEqual([
-      ID, '2024-03-05T01:02:03.000Z', '2024-04-06T07:08:09.000Z', '单行正文', '42', '7',
+      ID, '2024-03-05T01:02:03.000Z', '2024-04-06T07:08:09.000Z', '单行正文', '42',
       '31.2304', '121.4737', '25', '上海市黄浦区', '晴 25°C', 'Asia/Shanghai',
     ])
   })

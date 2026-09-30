@@ -8,6 +8,10 @@
 //   · 本地计数还能在离线时照常工作（这正是本项目的日常场景）。
 // 接受的代价：每台设备各自计数；清掉 IndexedDB（设置 → 删除所有数据）即清零。
 //
+// ★ 因此它**不随导出 / 导入往返**（2026-09-30 决定）：导出只包含数据库里的笔记字段，
+//   打开次数是纯本机数据、跨设备不准确，写进备份文件只会误导恢复。views.ts 只留
+//   「读一次 / 打开一次 +1」这两个本地行为，不再提供导出/恢复出入口。
+//
 // 存储用 idb.ts 的通用 kv（'entry-views' → { [entryId]: number }），而不是 localStorage：
 // localStorage 的 qo-* 键在「删除所有数据」与登出时都不会被清，而「我常看哪几篇」也算
 // 行为痕迹，应当跟 idbClearAll() 一起消失。
@@ -31,40 +35,6 @@ export function withViewsLock<T>(fn: () => Promise<T>): Promise<T> {
 export async function getEntryViewCount(id: string): Promise<number> {
   const map = (await idbGet<Record<string, number>>(KEY)) ?? {}
   return map[id] ?? 0
-}
-
-/** 导出用：一次读出全部计数（导出按 id 取值，逐条 await 会把整个导出流程拖成串行） */
-export async function getAllEntryViewCounts(): Promise<Record<string, number>> {
-  return (await idbGet<Record<string, number>>(KEY)) ?? {}
-}
-
-/**
- * 导入（恢复）用：把备份里的打开次数写回本机。
- *
- * 规则：**只补本机没有的，不覆盖本机已有的**。本机的数字是「我在这台设备上真的看过几次」，
- * 是行为记录；备份里的数字只是导出那一刻的快照。两者冲突时保留本机——覆盖等于用旧快照
- * 抹掉此后真实的阅读行为。
- * （典型恢复场景是「清库/换设备后导入」，那时本机为空，会完整写回。）
- *
- * 返回真正写入的条数（供测试与调用方判断，不写入任何界面提示）。
- */
-export async function restoreEntryViewCounts(counts: Record<string, number>): Promise<number> {
-  const incoming = Object.entries(counts).filter(([, v]) => Number.isFinite(v) && v > 0)
-  if (incoming.length === 0) return 0
-  return withViewsLock(async () => {
-    const cur = (await idbGet<Record<string, number>>(KEY)) ?? {}
-    const merged: Record<string, number> = { ...cur }
-    let written = 0
-    for (const [id, v] of incoming) {
-      if (merged[id] != null) continue
-      merged[id] = Math.trunc(v)
-      written++
-    }
-    if (written === 0) return 0
-    const keys = Object.keys(merged)
-    await idbSet(KEY, keys.length > MAX ? keepLast(merged, keys, MAX) : merged)
-    return written
-  })
 }
 
 // 打开一次 → 计数 +1，返回**新值**（界面直接显示它，不用再读一次）。

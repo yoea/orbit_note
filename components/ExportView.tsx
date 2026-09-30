@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { getDek } from '@/lib/client/session'
 import { decryptEntries, fetchAllEntries } from '@/lib/client/entries'
 import { buildCsv, buildJournalFile, JOURNAL_JSON_NAME, serializeJournal } from '@/lib/client/journal-format'
-import { getAllEntryViewCounts } from '@/lib/client/views'
 import { createZip } from '@/lib/client/zip'
 import { verifyWithPasskey, verifyWithRecoveryKey } from '@/lib/client/verify'
 import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
@@ -39,9 +38,9 @@ const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string; ext: stri
 // 已抽成 WipeDataAction，挂在设置页「数据」组的「危险操作」折叠里，勿搬回来
 // （tests/settings-structure.test.ts 守着）。
 //
-// ★ 字段承诺：导出的是「全部笔记数据」——每一条的每个字段都要在文件里，导入后能完整恢复。
+// ★ 字段承诺：导出的是数据库里的**全部笔记字段**——每一条的每一列都要在文件里，导入后能完整恢复。
 //   字段台账见 journal-format.ts 的 ENTRY_COLUMN_COVERAGE，由 tests/journal-fields.test.ts
-//   拿 schema.ts 的真实列名对账（新增列忘了导出会直接红）。打开次数是本机字段，也随文件走。
+//   拿 schema.ts 的真实列名对账（新增列忘了导出会直接红）。本机数据（打开次数）不进文件。
 export default function ExportView() {
   const router = useRouter()
   const [verified, setVerified] = useState(false)
@@ -124,14 +123,12 @@ export default function ExportView() {
       // 拉取 + 逐条解密与搜索弹窗共用同一套逻辑（lib/client/entries.ts），避免分页约定各自演化。
       // 保持服务端顺序（createdAt 倒序）。
       const all = await decryptEntries(dek, await fetchAllEntries())
-      // 打开次数是**本机**数据（不在服务器上，见 lib/client/views.ts），所以要单独读一次带进文件。
-      const viewCounts = await getAllEntryViewCounts()
 
       if (format === 'csv') {
         // 列集合与转义都在 journal-format.ts（纯函数，逐列取值 ⇒ 加列忘了给值 typecheck 会报错）
-        download(new Blob([buildCsv(all, viewCounts)], { type: 'text/csv;charset=utf-8' }), fileName)
+        download(new Blob([buildCsv(all)], { type: 'text/csv;charset=utf-8' }), fileName)
       } else {
-        const json = serializeJournal(buildJournalFile(all, { viewCounts }))
+        const json = serializeJournal(buildJournalFile(all))
         if (format === 'json') {
           download(new Blob([json], { type: 'application/json;charset=utf-8' }), fileName)
         } else {
@@ -162,7 +159,7 @@ export default function ExportView() {
       </p>
       {/* 「全部字段」是承诺，得让用户看得见（否则恢复时才发现少了东西） */}
       <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-        含每条日记的<span className="font-medium">全部字段</span>：正文、创建与修改时间、坐标与地点名、定位精度、天气、时区、字数与打开次数；重新导入即完整恢复。
+        含每条日记在数据库里的<span className="font-medium">全部字段</span>：正文、创建与修改时间、坐标与地点名、定位精度、天气、时区、字数；重新导入即完整恢复。
       </p>
       {/* 坐标不模糊是刻意的决策（模糊会损失数据），但必须显式告知后果 */}
       <p className="mt-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">

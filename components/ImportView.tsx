@@ -109,10 +109,9 @@ export default function ImportView() {
         导入不需要再次验证身份：你已经在解锁状态，写入的是你自己的账号（导出方向相反，
         是把明文带出设备，所以那一侧要再验一次）。
       </p>
-      {/* 打开次数是**本机**数据（不在服务器上），写入规则与其它字段不同——不说清楚会让人以为没恢复成功 */}
+      {/* 说的是数据库字段的恢复。本机数据（打开次数）不进备份，也别在这里暗示用户它会恢复 */}
       <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-        正文、时间、地点、天气、字数与打开次数等<span className="font-medium">全部字段</span>都会一并恢复
-        （打开次数属本机数据，只在本机没有记录时写入）。
+        正文、时间、地点、天气、字数等<span className="font-medium">全部字段</span>都会一并恢复。
       </p>
 
       {offline && (
