@@ -6,8 +6,11 @@ import { useRouter } from 'next/navigation'
 import InputConfirmDialog from '@/components/InputConfirmDialog'
 import { clearDek, getDek } from '@/lib/client/session'
 import { decryptEntries, fetchAllEntries } from '@/lib/client/entries'
+import { buildJournalFile, JOURNAL_JSON_NAME, serializeJournal } from '@/lib/client/journal-format'
+import { createZip } from '@/lib/client/zip'
 import { verifyWithPasskey, verifyWithRecoveryKey } from '@/lib/client/verify'
 import { idbClearAll } from '@/lib/client/idb'
+import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import { useUserName } from '@/lib/client/use-user-name'
 
 // 删除所有数据：必须手动输入这段文字才能通过（防误触强确认）
@@ -19,8 +22,21 @@ function csvField(v: string | number | null): string {
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
+type ExportFormat = 'json-zip' | 'json' | 'csv'
+
+// 三种格式各自的价值，写清楚免得用户选错：
+// - JSON 备份包（.zip）：**主推**。Day One / Journey 能直接导入，也是本应用能再导入回来的格式
+//   （唯一支持"导出 → 再导入"往返无损的格式）。zip 内固定放 Journal.json，符合 Day One 的目录约定。
+// - JSON（.json）：同样的内容，单文件，给只想要一个文件或要写脚本处理的人。
+// - CSV：给 Excel / 表格用户，字段扁平可读，但**不能导回本应用**（也没有日记 App 认它）。
+const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string; ext: string }[] = [
+  { id: 'json-zip', label: 'JSON 备份包（.zip）', hint: '推荐：Day One / Journey 可直接导入，也能导回本应用', ext: 'zip' },
+  { id: 'json', label: 'JSON 文件（.json）', hint: '同上内容，单文件，便于自己写脚本处理', ext: 'json' },
+  { id: 'csv', label: 'CSV 表格（.csv）', hint: '给 Excel 看，字段扁平；不能导回本应用', ext: 'csv' },
+]
+
 // 导出笔记页（/settings/export）：验证身份（通行密钥或恢复密钥二选一）→ 拉取全部密文 →
-// 客户端解密 → 生成 CSV 下载。明文只在本地生成，不上传服务器。
+// 客户端解密 → 生成 JSON 备份包 / JSON / CSV 下载。明文只在本地生成，不上传服务器。
 // 删除所有数据入口弱化置于本页底部（验证身份阶段）。
 export default function ExportView() {
   const router = useRouter()
@@ -30,6 +46,7 @@ export default function ExportView() {
   const [exporting, setExporting] = useState(false)
   const [exported, setExported] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [format, setFormat] = useState<ExportFormat>('json-zip')
   const [wipeConfirmStep, setWipeConfirmStep] = useState<0 | 1>(0)
   const [wiping, setWiping] = useState(false)
   // 导出成功后的返回倒计时（明文文件已下载，提示谨慎保存并自动返回设置页释放内存）
@@ -38,7 +55,9 @@ export default function ExportView() {
 
   // 文件名（本地日期，与下载一致）
   const now = new Date()
-  const fileName = `orbit-export-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.csv`
+  const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const ext = EXPORT_FORMATS.find((f) => f.id === format)!.ext
+  const fileName = `orbit-export-${stamp}.${ext}`
 
   async function verifyPasskey() {
     setBusy(true); setError(null)
@@ -85,36 +104,51 @@ export default function ExportView() {
     return () => clearInterval(t)
   }, [exported, router])
 
-  // 拉取全部条目（分页循环）→ 解密 → 组装 CSV → 下载
-  async function exportCsv() {
+  function download(blob: Blob, name: string) {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // 拉取全部条目（分页循环）→ 解密 → 按选择的格式组装并下载
+  async function runExport() {
     const dek = getDek()
     if (!dek) return
     setExporting(true); setError(null)
     try {
-      // 1+2. 拉取全部条目并逐条解密 —— 与搜索弹窗共用同一套分页/解密逻辑
-      // （lib/client/entries.ts），避免两处分页约定各自演化。
+      // 拉取 + 逐条解密与搜索弹窗共用同一套逻辑（lib/client/entries.ts），避免分页约定各自演化。
       // 保持服务端顺序（createdAt 倒序）。
       const all = await decryptEntries(dek, await fetchAllEntries())
-      const rows: string[][] = all.map(({ entry: e, plain: body }) => [
-        e.id, e.createdAt, e.updatedAt, body,
-        e.wordCount,
-        e.latitude == null ? '' : String(e.latitude),
-        e.longitude == null ? '' : String(e.longitude),
-        e.locationName ?? '',
-        e.weather ?? '',
-        e.timezone ?? '',
-      ].map(csvField))
-      // 3. 生成 CSV（带 BOM：Excel 打开中文不乱码）
-      const header = ['id', 'created_at', 'updated_at', 'body', 'word_count', 'latitude', 'longitude', 'location_name', 'weather', 'timezone'].join(',')
-      const csv = '﻿' + header + '\n' + rows.map((r) => r.join(',')).join('\n')
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = fileName
-      a.click()
-      URL.revokeObjectURL(url)
-      // 倒计时初值随导出一并设置（走秒逻辑见上方 effect）
+
+      if (format === 'csv') {
+        const rows: string[][] = all.map(({ entry: e, plain: body }) => [
+          e.id, e.createdAt, e.updatedAt, body,
+          e.wordCount,
+          e.latitude == null ? '' : String(e.latitude),
+          e.longitude == null ? '' : String(e.longitude),
+          e.locationName ?? '',
+          e.weather ?? '',
+          e.timezone ?? '',
+        ].map(csvField))
+        // 带 BOM：Excel 打开中文不乱码
+        const header = ['id', 'created_at', 'updated_at', 'body', 'word_count', 'latitude', 'longitude', 'location_name', 'weather', 'timezone'].join(',')
+        const csv = '\uFEFF' + header + '\n' + rows.map((r) => r.join(',')).join('\n')
+        download(new Blob([csv], { type: 'text/csv;charset=utf-8' }), fileName)
+      } else {
+        const json = serializeJournal(buildJournalFile(all))
+        if (format === 'json') {
+          download(new Blob([json], { type: 'application/json;charset=utf-8' }), fileName)
+        } else {
+          // zip 内固定放 Journal.json（Day One / Journey 的导入器认这个名字与位置）。
+          // 不建空的 photos/ 目录：本应用没有媒体，塞空目录只会让导入方多问一句。
+          const zip = createZip([{ name: JOURNAL_JSON_NAME, data: new TextEncoder().encode(json) }])
+          download(new Blob([zip], { type: 'application/zip' }), fileName)
+        }
+      }
+
       setCountdown(10)
       setExported(all.length)
     } catch (e) {
@@ -156,12 +190,17 @@ export default function ExportView() {
         <span className="w-8" />
       </header>
 
-      {/* 顶部说明：验证成功前后都保留 */}
       <p className="text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
-        将{userName ? `${userName}的` : ''}全部日记导出为 <span className="font-medium">CSV</span> 文件，包含所有字段（正文、创建/更新时间、坐标、地点名、时区、字数）。
+        将{userName ? `${userName}的` : ''}全部日记导出为 <span className="font-medium">JSON 备份包</span>（默认）或 CSV。
+        JSON 采用标准 Day One 结构，<span className="font-medium">Day One、Journey 都能直接导入</span>，也能重新导回本应用。
       </p>
       <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
         正文以加密状态存储，导出时在本地解密——明文只在你设备上生成下载，不会上传服务器。
+      </p>
+      {/* 坐标不模糊是刻意的决策（模糊会损失数据），但必须显式告知后果 */}
+      <p className="mt-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
+        ⚠️ 导出文件含<span className="font-medium">未经模糊的原始坐标与地点名</span>（精确到米）。
+        任何拿到该文件的人都能还原你去过哪里，请勿放进公共网盘或随手转发。
       </p>
 
       {!verified ? (
@@ -172,7 +211,7 @@ export default function ExportView() {
             <button
               onClick={() => void verifyPasskey()}
               disabled={busy}
-              className="w-full rounded-2xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 py-3.5 font-medium text-white disabled:opacity-50"
+              className={`${PRIMARY_BUTTON_CLASS} ${BRAND_GRADIENT_CLASS}`}
             >
               {busy ? '正在验证…' : '使用通行密钥验证'}
             </button>
@@ -210,16 +249,36 @@ export default function ExportView() {
         </>
       ) : (
         <>
-          {/* 验证通过：保留顶部说明，下方显示文件名与下载 */}
+          {/* 验证通过：选格式 → 下载 */}
           <p className="mt-4 text-sm font-medium text-emerald-600 dark:text-emerald-400">✓ 身份已验证</p>
+
+          <p className="mt-4 text-xs font-medium text-neutral-500 dark:text-neutral-400">导出格式</p>
+          <ul className="mt-2 divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
+            {EXPORT_FORMATS.map((f) => (
+              <li key={f.id}>
+                <button
+                  onClick={() => setFormat(f.id)}
+                  aria-pressed={format === f.id}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left active:opacity-60"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm text-neutral-800 dark:text-neutral-200">{f.label}</span>
+                    <span className="mt-0.5 block text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">{f.hint}</span>
+                  </span>
+                  <span className={`shrink-0 text-sm ${format === f.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-transparent'}`}>✓</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+
           <div className="mt-4 rounded-2xl border border-neutral-100 bg-neutral-50/60 px-4 py-3.5 dark:border-neutral-800 dark:bg-neutral-900/40">
             <p className="text-xs text-neutral-500 dark:text-neutral-400">导出文件</p>
             <p className="mt-1 break-all font-mono text-sm text-neutral-800 dark:text-neutral-200">{fileName}</p>
           </div>
           <button
-            onClick={() => void exportCsv()}
+            onClick={() => void runExport()}
             disabled={exporting}
-            className="mt-4 w-full rounded-2xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 py-4 font-medium text-white disabled:opacity-50"
+            className={`mt-4 ${PRIMARY_BUTTON_CLASS} ${BRAND_GRADIENT_CLASS}`}
           >
             {exporting ? '解密导出中…' : '下载导出的文件'}
           </button>
@@ -229,7 +288,7 @@ export default function ExportView() {
                 已导出 {exported} 篇，文件已开始下载
               </p>
               <p className="mt-1 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
-                文件为解密后的明文内容，请谨慎保存，避免在公共设备上保留。
+                文件为解密后的明文，且含未经模糊的坐标。请谨慎保存，避免留在公共设备上。
               </p>
               <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
                 {countdown} 秒后自动返回设置页

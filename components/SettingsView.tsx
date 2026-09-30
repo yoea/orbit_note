@@ -153,7 +153,22 @@ export default function SettingsView() {
       <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">数据</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
-          {/* 导出笔记：解密后拼 CSV。离线禁用：导出需要拉取服务器全量日记密文
+          {/* 导入笔记：把 JSON 备份包 / Day One / Journey 的文件写进服务器。
+              离线禁用：写入必须走服务器（不像浏览可以先落本地队列）。拦截导航 + 提示 */}
+          <Link
+            href="/settings/import"
+            onClick={(e) => { if (offline) { e.preventDefault(); notifyOffline() } }}
+            className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}
+          >
+            <div>
+              <p className="text-neutral-800 dark:text-neutral-200">导入笔记</p>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">从 JSON 备份包或 Day One / Journey 文件恢复</p>
+            </div>
+            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
+          </Link>
+        </li>
+        <li>
+          {/* 导出笔记：解密后拼 JSON / CSV。离线禁用：导出需要拉取服务器全量日记密文
               （本地缓存不保证完整）。拦截导航 + 提示 */}
           <Link
             href="/settings/export"
@@ -162,7 +177,7 @@ export default function SettingsView() {
           >
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">导出笔记</p>
-              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">解密全部日记为 CSV 文件</p>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">解密全部日记为 JSON 备份包或 CSV</p>
             </div>
             <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </Link>
