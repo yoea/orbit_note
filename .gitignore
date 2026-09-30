@@ -43,3 +43,8 @@ next-env.d.ts
 
 # ai agent workspace（本地记忆/工具数据，勿提交）
 .workbuddy/
+
+# 本地临时探针/复刻渲染脚本（UI 重活验证用，非项目代码）
+# 不入库的原因：里面的 *.mjs 会被 ESLint 扫到而污染门禁（lint 只该盯项目源码）。
+# 约定：Temp/ 下只放一次性的验证产物，随时可删。
+Temp/
