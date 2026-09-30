@@ -29,7 +29,27 @@ echo "=== [1/4] 解压产物（整体替换 .next / node_modules / public） ===
 cd "$APP_DIR"
 # public 也要整体替换：tar 是覆盖式解包，从 public 里删掉过的文件会在服务器上残留下来
 rm -rf .next node_modules public
-tar xzf "$TARBALL"
+# ★ 产物绝不能覆盖生产 .env（2026-09-30 真实事故的根因侧）
+# Next 的 standalone 输出会带上构建机的 .env（即本地开发配置），解压即覆盖生产 .env
+# ⇒ 库密码与 WebAuthn 域名双双变成开发值，而进程照常起、/login 照常 200，极难察觉。
+# 三重防护：① 解压时显式排除 .env*；② 解压前后比对 .env 校验和，变了立刻中止；
+# ③ 产物里若含 .env 就打印出来（定位是哪一侧漏了清理）。
+# 对应的构建侧清理见 deploy.sh [5/8]。
+# `|| true` 是必需的：.env 不存在时 md5sum 返回 1，而本脚本开着 `set -e`
+# ⇒ `VAR="$(md5sum ... | cut ...)"` 会因赋值失败直接中止（且不打印报错）。
+ENV_BEFORE="$(md5sum .env 2>/dev/null | cut -d' ' -f1 || true)"
+if tar tzf "$TARBALL" 2>/dev/null | grep -qE '^\./\.env($|\.)'; then
+  echo "⚠️  产物里含 .env（构建侧未清理）：$(tar tzf "$TARBALL" 2>/dev/null | grep -E '^\./\.env($|\.)' | tr '\n' ' ')"
+fi
+tar xzf "$TARBALL" --exclude='./.env' --exclude='./.env.*'
+ENV_AFTER="$(md5sum .env 2>/dev/null | cut -d' ' -f1 || true)"
+if { [ -n "$ENV_BEFORE" ] && [ "$ENV_BEFORE" != "$ENV_AFTER" ]; } || \
+   { [ -z "$ENV_BEFORE" ] && [ -n "$ENV_AFTER" ]; }; then
+  echo "❌ 生产 .env 被产物改动了（部署中止）。请检查 deploy.sh [5/8] 的产物清理。"
+  echo "   改动前 md5=${ENV_BEFORE:-<不存在>} 改动后 md5=${ENV_AFTER:-<不存在>}"
+  exit 1
+fi
+echo ".env 未被产物改动（md5 ${ENV_AFTER:-<无>}）"
 chmod +x start.sh 2>/dev/null || true
 if [ ! -f server.js ] || [ ! -f .next/BUILD_ID ]; then
   echo "❌ 产物不完整（缺 server.js 或 .next/BUILD_ID），不重启服务，保留旧进程现状"

@@ -209,6 +209,22 @@ cp -a public "$STAGE/public"
 cp -a "$PROJECT_DIR/scripts/start.sh" "$STAGE/start.sh"
 cp -a .version "$STAGE/.version"
 
+# ★ 绝不把 .env* 打进产物（2026-09-30 真实事故，这是根因）
+# Next 的 standalone 输出**会把项目根的 .env 一起复制进 .next/standalone**，而构建期我们
+# 刚用 `cp .env.local .env`（见 [4/8]）准备过一份 —— 于是**本地开发配置被塞进产物**，
+# 解压时覆盖服务器生产 .env：库密码、WebAuthn 域名一起变成开发值。
+# 症状极具欺骗性：应用照常启动、/login 照常 200，但库连接 500、通行密钥被浏览器拒绝。
+# 服务器只认自己的 APP_DIR/.env（由 start.sh 显式载入），产物里那份既无意义又有害，
+# 而且会把 SESSION_SECRET / 库密码等密钥随包散落到服务器 /tmp。
+rm -f "$STAGE"/.env "$STAGE"/.env.* 2>/dev/null || true
+# 注意 `|| true`：grep -c 无命中会返回 1，而本脚本开着 `set -eo pipefail`
+# ⇒ `VAR="$(... | grep -c ...)"` 会因赋值失败直接中止整个部署（且不打印任何报错）。
+ENV_LEFTOVER="$(ls -A "$STAGE" 2>/dev/null | grep -c '^\.env' || true)"
+if [ "$ENV_LEFTOVER" != "0" ]; then
+  echo "❌ 产物里仍残留 .env*（$ENV_LEFTOVER 个）——它会覆盖服务器生产配置。中止部署。"
+  exit 1
+fi
+
 # 产物完整性硬校验：缺任何一项都不要上传（宁可不上线，也不要传一个起不来的包）
 for f in server.js start.sh .version .next/BUILD_ID .next/static/chunks public; do
   if [ ! -e "$STAGE/$f" ]; then
