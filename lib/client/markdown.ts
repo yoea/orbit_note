@@ -208,3 +208,51 @@ export const TOOLBAR_ACTIONS: ToolbarAction[] = [
   { key: 'ul', label: '•', title: '列表', kind: 'line', marker: '- ' },
   { key: 'code', label: '</>', title: '行内代码', kind: 'wrap', marker: '`' },
 ]
+
+// ---------------------------------------------------------------------------
+// 预览滚动定位（编辑态 → 预览态的位置同步）
+//
+// 为什么需要：编辑区是 <textarea> 自己的滚动（scrollTop 在 textarea 上），预览是另一个
+// 新挂载的 <div overflow-y-auto>。两个不同节点、没有任何位置传递 ⇒ 新节点 scrollTop = 0，
+// 预览必然从文档最顶部开始，而用户的光标可能在最底部。
+//
+// 为什么按「行号」而不是「字符比例」或「第几个块」：
+//   - 字符比例：标题 / 代码块的高度与字符数不成比例，累积误差会偏出好几屏；
+//   - 第几个块：raw HTML 块在渲染侧被转义成**裸文本节点**（不是元素），
+//     DOM 的 children 序号会与源码块序号错位 ⇒ 越往后越偏。
+//   行号是两侧都稳定的键（渲染侧由 remark 插件把源码行号写到 data-qo-line）。
+// ---------------------------------------------------------------------------
+
+/**
+ * 光标在源码中的偏移 → 行号（1-based）。
+ * 越界偏移按边界钳制（光标在 0 或末尾时都要给出正确答案——这是「边界情况」的主要来源）。
+ */
+export function lineAtOffset(src: string, offset: number): number {
+  const end = Math.max(0, Math.min(offset, src.length))
+  let line = 1
+  for (let i = 0; i < end; i++) {
+    if (src.charCodeAt(i) === 10) line++
+  }
+  return line
+}
+
+/**
+ * 从「块起始行 → 距内容顶部偏移」列表里挑出滚动目标，返回应设置的 scrollTop。
+ *
+ * - 取起始行 ≤ targetLine 的**最后一个**块：它是包含光标的那一块，
+ *   或光标在某块内部的空行上时紧邻其上方的块（这两种都该把该块顶到视口顶部）。
+ * - 所有块都晚于 targetLine（光标在第一个块之前）→ 返回第一块的偏移。
+ * - 列表为空（空文档 / 预览显示占位文案）→ 返回 0。
+ *
+ * blocks 必须按源码顺序（= DOM 顺序）给出，函数不回退排序：
+ * 顺序错说明调用方取错了元素，静默排序会把这种 bug 藏起来。
+ */
+export function pickScrollTop(blocks: { line: number; top: number }[], targetLine: number): number {
+  if (blocks.length === 0) return 0
+  let pick = blocks[0]
+  for (const b of blocks) {
+    if (b.line <= targetLine) pick = b
+    else break
+  }
+  return pick.top
+}

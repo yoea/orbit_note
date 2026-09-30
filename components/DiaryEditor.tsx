@@ -6,7 +6,7 @@ import AutoTextarea from './AutoTextarea'
 import ConfettiBurst from './ConfettiBurst'
 import OrbitLogo from './OrbitLogo'
 import Markdown from './Markdown'
-import { TOOLBAR_ACTIONS, countWords, deriveTitlePreview, toPlainText, toggleLinePrefix, toggleWrap, type ToolbarAction } from '@/lib/client/markdown'
+import { TOOLBAR_ACTIONS, countWords, deriveTitlePreview, lineAtOffset, pickScrollTop, toPlainText, toggleLinePrefix, toggleWrap, type ToolbarAction } from '@/lib/client/markdown'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
@@ -48,6 +48,10 @@ export default function DiaryEditor() {
   // 否则会被 value 更新重置到末尾。用 layout effect 而不是 rAF——前者严格在
   // DOM 变更后、绘制前执行，顺序确定。
   const pendingSelectionRef = useRef<[number, number] | null>(null)
+  // 预览滚动定位：切到预览**之前**记下光标所在行（textarea 随后会被卸载，那之后就取不到
+  // selectionStart 了），预览挂载后的 layout effect 消费它并清空。
+  const pendingPreviewLineRef = useRef<number | null>(null)
+  const previewRef = useRef<HTMLDivElement>(null)
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingDraftRef = useRef<{ ciphertext: string; iv: string } | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -351,6 +355,46 @@ export default function DiaryEditor() {
     el.setSelectionRange(sel[0], sel[1])
   }, [text])
 
+  // 预览滚动定位：把编辑光标的位置同步到预览的滚动位置。
+  //
+  // 原来的缺陷：编辑区是 <textarea> 自己的滚动（scrollTop 在 textarea 上），预览是另一个
+  // 新挂载的 <div overflow-y-auto>——两个不同节点、没有任何位置传递 ⇒ 新节点 scrollTop = 0，
+  // 光标在文末也会从文档顶部开始显示。
+  //
+  // 触发链路：点「预览」→ togglePreview **先**读 textarea 的 selectionStart 换算成行号存进 ref
+  // → setPreview(true) → React 卸载 textarea、挂载预览 div → 本 effect 在 DOM 更新后、
+  // 绘制前执行 ⇒ 直接落在正确位置，不会「先闪一下顶部再跳」。
+  //
+  // 定位方式：渲染侧给每个顶层块写了 data-qo-line（源码起始行号），这里取「行号 ≤ 光标行」
+  // 的最后一个块，把它对到视口顶部。
+  // 边界：光标在第 1 行 → 命中首块、scrollTop = 0；光标在末尾 → 目标块靠后，浏览器会把
+  // scrollTop 钳到最大值（自然贴底，不需要特判）；空文档 → 预览只有占位文案、没有
+  // data-qo-line ⇒ pickScrollTop 收到空列表返回 0。
+  useLayoutEffect(() => {
+    if (!preview) return
+    const el = previewRef.current
+    const line = pendingPreviewLineRef.current
+    pendingPreviewLineRef.current = null
+    if (!el || line == null) return
+    const containerTop = el.getBoundingClientRect().top
+    const blocks = Array.from(el.querySelectorAll<HTMLElement>('[data-qo-line]'))
+      .map((n) => ({
+        line: Number(n.getAttribute('data-qo-line')),
+        // rect 是视口坐标：减容器顶部 = 相对可视区顶部；再加 scrollTop = 相对内容顶部
+        top: n.getBoundingClientRect().top - containerTop + el.scrollTop,
+      }))
+      .filter((b) => Number.isFinite(b.line))
+    el.scrollTop = pickScrollTop(blocks, line)
+  }, [preview])
+
+  // 切换编辑 / 预览。光标行必须在 setPreview **之前**读——textarea 一旦卸载就取不到选区了。
+  function togglePreview() {
+    if (!preview) {
+      pendingPreviewLineRef.current = lineAtOffset(text, editorRef.current?.selectionStart ?? 0)
+    }
+    setPreview((p) => !p)
+  }
+
   // Markdown 工具条：读当前选区 → 纯函数变换 → 落回 text（同时同步 textRef 与草稿）
   function applyToolbar(action: ToolbarAction) {
     const el = editorRef.current
@@ -446,7 +490,7 @@ export default function DiaryEditor() {
         </button>
       )}
       {preview ? (
-        <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+        <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto pb-2">
           {text.trim()
             ? <Markdown source={text} />
             : <p className="text-sm text-neutral-500 dark:text-neutral-400">还没有内容</p>}
@@ -480,7 +524,7 @@ export default function DiaryEditor() {
         <span className="flex-1" />
         <button
           type="button"
-          onClick={() => setPreview((p) => !p)}
+          onClick={togglePreview}
           className="rounded-lg px-2 py-1 text-xs text-neutral-500 active:bg-neutral-100 dark:text-neutral-400 dark:active:bg-neutral-800"
         >
           {preview ? '编辑' : '预览'}
