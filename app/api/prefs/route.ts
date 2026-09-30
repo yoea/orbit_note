@@ -4,7 +4,10 @@ import { userPrefs } from '@/lib/server/db/schema'
 import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { rateLimit } from '@/lib/server/ratelimit'
 
-// 偏好键白名单（防御：仅允许已知键，避免任意键污染表）
+// 偏好键白名单（防御：仅允许已知键，避免任意键污染表）。
+// ★ 必须与 lib/client/prefs.ts 的 ALL_KEYS 保持同一集合（tests/prefs-keys.test.ts 对账）。
+// 刻意不含的主题键 'qo-theme'：它值域是 'system'/'light'/'dark' 而非 '0'/'1'，
+// 且外观是设备属性（不同步服务器）——见 prefs.ts 注释。
 const PREF_KEYS = new Set([
   'qo-location-enabled',
   'qo-save-weather',
@@ -12,6 +15,9 @@ const PREF_KEYS = new Set([
   'qo-show-prompt',
   'qo-show-on-this-day',
   'qo-auto-place-name',
+  'qo-save-sound',
+  'qo-show-views',
+  'qo-show-heatmap',
 ])
 
 // 用户偏好（设置页开关）读写：多端同步，替代 localStorage

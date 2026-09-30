@@ -11,6 +11,7 @@ import SearchIcon from './SearchIcon'
 import ContributionHeatmap from './ContributionHeatmap'
 import StarIcon from './StarIcon'
 import { displayLocationName } from '@/lib/client/location'
+import { isHeatmapEnabled } from '@/lib/client/prefs'
 import { deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
 
 const PAGE_SIZE = 10
@@ -108,6 +109,8 @@ export default function DiaryListView() {
   const [offset, setOffset] = useState(() => snapshot?.offset ?? 0)
   const [hasMore, setHasMore] = useState(() => snapshot?.hasMore ?? true)
   const [loadingMore, setLoadingMore] = useState(false)
+  // 热力图显示开关（偏好 qo-show-heatmap，默认开）：渲染条件，惰性初值同步读即可
+  const [showHeatmap] = useState(() => isHeatmapEnabled())
   // 首次进入（无快照可渲染）时列表本来就是空的——那不是「没有日记」，是数据还在路上。
   // 原先没有这个标志，于是会先闪一行「还没有日记」再被真实列表顶掉。
   const [loading, setLoading] = useState(() => snapshot == null)
@@ -402,8 +405,8 @@ export default function DiaryListView() {
             {/* 总字数：byDay 各天字数之和（千分位） */}
             <span className="shrink-0">共写了 {Object.values(stats.byDay ?? {}).reduce((sum, d) => sum + d.words, 0).toLocaleString()} 字</span>
           </div>
-          {/* 写作频率热力图（仅在有日记时显示） */}
-          {stats.count > 0 && <ContributionHeatmap byDay={stats.byDay ?? {}} />}
+          {/* 写作频率热力图（仅在有日记时显示；偏好 qo-show-heatmap 可关，默认开） */}
+          {showHeatmap && stats.count > 0 && <ContributionHeatmap byDay={stats.byDay ?? {}} />}
         </>
       )}
       <div className="flex flex-col gap-6 pb-4">

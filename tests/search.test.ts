@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_FILTERS,
+  TIME_PRESETS,
   buildSnippet,
   firstLine,
   highlightSegments,
   isDefaultFilters,
   locationFacets,
   matches,
+  monthFacets,
+  rangeEnd,
   rangeStart,
   relevanceScore,
+  timeRangeLabel,
   type FilterableEntry,
   type SearchFilters,
 } from '@/lib/client/search'
@@ -48,21 +52,79 @@ describe('isDefaultFilters', () => {
   })
 })
 
-describe('rangeStart', () => {
-  it("'all' 返回 null（不限时间）", () => {
+describe('时间档：rangeStart / rangeEnd', () => {
+  it("'all' 两侧都是 null（不限时间）", () => {
     expect(rangeStart('all', NOW)).toBeNull()
+    expect(rangeEnd('all')).toBeNull()
   })
-  it("'7d' 含今天在内共 7 天（回退 6 天到 0 点）", () => {
+  it("'7d' 含今天在内共 7 天（回退 6 天到 0 点），且刻意没有上界", () => {
     const start = rangeStart('7d', NOW)!
     expect(new Date(start).getHours()).toBe(0)
     expect(new Date(start).getDate()).toBe(22)
+    expect(rangeEnd('7d')).toBeNull()
   })
   it("'30d' 回退 29 天到 0 点", () => {
     expect(new Date(rangeStart('30d', NOW)!).getDate()).toBe(30) // 8月30日
   })
-  it("'year' 为当年 1 月 1 日 0 点", () => {
-    const d = new Date(rangeStart('year', NOW)!)
-    expect([d.getFullYear(), d.getMonth(), d.getDate()]).toEqual([2026, 0, 1])
+  it('预设档只有三个——刻意不做「今年」（与月份清单重叠、粒度更粗）', () => {
+    expect(TIME_PRESETS).toEqual(['all', '7d', '30d'])
+  })
+  it('具体月份：下界 = 当月 1 日 0 点，上界 = 次月 1 日 0 点（不含）', () => {
+    const d = new Date(rangeStart('m:2026-08', NOW)!)
+    expect([d.getFullYear(), d.getMonth(), d.getDate(), d.getHours()]).toEqual([2026, 7, 1, 0])
+    const e = new Date(rangeEnd('m:2026-08')!)
+    expect([e.getFullYear(), e.getMonth(), e.getDate(), e.getHours()]).toEqual([2026, 8, 1, 0])
+  })
+  it('12 月的上界跨到下一年 1 月', () => {
+    const e = new Date(rangeEnd('m:2026-12')!)
+    expect([e.getFullYear(), e.getMonth(), e.getDate()]).toEqual([2027, 0, 1])
+  })
+  it('非法月份不给边界（既不抛异常，也不悄悄退化成整年）', () => {
+    expect(rangeStart('m:2026-13', NOW)).toBeNull()
+    expect(rangeEnd('m:2026-13')).toBeNull()
+    expect(rangeStart('m:2026-00', NOW)).toBeNull()
+    expect(rangeEnd('m:2026-00')).toBeNull()
+  })
+})
+
+describe('timeRangeLabel（chip 与面板共用同一份文字）', () => {
+  it('预设档与月份档各有其展示串', () => {
+    expect(timeRangeLabel('all')).toBe('全部时间')
+    expect(timeRangeLabel('7d')).toBe('近 7 天')
+    expect(timeRangeLabel('30d')).toBe('近 30 天')
+    expect(timeRangeLabel('m:2026-09')).toBe('2026年9月')
+    expect(timeRangeLabel('m:2026-12')).toBe('2026年12月')
+  })
+})
+
+describe('monthFacets（月份清单）', () => {
+  it('按月归并、新的在前，且带篇数', () => {
+    const facets = monthFacets([
+      { createdAt: '2026-09-28T08:00:00' },
+      { createdAt: '2026-09-01T08:00:00' },
+      { createdAt: '2026-08-31T23:00:00' },
+      { createdAt: '2025-12-01T08:00:00' },
+    ])
+    expect(facets).toEqual([
+      { key: '2026-09', label: '2026年9月', count: 2 },
+      { key: '2026-08', label: '2026年8月', count: 1 },
+      { key: '2025-12', label: '2025年12月', count: 1 },
+    ])
+  })
+  it('按**本地时区**归月，不是按 UTC 截字符串', () => {
+    // 本地 9 月 1 日 00:30 写的这一篇：在 UTC+8 之类东时区里，它的 UTC 时间戳还停在
+    // 8 月 31 日 —— 若实现写成 iso.slice(0, 7)，用户会看到「8 月有 1 篇」而 9 月是空的。
+    const local = new Date(2026, 8, 1, 0, 30)
+    const facets = monthFacets([{ createdAt: local.toISOString() }])
+    expect(facets).toHaveLength(1)
+    expect(facets[0].key).toBe(`${local.getFullYear()}-${String(local.getMonth() + 1).padStart(2, '0')}`)
+    expect(facets[0].key).toBe('2026-09')
+  })
+  it('时间戳坏掉的条目不进清单（也不抛）', () => {
+    expect(monthFacets([{ createdAt: 'not-a-date' }])).toEqual([])
+  })
+  it('空输入 → 空清单（界面据此显示「还没有日记」而不是空白）', () => {
+    expect(monthFacets([])).toEqual([])
   })
 })
 
@@ -95,7 +157,17 @@ describe('matches', () => {
     expect(matches(entry, 'x', filters({ range: '7d' }), NOW)).toBe(true) // 当天
     const old = { ...entry, createdAt: '2026-01-01T08:00:00' }
     expect(matches(old, 'x', filters({ range: '7d' }), NOW)).toBe(false)
-    expect(matches(old, 'x', filters({ range: 'year' }), NOW)).toBe(true)
+    expect(matches(old, 'x', filters({ range: 'm:2026-01' }), NOW)).toBe(true)
+  })
+  it('具体月份含首日 0 点、不含次月 1 日 0 点（上界是闭开区间）', () => {
+    const inMonth = { ...entry, createdAt: '2026-08-15T10:00:00' }
+    const atStart = { ...entry, createdAt: '2026-08-01T00:00:00' }
+    const atNextMonth = { ...entry, createdAt: '2026-09-01T00:00:00' }
+    const prevMonth = { ...entry, createdAt: '2026-07-31T23:59:59' }
+    expect(matches(inMonth, 'x', filters({ range: 'm:2026-08' }), NOW)).toBe(true)
+    expect(matches(atStart, 'x', filters({ range: 'm:2026-08' }), NOW)).toBe(true)
+    expect(matches(atNextMonth, 'x', filters({ range: 'm:2026-08' }), NOW)).toBe(false)
+    expect(matches(prevMonth, 'x', filters({ range: 'm:2026-08' }), NOW)).toBe(false)
   })
   it('只看有位置时排除无坐标条目', () => {
     const noLoc = { ...entry, latitude: null }

@@ -7,21 +7,22 @@ import { getDek } from '@/lib/client/session'
 import { decryptEntries, fetchAllEntries } from '@/lib/client/entries'
 import { weatherEmoji } from '@/lib/client/weather'
 import {
-  TIME_RANGE_LABEL,
+  TIME_PRESETS,
   buildSnippet,
   firstLine,
   highlightSegments,
   isDefaultFilters,
   locationFacets,
   matches,
+  monthFacets,
   relevanceScore,
+  timeRangeLabel,
   type TimeRange,
 } from '@/lib/client/search'
 import type { DecryptedEntry } from '@/lib/client/entries'
 import { displayLocationName } from '@/lib/client/location'
 import { toPlainText } from '@/lib/client/markdown'
 
-const TIME_RANGES: TimeRange[] = ['all', '7d', '30d', 'year']
 // 每次渲染的批量——结果多时先给一批，「加载更多」再递增。
 // 上限的意义是避免上千条时一次性建 DOM，而不是「只显示这么多」。
 const PAGE = 100
@@ -38,20 +39,89 @@ function Highlighted({ text, query }: { text: string; query: string }) {
   )
 }
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+// 展开小箭头：只给「点了会开面板」的两个按钮用（收藏是即时开关，不需要）。
+function Caret() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  )
+}
+
+// 筛选按钮：三类筛选（时间 / 收藏 / 地点）共用这一个外观。
+// children 一律包一层可截断的 span——地名可能很长，不能让按钮被撑破。
+function Chip({ active, caret = false, onClick, children }: {
+  active: boolean
+  caret?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
   return (
     <button
       onClick={onClick}
-      className={`shrink-0 rounded-full px-3 py-1.5 text-xs transition-colors ${
+      className={`flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs transition-colors ${
         active
           ? 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 font-medium text-white'
           : 'bg-neutral-100 text-neutral-500 active:opacity-60 dark:bg-neutral-800 dark:text-neutral-400'
       }`}
     >
-      {children}
+      <span className="min-w-0 truncate">{children}</span>
+      {caret && <Caret />}
     </button>
   )
 }
+
+// 面板里的一行（时间档 / 月份 / 地点共用）。meta 是右侧的次要信息（篇数）。
+function PanelRow({ label, meta, selected, onClick }: {
+  label: string
+  meta?: string
+  selected: boolean
+  onClick: () => void
+}) {
+  return (
+    <li>
+      <button onClick={onClick} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left active:opacity-60">
+        <span className="min-w-0 truncate text-sm text-neutral-700 dark:text-neutral-200">{label}</span>
+        <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+          {meta}
+          {selected && <span className="ml-2 text-emerald-600 dark:text-emerald-400">✓</span>}
+        </span>
+      </button>
+    </li>
+  )
+}
+
+// 面板里的小分组标题（「按月份」/「具体地点」）
+function PanelGroupLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="border-t border-neutral-100 px-3 pb-1 pt-2.5 text-xs font-medium text-neutral-500 dark:border-neutral-800 dark:text-neutral-400">
+      {children}
+    </p>
+  )
+}
+
+// 面板的空态/加载态提示（时间与地点面板共用一套文案口径）
+function PanelHint({ error, loaded, empty }: { error: string | null; loaded: boolean; empty: string }) {
+  return (
+    <p className="px-3 py-2.5 text-xs text-neutral-500 dark:text-neutral-400">
+      {error ? '日记加载失败' : loaded ? empty : '正在解密日记…'}
+    </p>
+  )
+}
+
+// 筛选项面板的容器（限高 + 内部滚动，与设置页弹窗同一套做法）
+function Panel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-3 max-h-[45dvh] overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-800">
+      {children}
+    </div>
+  )
+}
+
+const PANEL_UL = 'flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800'
+
+// 同一时刻只允许开一个面板——两个面板同时展开会把结果区挤掉一大半。
+type FilterPanel = 'time' | 'location'
 
 // 搜索弹窗（/diary 右上角放大镜打开）。
 //
@@ -67,8 +137,8 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
   const [onlyStarred, setOnlyStarred] = useState(false)
   // 地名筛选：值为 displayLocationName 的原值（null = 不限）；取自实际数据，见 facets
   const [location, setLocation] = useState<string | null>(null)
-  // 地名选择面板（点击「地点」chip 展开；选完即收起，选中值回显在 chip 上）
-  const [locationOpen, setLocationOpen] = useState(false)
+  // 当前展开的筛选项面板（时间 / 地点；收藏是即时开关、没有面板）。null = 都收起
+  const [openPanel, setOpenPanel] = useState<FilterPanel | null>(null)
   // null = 尚未加载（还没搜过）；加载完成后持有全部已解密条目
   const [entries, setEntries] = useState<DecryptedEntry[] | null>(null)
   const [loading, setLoading] = useState(false)
@@ -110,12 +180,72 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
     ensureLoaded()
   }
 
+  // ★ 打开筛选面板**必须**同时触发惰性解密加载。
+  //
+  // 为什么单拎成一个函数（2026-09-30 修真实 bug）：面板里的「月份清单」和「地点清单」
+  // 都是从**已解密条目**现取的。此前打开面板只 `setOpenPanel(true)`、不加载，于是
+  // 「进搜索 → 直接点地点」看到的是空面板（「还没有记录过地点」），用户结论是
+  // **按地点筛选不显示结果**——其实纯逻辑（tests/search.test.ts 的 C2/C3）全是对的，
+  // 坏在拿不到清单、根本选不出地点。所有面板开关都走这里，别再各自 setState。
+  // 守卫 tests/search-filters-ui.test.ts 断言 `setOpenPanel` 全仓只出现在本函数里。
+  function openFilterPanel(panel: FilterPanel) {
+    setOpenPanel((cur) => (cur === panel ? null : panel))
+    ensureLoaded()
+  }
+
+  // 选完即收起面板（与地点面板原有的交互一致），选中值回显在按钮上
+  function pickRange(r: TimeRange) {
+    setRange(r)
+    setOpenPanel(null)
+    resetPaging()
+  }
+
+  // 收藏是即时开关：不展开面板，点一下就切
+  function toggleStarred() {
+    setOnlyStarred((v) => !v)
+    resetPaging()
+  }
+
+  // 地点三类选择互斥：不限 / 只看有位置 / 具体地点
+  function pickAllPlaces() {
+    setLocation(null)
+    setOnlyWithLocation(false)
+    setOpenPanel(null)
+    resetPaging()
+  }
+  function pickWithLocation() {
+    setLocation(null)
+    setOnlyWithLocation(true)
+    setOpenPanel(null)
+    resetPaging()
+  }
+  function pickLocation(name: string) {
+    setLocation(name)
+    setOnlyWithLocation(false)
+    setOpenPanel(null)
+    resetPaging()
+  }
+
+  // 重置筛选（**不含**关键词——关键词由输入框自己的 ✕ 清除，两个入口各管一摊）
+  function resetFilters() {
+    setRange('all')
+    setOnlyStarred(false)
+    setOnlyWithLocation(false)
+    setLocation(null)
+    setOpenPanel(null)
+    resetPaging()
+  }
+
   const filters = { query, range, onlyWithLocation, onlyStarred, location }
   const active = !isDefaultFilters(filters)
+  // 是否有任何**筛选**（不含关键词）非默认——决定「重置」按钮出不出来
+  const filtersActive = range !== 'all' || onlyStarred || onlyWithLocation || location !== null
 
   // 地名清单：从**全部已解密条目**里现取（服务端只有密文与元数据，但地名就是元数据，
   // 客户端取不到别的来源）。清单里不会出现空地名，所以不会给出选了却零结果的可选项。
   const facets = useMemo(() => locationFacets((entries ?? []).map((e) => e.entry)), [entries])
+  // 月份清单同理：只列真的有日记的月份（新的在前），不会给出空档
+  const months = useMemo(() => monthFacets((entries ?? []).map((e) => e.entry)), [entries])
 
   const results = useMemo(() => {
     if (!entries) return []
@@ -159,59 +289,83 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
           </div>
           <button onClick={onClose} className="shrink-0 text-sm text-neutral-500 dark:text-neutral-400 active:opacity-60">取消</button>
         </div>
-        {/* 筛选条件：与关键词是「与」的关系；时间、位置、收藏、地名全部是明文元数据。
-            每个条件都只**收窄**结果集，所以任意几个同时打开 = 取交集（见 lib/client/search.ts）。 */}
+        {/* 筛选归为**三类**（时间 / 收藏 / 地点），与关键词同样是「与」的关系；
+            全部是明文元数据，每一项都只**收窄**结果集 ⇒ 任意组合恒为交集（见 lib/client/search.ts）。
+            · 时间：按钮上直接显示当前档位（默认「全部时间」），点开面板选预设档或具体月份；
+            · 收藏：布尔开关，点了就切，没有面板可开；
+            · 地点：「只看有位置」与「具体地点」是同一类里的两档，因此都收在地点面板内，
+              不再单独占一个 chip（这就是从 7 个 chip 收敛成 3 个控件的原因）。 */}
         <div className="flex flex-wrap items-center gap-2 pb-3">
-          {TIME_RANGES.map((r) => (
-            <Chip key={r} active={range === r} onClick={() => { setRange(range === r ? 'all' : r); resetPaging() }}>
-              {TIME_RANGE_LABEL[r]}
-            </Chip>
-          ))}
-          <Chip active={onlyWithLocation} onClick={() => { setOnlyWithLocation(!onlyWithLocation); resetPaging() }}>
-            有位置
+          <Chip active={range !== 'all'} caret onClick={() => openFilterPanel('time')}>
+            {timeRangeLabel(range)}
           </Chip>
-          <Chip active={onlyStarred} onClick={() => { setOnlyStarred(!onlyStarred); resetPaging() }}>
-            收藏
+          <Chip active={onlyStarred} onClick={toggleStarred}>
+            {onlyStarred ? '仅收藏' : '收藏'}
           </Chip>
-          {/* 地点：选中后 chip 直接显示地点名（省 市 区），再点一次展开换一个 */}
-          <Chip active={location !== null} onClick={() => setLocationOpen((o) => !o)}>
-            <span className="block max-w-[9rem] truncate">{location ?? '地点'}</span>
+          <Chip active={location !== null || onlyWithLocation} caret onClick={() => openFilterPanel('location')}>
+            {location ?? (onlyWithLocation ? '有位置' : '地点')}
           </Chip>
+          {filtersActive && (
+            <button
+              onClick={resetFilters}
+              className="shrink-0 rounded-full px-3 py-1.5 text-xs text-neutral-500 active:opacity-60 dark:text-neutral-400"
+            >
+              重置
+            </button>
+          )}
         </div>
-        {/* 地名选择面板：清单来自**实际数据**（每个地点后面带篇数），不是让用户凭记忆敲字——
-            敲字既容易打错（「昆明市」写成「昆明」就零结果）也搜不出自己有哪些地点可选。 */}
-        {locationOpen && (
-          <div className="mb-3 max-h-[45dvh] overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-800">
-            <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
-              <li>
-                <button
-                  onClick={() => { setLocation(null); setLocationOpen(false); resetPaging() }}
-                  className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left active:opacity-60"
-                >
-                  <span className="text-sm text-neutral-700 dark:text-neutral-200">全部地点</span>
-                  {location === null && <span className="shrink-0 text-sm text-emerald-600 dark:text-emerald-400">✓</span>}
-                </button>
-              </li>
-              {loading && <li><p className="px-3 py-2.5 text-xs text-neutral-500 dark:text-neutral-400">正在解密日记…</p></li>}
-              {!loading && facets.length === 0 && (
-                <li><p className="px-3 py-2.5 text-xs text-neutral-500 dark:text-neutral-400">还没有记录过地点</p></li>
-              )}
-              {facets.map((f) => (
-                <li key={f.name}>
-                  <button
-                    onClick={() => { setLocation(f.name); setLocationOpen(false); resetPaging() }}
-                    className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left active:opacity-60"
-                  >
-                    <span className="min-w-0 truncate text-sm text-neutral-700 dark:text-neutral-200">{f.name}</span>
-                    <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
-                      {f.count} 篇
-                      {location === f.name && <span className="ml-2 text-emerald-600 dark:text-emerald-400">✓</span>}
-                    </span>
-                  </button>
-                </li>
+        {/* 时间面板：预设档 + 数据里实际存在的月份清单。
+            列月份而不是让用户自己选年/月，理由与地点清单相同——只给出**真的有日记**的档位，
+            不会出现「选了却零结果」的组合。 */}
+        {openPanel === 'time' && (
+          <Panel>
+            <ul className={PANEL_UL}>
+              {TIME_PRESETS.map((r) => (
+                <PanelRow key={r} label={timeRangeLabel(r)} selected={range === r} onClick={() => pickRange(r)} />
               ))}
             </ul>
-          </div>
+            <PanelGroupLabel>按月份</PanelGroupLabel>
+            <ul className={PANEL_UL}>
+              {months.length === 0 && (
+                <li><PanelHint error={error} loaded={entries !== null} empty="还没有日记" /></li>
+              )}
+              {months.map((m) => (
+                <PanelRow
+                  key={m.key}
+                  label={m.label}
+                  meta={`${m.count} 篇`}
+                  selected={range === `m:${m.key}`}
+                  onClick={() => pickRange(`m:${m.key}`)}
+                />
+              ))}
+            </ul>
+          </Panel>
+        )}
+        {/* 地点面板：不限 / 只看有位置 / 具体地点 三档互斥。
+            清单来自**实际数据**（每个地点后面带篇数），不是让用户凭记忆敲字——
+            敲字既容易打错（「昆明市」写成「昆明」就零结果）也搜不出自己有哪些地点可选。 */}
+        {openPanel === 'location' && (
+          <Panel>
+            <ul className={PANEL_UL}>
+              <PanelRow label="全部地点" selected={location === null && !onlyWithLocation} onClick={pickAllPlaces} />
+              <PanelRow label="只看有位置" selected={onlyWithLocation} onClick={pickWithLocation} />
+            </ul>
+            <PanelGroupLabel>具体地点</PanelGroupLabel>
+            <ul className={PANEL_UL}>
+              {facets.length === 0 && (
+                <li><PanelHint error={error} loaded={entries !== null} empty="还没有记录过地点" /></li>
+              )}
+              {facets.map((f) => (
+                <PanelRow
+                  key={f.name}
+                  label={f.name}
+                  meta={`${f.count} 篇`}
+                  selected={location === f.name}
+                  onClick={() => pickLocation(f.name)}
+                />
+              ))}
+            </ul>
+          </Panel>
         )}
       </div>
 

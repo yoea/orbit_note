@@ -12,6 +12,25 @@ import { useUserName } from '@/lib/client/use-user-name'
 
 type ExportFormat = 'json-zip' | 'json' | 'csv'
 
+// 记忆上次选择的导出格式（设备本地，不同步服务器）：
+// 格式选择是「这次导出去干什么」的设备相关习惯（有人常年只要 CSV），
+// 每次重进都回默认档是重复劳动。用 localStorage 记住、下次进来自动选中。
+// 刻意不进 /api/prefs：那是布尔偏好通道（值域只有 '0'/'1'），且这属于设备习惯。
+const EXPORT_FORMAT_KEY = 'qo-export-format'
+
+function isExportFormat(v: unknown): v is ExportFormat {
+  return v === 'json-zip' || v === 'json' || v === 'csv'
+}
+
+// 惰性初值同步读取：本组件是客户端组件，首帧即为记忆的档位（无异步时序/闪烁）
+function readExportFormat(): ExportFormat {
+  if (typeof window === 'undefined') return 'json-zip'
+  try {
+    const v = localStorage.getItem(EXPORT_FORMAT_KEY)
+    return isExportFormat(v) ? v : 'json-zip'
+  } catch { return 'json-zip' }
+}
+
 // 三种格式各自的价值，写清楚免得用户选错：
 // - JSON 压缩包（.zip）：**主推**。Day One / Journey 能直接导入，也是本应用能再导入回来的格式
 //   （唯一支持"导出 → 再导入"往返无损的格式）。zip 内固定放 Journal.json，符合 Day One 的目录约定。
@@ -49,7 +68,13 @@ export default function ExportView() {
   const [exporting, setExporting] = useState(false)
   const [exported, setExported] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [format, setFormat] = useState<ExportFormat>('json-zip')
+  const [format, setFormat] = useState<ExportFormat>(readExportFormat)
+
+  // 切换格式：立即生效 + 记住（下次打开本页自动选中）
+  function pickFormat(id: ExportFormat) {
+    setFormat(id)
+    try { localStorage.setItem(EXPORT_FORMAT_KEY, id) } catch { /* 忽略存储失败（隐私模式等） */ }
+  }
   // 导出成功后的返回倒计时（明文文件已下载，提示谨慎保存并自动返回设置页释放内存）
   const [countdown, setCountdown] = useState(0)
   const userName = useUserName()
@@ -151,7 +176,7 @@ export default function ExportView() {
   return (
     <div>
       <p className="mt-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
-        将{userName ? `${userName}的` : ''}全部日记导出为 <span className="font-medium">JSON 压缩包</span>（默认）或 CSV 表格。
+        将{userName ? `${userName}的` : ''}全部日记导出为 <span className="font-medium">JSON 压缩包</span>（推荐）或 CSV 表格。
         JSON 采用标准 Day One 结构，<span className="font-medium">Day One、Journey 都能直接导入</span>，也能重新导回本应用。
       </p>
       <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
@@ -212,7 +237,7 @@ export default function ExportView() {
             {EXPORT_FORMATS.map((f) => (
               <li key={f.id}>
                 <button
-                  onClick={() => setFormat(f.id)}
+                  onClick={() => pickFormat(f.id)}
                   aria-pressed={format === f.id}
                   className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left active:opacity-60"
                 >

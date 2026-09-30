@@ -9,9 +9,37 @@
 // ★ 所有筛选条件是**与**的关系（时间 × 位置 × 收藏 × 地名 × 关键词），
 //   且全部作用在同一条 entry 上 ⇒ 组合结果一定是各条件的交集，不会出现
 //   「按 A 筛出来的集合里再挑出不符合 B 的」（见 tests/search.test.ts 的组合断言）。
+//
+// ★ 界面上的筛选归为**三类**（2026-09-30 定）——时间 / 收藏 / 地点。
+//   「只看有位置」不是第四类，它是地点这一类的「不限到具体地点」那一档，
+//   因此在地点面板里与「全部地点」并列，而不是单独占一个 chip。
 import { displayLocationName, type LocationedEntry } from './location'
 
-export type TimeRange = 'all' | '7d' | '30d' | 'year'
+// ── 时间：四档 ──────────────────────────────────────────────────────────────
+//
+// 全部时间 / 近 7 天 / 近 30 天 / **具体月份**。
+// 刻意**不做**「今年」这类粗粒度区间（用户 2026-09-30 明确只要这四档）：
+// 它与月份清单信息量重叠，而月份清单还能精确跳到某年的某个月；
+// 也不做「近 90 天」之类的中间档——跨度越大越接近「全部时间」，没有额外信息。
+//
+// 具体月份编码成 'm:YYYY-MM' 而不是新增一个字段：时间维度在数据层始终是**一个**
+// 可选值，`matches` 里就仍然只有一处时间判定，不需要「预设与月份互斥」的额外规则。
+export type TimeRange = 'all' | '7d' | '30d' | `m:${string}`
+
+/** 预设档（下拉里排在月份清单之前）。'all' 是默认值 = 不做时间过滤。 */
+export const TIME_PRESETS: TimeRange[] = ['all', '7d', '30d']
+
+const MONTH_RANGE_RE = /^m:(\d{4})-(\d{2})$/
+
+/** 'm:YYYY-MM' → { year, month }；非月份档或月份非法（00/13）返回 null */
+function parseMonthRange(range: TimeRange): { year: number; month: number } | null {
+  const m = MONTH_RANGE_RE.exec(range)
+  if (!m) return null
+  const year = Number(m[1])
+  const month = Number(m[2])
+  if (month < 1 || month > 12) return null
+  return { year, month }
+}
 
 export interface SearchFilters {
   query: string
@@ -37,21 +65,61 @@ export function isDefaultFilters(f: SearchFilters): boolean {
   return f.query.trim() === '' && f.range === 'all' && !f.onlyWithLocation && !f.onlyStarred && f.location === null
 }
 
-export const TIME_RANGE_LABEL: Record<TimeRange, string> = {
-  all: '全部时间',
-  '7d': '近 7 天',
-  '30d': '近 30 天',
-  year: '今年',
+/** 时间档的展示串（chip 上的文字与面板里那一行**共用**它，避免两处走样） */
+export function timeRangeLabel(range: TimeRange): string {
+  if (range === '7d') return '近 7 天'
+  if (range === '30d') return '近 30 天'
+  const month = parseMonthRange(range)
+  if (month) return `${month.year}年${month.month}月`
+  return '全部时间'
 }
 
-/** 时间范围下界（本地时区当天 0 点）；'all' 返回 null */
+/** 时间范围下界（本地时区当天/当月 0 点）；'all' 返回 null */
 export function rangeStart(range: TimeRange, now: Date = new Date()): number | null {
   const d = new Date(now)
   d.setHours(0, 0, 0, 0)
   if (range === '7d') { d.setDate(d.getDate() - 6); return d.getTime() }
   if (range === '30d') { d.setDate(d.getDate() - 29); return d.getTime() }
-  if (range === 'year') { return new Date(d.getFullYear(), 0, 1).getTime() }
+  const month = parseMonthRange(range)
+  if (month) return new Date(month.year, month.month - 1, 1).getTime()
   return null
+}
+
+/**
+ * 时间范围上界（**不含**，取次月 1 日 0 点）；只有具体月份有上界。
+ * 预设档（近 7 天 / 近 30 天）只有下界、上界是「现在」——刻意不给它们算上界：
+ * 上界写成「明天 0 点」会把今天晚些时候创建的条目挡在外面（时钟与本地时区都可能偏）。
+ */
+export function rangeEnd(range: TimeRange): number | null {
+  const month = parseMonthRange(range)
+  if (!month) return null
+  return new Date(month.year, month.month, 1).getTime()
+}
+
+export interface MonthFacet {
+  /** 'YYYY-MM'（本地时区） */
+  key: string
+  /** 展示串（'2026年9月'）——与 chip 上的文字同一口径 */
+  label: string
+  count: number
+}
+
+/**
+ * 数据里**实际存在**的月份清单（新的在前）。
+ * 与地名清单同理：只列真的有日记的月份，不给出「选了却零结果」的空档；
+ * 正文端到端加密、服务端无法参与筛选，所以清单只能在客户端从已解密条目里现取。
+ */
+export function monthFacets(entries: { createdAt: string }[]): MonthFacet[] {
+  const map = new Map<string, number>()
+  for (const e of entries) {
+    const d = new Date(e.createdAt)
+    if (Number.isNaN(d.getTime())) continue
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    map.set(key, (map.get(key) ?? 0) + 1)
+  }
+  return [...map.entries()]
+    .map(([key, count]) => ({ key, label: timeRangeLabel(`m:${key}`), count }))
+    .sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0))
 }
 
 export interface FilterableEntry extends LocationedEntry {
@@ -76,8 +144,11 @@ export function matches(
   f: SearchFilters,
   now: Date = new Date(),
 ): boolean {
+  const at = new Date(entry.createdAt).getTime()
   const start = rangeStart(f.range, now)
-  if (start != null && new Date(entry.createdAt).getTime() < start) return false
+  if (start != null && at < start) return false
+  const end = rangeEnd(f.range)
+  if (end != null && at >= end) return false
   if (f.onlyWithLocation && entry.latitude == null) return false
   if (f.onlyStarred && !entry.starred) return false
   // 地名筛选：按**展示串**精确相等（用户选的是列表里看到的那一行，不该匹配到别的地点）

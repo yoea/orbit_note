@@ -9,11 +9,11 @@ import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { copyText } from '@/lib/client/clipboard'
 import { clientReverseGeocode } from '@/lib/client/geocode'
 import { displayLocationName, getPosition, hasStructuredLocation, locationPatch, parseCoords } from '@/lib/client/location'
-import { isAutoPlaceNameEnabled } from '@/lib/client/prefs'
+import { isAutoPlaceNameEnabled, isShowViewsEnabled } from '@/lib/client/prefs'
 import { cacheEntriesPage, getCachedEntryById, getQueuedEntryById, removeCachedEntry, removeQueuedEntry, resolveEntryLoad, updateQueuedEntry } from '@/lib/client/offline'
 import { weatherEmoji } from '@/lib/client/weather'
 import { bumpEntryViewCount } from '@/lib/client/views'
-import { playSaveSound } from '@/lib/client/sound'
+import { playSaveSoundIfEnabled } from '@/lib/client/sound'
 import { BRAND_GRADIENT_CLASS, EDITOR_TEXTAREA_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import Toast from './Toast'
 import Markdown from './Markdown'
@@ -71,6 +71,10 @@ export default function EntryView({ id }: { id: string }) {
   // 此时底部不渲染那只眼睛——「0 次」和「没数到」对用户是同一件事，不必显示成「0」。
   const [viewCount, setViewCount] = useState(0)
   const viewCountedRef = useRef(false)
+  // 打开次数是否显示（偏好 qo-show-views，默认开）。用惰性初值同步读取：
+  // 本组件是客户端组件、偏好读取无异步时序，首帧即为真值（与 isAutoPlaceNameEnabled
+  // 在 effect 里读不同——那是「用的时候才读」，这里是渲染条件，必须首帧正确）。
+  const [showViews] = useState(() => isShowViewsEnabled())
   // —— 定位相关：与正文保存完全解耦 ——
   // 任何定位改动（添加 / 移除 / 补地点名）都立即 PATCH 落库，不经过底部「保存修改」按钮。
   // 该按钮只负责正文内容。
@@ -377,7 +381,7 @@ export default function EntryView({ id }: { id: string }) {
         setCoordError(null)
         setError(null)
         setEditing(false)
-        playSaveSound()
+        playSaveSoundIfEnabled()
         setSavedFlash(true)
         if (savedFlashTimerRef.current) clearTimeout(savedFlashTimerRef.current)
         savedFlashTimerRef.current = setTimeout(() => setSavedFlash(false), 2000)
@@ -403,7 +407,7 @@ export default function EntryView({ id }: { id: string }) {
       setError(null)
       setEditing(false)
       // 成功提示：短暂显示「✓ 已保存」后自动消失
-      playSaveSound()
+      playSaveSoundIfEnabled()
       setSavedFlash(true)
       if (savedFlashTimerRef.current) clearTimeout(savedFlashTimerRef.current)
       savedFlashTimerRef.current = setTimeout(() => setSavedFlash(false), 2000)
@@ -790,7 +794,10 @@ export default function EntryView({ id }: { id: string }) {
                 打开次数不是操作，永远只读。未同步笔记走本地写队列，不受此限。 */}
           <div className="flex items-center justify-between border-t border-neutral-100 py-4 dark:border-neutral-800">
             <div className="-ml-2 flex items-center gap-1">
-              {viewCount > 0 && (
+              {/* 打开次数：受偏好 qo-show-views 控制（默认开）。
+                  ★ 只隐藏「显示」，计数本身照常——bumpEntryViewCount 在挂载时
+                  已无条件上报，与本行渲染无关（关掉显示不等于停止统计）。 */}
+              {showViews && viewCount > 0 && (
                 <span
                   role="img"
                   aria-label={`打开过 ${viewCount} 次`}

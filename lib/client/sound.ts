@@ -1,6 +1,15 @@
 // 保存成功音效：Web Audio API 合成（无需音频文件）——类似任天堂游戏的清脆 coin 音
 // （B5 → E6 双音快速琶音，约 200ms）。iOS 上 AudioContext 需用户手势激活——保存按钮点击即手势。
+import { isSaveSoundEnabled } from './prefs'
+
 let ctx: AudioContext | null = null
+
+// 受偏好控制的唯一入口：所有调用点都用它，别直接调 playSaveSound()
+// （偏好默认开，关闭后连 AudioContext 都不创建）。
+export function playSaveSoundIfEnabled(): void {
+  if (!isSaveSoundEnabled()) return
+  playSaveSound()
+}
 
 export function playSaveSound(): void {
   try {
