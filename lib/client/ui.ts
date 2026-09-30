@@ -17,6 +17,23 @@ export const PRIMARY_BUTTON_CLASS =
 // 品牌渐变底色：与 TabBar 选中态、偏好开关 ON、头像同一套 token。
 export const BRAND_GRADIENT_CLASS = 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500'
 
+// 正文编辑区 `<textarea>` 的共用核心样式（写页 AutoTextarea 与详情页编辑态 EntryView）。
+//
+// 为什么收敛成常量：两处都是「编辑一篇 Markdown 正文」，字号必须与查看页一致，
+// 否则同一段文字在写页和查看页的行宽/换行位置不同——用户要的「所见即所得」就断了。
+// 事实是它漂移过：写页写 `text-lg`（18px），详情页编辑态写 `text-base`（16px），
+// 而查看页 Markdown 容器是 `text-base` ⇒ 写页在骗人（2026-09-30 用户指出）。
+//
+// **字号 = text-base（16px）= components/Markdown.tsx 的 qo-markdown 容器**，三处同源。
+// 别改回 text-lg：那会让查看页的换行位置与编辑页不一致。
+//
+// 各调用方只加自己的差异部分：
+//   · AutoTextarea   → 加 `overflow-y-auto` 与 placeholder 配色（写页有占位文案）
+//   · EntryView 编辑态 → 加 `mt-3`（工具条与输入框之间的间距）
+// tests/editor-textarea.test.ts 守着：两端都必须引这个常量、都必须 text-base、都不许 text-lg。
+export const EDITOR_TEXTAREA_CLASS =
+  'min-h-0 w-full flex-1 resize-none bg-transparent text-base leading-relaxed outline-none disabled:opacity-60'
+
 // iOS Alert 风格弹窗底部「只有一个关闭动作」的整宽按钮（完成 / 取消 / 返回列表）。
 // 单一来源，四个单按钮弹窗（PrefsDialog / AboutDialog / PasskeysDialog /
 // RecoveryRegenerateDialog）共用；tests/dialog-footer.test.ts 守着不许再手写。

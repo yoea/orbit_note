@@ -13,7 +13,7 @@ import { isAutoPlaceNameEnabled } from '@/lib/client/prefs'
 import { cacheEntriesPage, getCachedEntryById, getQueuedEntryById, removeCachedEntry, removeQueuedEntry, updateQueuedEntry } from '@/lib/client/offline'
 import { weatherEmoji } from '@/lib/client/weather'
 import { playSaveSound } from '@/lib/client/sound'
-import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
+import { BRAND_GRADIENT_CLASS, EDITOR_TEXTAREA_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import Toast from './Toast'
 import Markdown from './Markdown'
 import MarkdownToolbar from './MarkdownToolbar'
@@ -548,7 +548,9 @@ export default function EntryView({ id }: { id: string }) {
       {editing ? (
         <>
           {/* 编辑区：flex-1 弹性填充剩余空间（min-h-0 允许收缩）——编辑区完整填满视口。
-              预览态换成渲染结果（只读，不改 plain）——与写页「预览」同一套交互。 */}
+              预览态换成渲染结果（只读，不改 plain）——与写页「预览」同一套交互。
+              输入框字号/行高来自 EDITOR_TEXTAREA_CLASS，与写页 AutoTextarea 同源
+              （text-base = 查看页 qo-markdown 容器）——编辑与查看必须逐行对齐。 */}
           {preview ? (
             <div ref={previewRef} className="mt-3 min-h-0 flex-1 overflow-y-auto">
               {plain.trim()
@@ -561,7 +563,7 @@ export default function EntryView({ id }: { id: string }) {
               value={plain}
               onChange={(e) => setPlain(e.target.value)}
               disabled={busy}
-              className="mt-3 min-h-0 w-full flex-1 resize-none bg-transparent text-base leading-relaxed outline-none disabled:opacity-60"
+              className={`mt-3 ${EDITOR_TEXTAREA_CLASS}`}
             />
           )}
           {/* Markdown 工具条（与写页共用 components/MarkdownToolbar.tsx）：
