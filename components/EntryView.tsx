@@ -16,7 +16,9 @@ import { playSaveSound } from '@/lib/client/sound'
 import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import Toast from './Toast'
 import Markdown from './Markdown'
+import MarkdownToolbar from './MarkdownToolbar'
 import { countWords } from '@/lib/client/markdown'
+import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
 
 // 行结构 = 服务端整行（含密文）；与 EncryptedEntry 同构（wordCount 为明文计数字段，
 // 详情页虽不用，但列表缓存/离线兜底按整行存取）
@@ -71,6 +73,14 @@ export default function EntryView({ id }: { id: string }) {
   // 进入编辑时的内容快照：取消编辑（不保存）时恢复，丢弃编辑中的改动
   const editSnapshotRef = useRef('')
   const coordsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Markdown 工具条 + 预览切换（编辑态专属）。
+  // 与写页 DiaryEditor 共用同一份接线与横条组件——此前详情页编辑态整条工具条都缺失，
+  // 编辑已有笔记时既不能插标记也不能先预览，与新建笔记页明显不一致。
+  const { editorRef, previewRef, preview, setPreview, togglePreview, applyToolbar } = useMarkdownEditor({
+    text: plain,
+    applyText: setPlain,
+  })
 
   // 复制坐标到剪贴板并提示；无地点名时顺带查询一次（已有点名不重复查询，失败静默保持坐标）
   async function copyCoords() {
@@ -535,12 +545,30 @@ export default function EntryView({ id }: { id: string }) {
       ) : null}
       {editing ? (
         <>
-          {/* 输入框：flex-1 弹性填充剩余空间（min-h-0 允许收缩）——编辑区完整填满视口 */}
-          <textarea
-            value={plain}
-            onChange={(e) => setPlain(e.target.value)}
+          {/* 编辑区：flex-1 弹性填充剩余空间（min-h-0 允许收缩）——编辑区完整填满视口。
+              预览态换成渲染结果（只读，不改 plain）——与写页「预览」同一套交互。 */}
+          {preview ? (
+            <div ref={previewRef} className="mt-3 min-h-0 flex-1 overflow-y-auto">
+              {plain.trim()
+                ? <Markdown source={plain} />
+                : <p className="text-sm text-neutral-500 dark:text-neutral-400">还没有内容</p>}
+            </div>
+          ) : (
+            <textarea
+              ref={editorRef}
+              value={plain}
+              onChange={(e) => setPlain(e.target.value)}
+              disabled={busy}
+              className="mt-3 min-h-0 w-full flex-1 resize-none bg-transparent text-base leading-relaxed outline-none disabled:opacity-60"
+            />
+          )}
+          {/* Markdown 工具条（与写页共用 components/MarkdownToolbar.tsx）：
+              插入标记 + 编辑/预览切换。预览态隐藏动作按钮但保留这一行，按钮位置不跳动。 */}
+          <MarkdownToolbar
+            preview={preview}
             disabled={busy}
-            className="mt-3 min-h-0 w-full flex-1 resize-none bg-transparent text-base leading-relaxed outline-none disabled:opacity-60"
+            onAction={applyToolbar}
+            onTogglePreview={togglePreview}
           />
           {/* 底部区：整体贴底（上次编辑 + 保存按钮），输入框弹性占中间。
               必须有下内边距：main 自身没有 pb，而 TabBar 就紧贴在它下方（(app)/layout 里
@@ -589,7 +617,7 @@ export default function EntryView({ id }: { id: string }) {
                 硬点只会「保存失败」）。未同步笔记（pendingSync）不受限——编辑/删除
                 都在本地队列完成。 */}
             <button
-              onClick={() => { editSnapshotRef.current = plain; closeAddLocation(); setEditing(true) }}
+              onClick={() => { editSnapshotRef.current = plain; closeAddLocation(); setPreview(false); setEditing(true) }}
               disabled={decryptFailed || (localReadonly && !pendingSync)}
               className="text-sm text-neutral-500 dark:text-neutral-400 active:opacity-60 disabled:opacity-40"
             >

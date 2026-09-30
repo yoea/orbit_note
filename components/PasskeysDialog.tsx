@@ -185,14 +185,15 @@ export default function PasskeysDialog({ initialData, onClose }: {
           </>
           )}
         </div>
-        <div className="border-t border-neutral-200 p-3 dark:border-neutral-700">
-          <button
-            onClick={view === 'list' ? onClose : () => setView('list')}
-            className="w-full rounded-xl py-3.5 text-base font-medium text-neutral-500 dark:text-neutral-400 active:bg-neutral-100 dark:active:bg-neutral-700"
-          >
-            {view === 'list' ? '完成' : '返回列表'}
-          </button>
-        </div>
+        {/* 底部单按钮（完成 / 返回列表）：直贴卡片边缘的一整行，与 AboutDialog、PrefsDialog
+            的「完成」同一种结构（border-t + py-3.5，约 52px）。此前是「p-3 包裹 + 圆角胶囊」
+            （约 76px），同一族弹窗的关闭按钮高度不一致。 */}
+        <button
+          onClick={view === 'list' ? onClose : () => setView('list')}
+          className="shrink-0 border-t border-neutral-200 py-3.5 text-base font-medium text-neutral-500 active:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:active:bg-neutral-700"
+        >
+          {view === 'list' ? '完成' : '返回列表'}
+        </button>
       </div>
       {confirming && (
         <ConfirmDialog

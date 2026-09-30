@@ -1,10 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { USER_NAME_MAX, generateDefaultName, saveUserName } from '@/lib/client/profile'
+import { USER_NAME_MAX, saveUserName } from '@/lib/client/profile'
 
 // 改名弹窗（设置页）。iOS Alert 风格，与 ConfirmDialog 保持一致。
 // 名字由 DEK 加密后存服务器——本组件只负责收集与校验。
+//
+// 这里**不再提供「随机生成一个」**：默认名（Orbit_xxx）的生成只属于「库里还没有名字」
+// 那一次，由 lib/client/profile.ts 的 loadUserName 懒创建完成（首次进入需要名字的页面时
+// 自动生成并落库）。改名是用户主动表达偏好的动作，再给一个随机按钮既与「改名」语义不符，
+// 也容易把已有名字一键覆盖掉。相关约定有 tests/name-edit-guard.test.ts 守着。
 export default function NameEditDialog({ current, onSaved, onClose }: {
   current: string
   onSaved: (name: string) => void
@@ -51,13 +56,7 @@ export default function NameEditDialog({ current, onSaved, onClose }: {
             spellCheck={false}
             className="mt-3 w-full rounded-xl border border-neutral-200 px-3 py-2.5 text-base outline-none focus:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
           />
-          <div className="mt-1.5 flex items-center justify-between">
-            <button
-              onClick={() => { setValue(generateDefaultName()); setError(null) }}
-              className="text-[10px] text-neutral-500 dark:text-neutral-400 underline"
-            >
-              随机生成一个
-            </button>
+          <div className="mt-1.5 text-right">
             <span className="text-[10px] tabular-nums text-neutral-500 dark:text-neutral-400">{trimmed.length}/{USER_NAME_MAX}</span>
           </div>
           {error && <p className="mt-2 text-xs text-red-500">{error}</p>}

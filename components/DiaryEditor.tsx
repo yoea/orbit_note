@@ -1,12 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import AutoTextarea from './AutoTextarea'
 import ConfettiBurst from './ConfettiBurst'
 import OrbitLogo from './OrbitLogo'
 import Markdown from './Markdown'
-import { TOOLBAR_ACTIONS, countWords, deriveTitlePreview, lineAtOffset, pickScrollTop, toPlainText, toggleLinePrefix, toggleWrap, type ToolbarAction } from '@/lib/client/markdown'
+import MarkdownToolbar from './MarkdownToolbar'
+import { countWords, deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
+import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
@@ -23,8 +25,6 @@ import { isOfflineCacheEnabled } from '@/lib/client/prefs'
 
 export default function DiaryEditor() {
   const [text, setText] = useState('')
-  // Markdown 预览态（编辑 / 预览切换）。预览只读，不改变 text。
-  const [preview, setPreview] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [savedTime, setSavedTime] = useState('')
   // 离线保存标记：saved 态下区分「已落库」与「已入离线队列待同步」的文案
@@ -42,21 +42,19 @@ export default function DiaryEditor() {
   // 每日提示：索引初始 0（确定值，SSR/客户端一致），mount 后随机；行始终存在（占位，不跳动）
   const [promptIdx, setPromptIdx] = useState<number>(0)
   const textRef = useRef('')
-  // 真实 <textarea> 节点（工具条要读/还原选区）
-  const editorRef = useRef<HTMLTextAreaElement>(null)
-  // 待还原的选区：工具条插入标记后，必须等 React 把新 value 刷进 DOM 再设选区，
-  // 否则会被 value 更新重置到末尾。用 layout effect 而不是 rAF——前者严格在
-  // DOM 变更后、绘制前执行，顺序确定。
-  const pendingSelectionRef = useRef<[number, number] | null>(null)
-  // 预览滚动定位：切到预览**之前**记下光标所在行（textarea 随后会被卸载，那之后就取不到
-  // selectionStart 了），预览挂载后的 layout effect 消费它并清空。
-  const pendingPreviewLineRef = useRef<number | null>(null)
-  const previewRef = useRef<HTMLDivElement>(null)
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingDraftRef = useRef<{ ciphertext: string; iv: string } | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 草稿写回 epoch：save/discard 成功时递增，作废进行中的冲刷（防止"放弃/保存后草稿复活"的竞态）
   const draftEpochRef = useRef(0)
+
+  // Markdown 工具条 + 预览切换的接线（选区还原、预览滚动定位都在 hook 内；
+  // 横条本身见 components/MarkdownToolbar.tsx，与详情页编辑态共用同一份）。
+  const { editorRef, previewRef, preview, togglePreview, applyToolbar } = useMarkdownEditor({
+    text,
+    // 工具条改正文的唯一出口：state / textRef / 草稿三处必须同步
+    applyText: (v) => { setText(v); textRef.current = v; onDraftChange(v) },
+  })
 
   // 草稿冲刷（防抖回调/卸载/pagehide/online 共用）：
   // 加密存 IndexedDB（本地优先），随后尽力同步服务器；成功后回写服务器时间戳收敛两端时钟
@@ -344,71 +342,8 @@ export default function DiaryEditor() {
     }
   }
 
-  // 工具条插入标记后还原选区（必须在 DOM 已更新、绘制之前）
-  useLayoutEffect(() => {
-    const sel = pendingSelectionRef.current
-    if (!sel) return
-    pendingSelectionRef.current = null
-    const el = editorRef.current
-    if (!el) return
-    el.focus()
-    el.setSelectionRange(sel[0], sel[1])
-  }, [text])
-
-  // 预览滚动定位：把编辑光标的位置同步到预览的滚动位置。
-  //
-  // 原来的缺陷：编辑区是 <textarea> 自己的滚动（scrollTop 在 textarea 上），预览是另一个
-  // 新挂载的 <div overflow-y-auto>——两个不同节点、没有任何位置传递 ⇒ 新节点 scrollTop = 0，
-  // 光标在文末也会从文档顶部开始显示。
-  //
-  // 触发链路：点「预览」→ togglePreview **先**读 textarea 的 selectionStart 换算成行号存进 ref
-  // → setPreview(true) → React 卸载 textarea、挂载预览 div → 本 effect 在 DOM 更新后、
-  // 绘制前执行 ⇒ 直接落在正确位置，不会「先闪一下顶部再跳」。
-  //
-  // 定位方式：渲染侧给每个顶层块写了 data-qo-line（源码起始行号），这里取「行号 ≤ 光标行」
-  // 的最后一个块，把它对到视口顶部。
-  // 边界：光标在第 1 行 → 命中首块、scrollTop = 0；光标在末尾 → 目标块靠后，浏览器会把
-  // scrollTop 钳到最大值（自然贴底，不需要特判）；空文档 → 预览只有占位文案、没有
-  // data-qo-line ⇒ pickScrollTop 收到空列表返回 0。
-  useLayoutEffect(() => {
-    if (!preview) return
-    const el = previewRef.current
-    const line = pendingPreviewLineRef.current
-    pendingPreviewLineRef.current = null
-    if (!el || line == null) return
-    const containerTop = el.getBoundingClientRect().top
-    const blocks = Array.from(el.querySelectorAll<HTMLElement>('[data-qo-line]'))
-      .map((n) => ({
-        line: Number(n.getAttribute('data-qo-line')),
-        // rect 是视口坐标：减容器顶部 = 相对可视区顶部；再加 scrollTop = 相对内容顶部
-        top: n.getBoundingClientRect().top - containerTop + el.scrollTop,
-      }))
-      .filter((b) => Number.isFinite(b.line))
-    el.scrollTop = pickScrollTop(blocks, line)
-  }, [preview])
-
-  // 切换编辑 / 预览。光标行必须在 setPreview **之前**读——textarea 一旦卸载就取不到选区了。
-  function togglePreview() {
-    if (!preview) {
-      pendingPreviewLineRef.current = lineAtOffset(text, editorRef.current?.selectionStart ?? 0)
-    }
-    setPreview((p) => !p)
-  }
-
-  // Markdown 工具条：读当前选区 → 纯函数变换 → 落回 text（同时同步 textRef 与草稿）
-  function applyToolbar(action: ToolbarAction) {
-    const el = editorRef.current
-    if (!el) return
-    const { selectionStart, selectionEnd } = el
-    const result = action.kind === 'wrap'
-      ? toggleWrap(text, selectionStart, selectionEnd, action.marker)
-      : toggleLinePrefix(text, selectionStart, selectionEnd, action.marker)
-    if (result.text === text) return
-    pendingSelectionRef.current = [result.selStart, result.selEnd]
-    setText(result.text)
-    textRef.current = result.text
-    onDraftChange(result.text)
-  }
+  // 工具条插入标记后还原选区、预览滚动定位、切换编辑/预览、工具条动作——
+  // 这四件事都在 useMarkdownEditor 里（与详情页编辑态共用一份实现，见该文件顶部注释）。
 
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
 
@@ -505,31 +440,13 @@ export default function DiaryEditor() {
           disabled={status === 'saving'}
         />
       )}
-      {/* Markdown 工具条：插入标记（纯文本编辑，不做富文本/WYSIWYG——引一个富文本编辑器
-          会带进几十万行第三方 JS，与本项目「零第三方运行时脚本 + 严格 CSP」的立场冲突）。
-          预览态隐藏按钮但保留这一行，切换按钮位置不跳动。 */}
-      <div className="flex shrink-0 items-center gap-0.5 border-t border-neutral-100 pt-2 dark:border-neutral-800">
-        {!preview && TOOLBAR_ACTIONS.map((a) => (
-          <button
-            key={a.key}
-            type="button"
-            onClick={() => applyToolbar(a)}
-            disabled={status === 'saving'}
-            aria-label={a.title}
-            className="rounded-lg px-2 py-1 text-sm text-neutral-500 active:bg-neutral-100 disabled:opacity-50 dark:text-neutral-400 dark:active:bg-neutral-800"
-          >
-            {a.label}
-          </button>
-        ))}
-        <span className="flex-1" />
-        <button
-          type="button"
-          onClick={togglePreview}
-          className="rounded-lg px-2 py-1 text-xs text-neutral-500 active:bg-neutral-100 dark:text-neutral-400 dark:active:bg-neutral-800"
-        >
-          {preview ? '编辑' : '预览'}
-        </button>
-      </div>
+      {/* Markdown 工具条（横条本身与详情页编辑态共用 components/MarkdownToolbar.tsx） */}
+      <MarkdownToolbar
+        preview={preview}
+        disabled={status === 'saving'}
+        onAction={applyToolbar}
+        onTogglePreview={togglePreview}
+      />
       {/* 空状态引导：首次（无任何日记）时显示柔和渐变引导 */}
       {entryCount === 0 && (
         <div className="flex flex-col items-center gap-2 py-5">

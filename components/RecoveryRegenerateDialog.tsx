@@ -105,17 +105,17 @@ export default function RecoveryRegenerateDialog({ onClose }: { onClose: () => v
             </>
           )}
         </div>
-        <div className="border-t border-neutral-200 p-3 dark:border-neutral-700">
-          <button
-            onClick={() => {
-              if (result) void copyText(result) // 尽力复制，失败不阻塞关闭
-              onClose()
-            }}
-            className="w-full rounded-xl py-3.5 text-base font-medium text-neutral-500 dark:text-neutral-400 active:bg-neutral-100 dark:active:bg-neutral-700"
-          >
-            {result ? '完成' : '取消'}
-          </button>
-        </div>
+        {/* 底部单按钮（完成 / 取消）：直贴卡片边缘的一整行，与 AboutDialog、PasskeysDialog、
+            PrefsDialog 的「完成」同一种结构（border-t + py-3.5，约 52px）。 */}
+        <button
+          onClick={() => {
+            if (result) void copyText(result) // 尽力复制，失败不阻塞关闭
+            onClose()
+          }}
+          className="shrink-0 border-t border-neutral-200 py-3.5 text-base font-medium text-neutral-500 active:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-400 dark:active:bg-neutral-700"
+        >
+          {result ? '完成' : '取消'}
+        </button>
       </div>
     </div>
   )
