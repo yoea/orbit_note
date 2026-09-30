@@ -2,14 +2,18 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import Markdown from '@/components/Markdown'
 import { lineAtOffset, pickScrollTop } from '@/lib/client/markdown'
 
 // ============================================================================
 // Markdown 布局与滚动守卫（2026-09-30）
 //
-// 两件事各守一半：
+// 三件事各守一段：
 //   W —— 正文里的长网址 / 长英文串 / 连续无空格字符不得撑破容器（否则整个页面出横向滚动条）；
-//   S —— 编辑态切到预览态时，预览的滚动位置要跟着编辑光标走，且边界情况正确。
+//   S —— 编辑态切到预览态时，预览的滚动位置要跟着编辑光标走，且边界情况正确；
+//   S2 —— 上面那条的**输入**（渲染产物里的行号锚点 data-qo-line）必须真的存在。
 // ============================================================================
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url))
@@ -133,4 +137,107 @@ describe('S · 预览滚动定位（纯函数）', () => {
       expect(pickScrollTop([], 5)).toBe(0)
     })
   })
+})
+
+// ============================================================================
+// S2 · 渲染产物里的行号锚点（上面那套定位逻辑的输入）
+//
+// 为什么必须有这一段：S 里那几条全是**纯函数**测试，它们全绿也不能说明功能可用。
+// 2026-09-30 的真实故障——react-markdown 只在使用**默认渲染**时才把节点属性落到 DOM 上，
+// 一旦用 components 接管了标签，属性就只送到自定义组件为止；而顶层块（p / h1-h3 / ul /
+// ol / blockquote / hr，以及围栏代码块的内层 code）**全部**被本项目接管，
+// 于是 data-qo-line 一个都没进 DOM ⇒ querySelectorAll 空 ⇒ pickScrollTop 恒返回 0
+// ⇒ 预览永远从顶部开始（用户反馈「预览滚动还是不对」）。
+// 所以这里不再做源码文本断言，而是把组件**真的渲染成 HTML**，逐块核对锚点。
+// ============================================================================
+describe('S2 · 渲染产物里的行号锚点（预览滚动定位的输入）', () => {
+  // 行号即下方数组下标 +1（每类块之间用空行隔开，行号好核对）
+  const source = [
+    '# 一级', // 1
+    '', // 2
+    '段落一', // 3
+    '', // 4
+    '## 二级', // 5
+    '', // 6
+    '- 甲', // 7
+    '- 乙', // 8
+    '', // 9
+    '> 引用', // 10
+    '', // 11
+    '```js', // 12
+    'const a = 1', // 13
+    '```', // 14
+    '', // 15
+    '---', // 16
+    '', // 17
+    '尾段', // 18
+  ].join('\n')
+  const out = renderToStaticMarkup(createElement(Markdown, { source }))
+  const anchors = [...out.matchAll(/data-qo-line="(\d+)"/g)].map((m) => Number(m[1]))
+
+  it('S2.0 非空转自检：产物里确实渲染出了这些块', () => {
+    for (const tag of ['<h1', '<h2', '<p', '<ul', '<blockquote', '<pre', '<hr', '<code']) {
+      expect(out, `产物里没有 ${tag}，后面的锚点断言会变成空转`).toContain(tag)
+    }
+  })
+
+  it('S2.1 每个顶层块都带锚点，行号与源码一致、且按文档顺序排列', () => {
+    // pickScrollTop 依赖「按源码顺序给出」——顺序错了它会静默取错块，所以这里连顺序一起钉住
+    expect(anchors).toEqual([1, 3, 5, 7, 10, 12, 16, 18])
+  })
+
+  it('S2.2 逐类核对：锚点落在该块自己的元素上（含围栏代码块的内层 code）', () => {
+    expect(out, 'h1 没带锚点').toMatch(/<h1[^>]*data-qo-line="1"/)
+    expect(out, '段落没带锚点').toMatch(/<p[^>]*data-qo-line="3"/)
+    expect(out, 'h2 没带锚点').toMatch(/<h2[^>]*data-qo-line="5"/)
+    expect(out, '列表没带锚点').toMatch(/<ul[^>]*data-qo-line="7"/)
+    expect(out, '引用没带锚点').toMatch(/<blockquote[^>]*data-qo-line="10"/)
+    // mdast-util-to-hast 把 hProperties 应用在 code 上而不是外层 pre（实测），所以锚点在 code
+    expect(out, '代码块没带锚点（锚点在内层 code 上）').toMatch(/<code[^>]*data-qo-line="12"/)
+    expect(out, '分隔线没带锚点').toMatch(/<hr[^>]*data-qo-line="16"/)
+    expect(out, '最后一段没带锚点').toMatch(/<p[^>]*data-qo-line="18"/)
+  })
+
+  it('S2.3 node 不得落到真实元素上（它是 hast 节点对象，不是 DOM 属性）', () => {
+    // 用「整体 spread」转发属性时会踩到：React 把它序列化成 node="[object Object]"
+    expect(out).not.toMatch(/\snode="/)
+  })
+
+  it('S2.4 行内 / 嵌套元素不带锚点（锚点只属于顶层块，否则顺序语义就不成立了）', () => {
+    for (const tag of ['li', 'strong', 'em', 'a']) {
+      expect(out, `<${tag}> 不该带锚点`).not.toMatch(new RegExp(`<${tag}[^>]*data-qo-line`))
+    }
+  })
+
+  it('S2.5 行内代码的样式不被语言标记覆盖（转发属性时只放 data-*）', () => {
+    // fenced code 的内层 code 带 className="language-js"，整体 spread 会把它接上来盖掉自己的样式
+    const codeTag = out.match(/<code[^>]*>/)?.[0] ?? ''
+    expect(codeTag, '解析不到 code 开始标签').toContain('data-qo-line')
+    expect(codeTag, 'code 的 className 被语言标记覆盖了').not.toContain('language-js')
+  })
+})
+
+// ============================================================================
+// S3 · 两处编辑态共用同一套接线（防再次「只长在写页上」）
+//
+// 上一次的 bug 是详情页编辑态整条工具条缺失；这次的 bug 是两份实现漂移的另一种表现。
+// 契约有三条：都用同一个 hook、都渲染同一根横条、previewRef 都挂在预览容器上。
+// ============================================================================
+describe('S3 · 写页与详情页编辑态共用同一套 Markdown 接线', () => {
+  for (const file of ['components/DiaryEditor.tsx', 'components/EntryView.tsx']) {
+    const src = code(file)
+
+    it(`S3 ${file}：用共享 hook`, () => {
+      expect(src, '没有接 useMarkdownEditor（说明自己另写了一份）').toContain('useMarkdownEditor(')
+    })
+
+    it(`S3 ${file}：渲染同一根工具条，并把切换按钮接上`, () => {
+      expect(src, '没有渲染 MarkdownToolbar').toContain('<MarkdownToolbar')
+      expect(src, '工具条没有接 onTogglePreview').toContain('onTogglePreview={togglePreview}')
+    })
+
+    it(`S3 ${file}：previewRef 挂在预览容器上`, () => {
+      expect(src, 'previewRef 没挂到预览容器（定位会读错节点几何）').toContain('ref={previewRef}')
+    })
+  }
 })

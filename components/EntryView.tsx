@@ -77,7 +77,9 @@ export default function EntryView({ id }: { id: string }) {
   // Markdown 工具条 + 预览切换（编辑态专属）。
   // 与写页 DiaryEditor 共用同一份接线与横条组件——此前详情页编辑态整条工具条都缺失，
   // 编辑已有笔记时既不能插标记也不能先预览，与新建笔记页明显不一致。
-  const { editorRef, previewRef, preview, setPreview, togglePreview, applyToolbar } = useMarkdownEditor({
+  // 复位预览态用 resetPreview()（不是 setPreview(false)）：它同时丢弃位置快照，
+  // 避免下一次进编辑态时用上一次预览留下的陈旧滚动位置。
+  const { editorRef, previewRef, preview, resetPreview, togglePreview, applyToolbar } = useMarkdownEditor({
     text: plain,
     applyText: setPlain,
   })
@@ -617,7 +619,7 @@ export default function EntryView({ id }: { id: string }) {
                 硬点只会「保存失败」）。未同步笔记（pendingSync）不受限——编辑/删除
                 都在本地队列完成。 */}
             <button
-              onClick={() => { editSnapshotRef.current = plain; closeAddLocation(); setPreview(false); setEditing(true) }}
+              onClick={() => { editSnapshotRef.current = plain; closeAddLocation(); resetPreview(); setEditing(true) }}
               disabled={decryptFailed || (localReadonly && !pendingSync)}
               className="text-sm text-neutral-500 dark:text-neutral-400 active:opacity-60 disabled:opacity-40"
             >

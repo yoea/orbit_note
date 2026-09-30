@@ -29,12 +29,16 @@ const LINK_CLASS = 'text-blue-600 underline underline-offset-2 dark:text-blue-40
 // 给每个**顶层块**打上源码起始行号（data-qo-line）。
 //
 // 用途只有一个：编辑器从「编辑」切到「预览」时，用光标所在行号找到预览里的对应块，
-// 把滚动位置同步过去（见 lib/client/markdown.ts 的 pickScrollTop 与 DiaryEditor 的
-// pendingPreviewLineRef）。不这么做的话预览是新挂载的容器、scrollTop 恒为 0，
-// 光标在文末也会从顶部开始显示。
+// 把滚动位置同步过去（见 lib/client/markdown.ts 的 pickScrollTop 与
+// lib/client/use-markdown-editor.ts 的 pendingPreviewLineRef）。不这么做的话预览是新挂载的
+// 容器、scrollTop 恒为 0，光标在文末也会从顶部开始显示。
 //
 // 为什么用行号而不是块序号：raw HTML 块在渲染侧被转义成**裸文本节点**（不是元素），
 // 用「第几个块」会在含 HTML 的文档里与 DOM children 错位；行号找不到就自然回退到上一块。
+//
+// ★ 注入只到这里为止：属性由 react-markdown 作为 props 交给自定义组件，**必须由组件
+//   自己透传下去**（见 hastAttrs）。漏透传不会报错、页面看起来也完全正常，
+//   但定位锚点会一个都不剩——见 hastAttrs 的注释。
 function remarkSourceLines() {
   return (tree: Root) => {
     for (const node of tree.children) {
@@ -46,6 +50,35 @@ function remarkSourceLines() {
       node.data.hProperties = props
     }
   }
+}
+
+/**
+ * 把 react-markdown 交给自定义组件的 hast 属性透传到真实元素上。
+ *
+ * 为什么必须有这一层：react-markdown 只在**用它的默认渲染**时才把节点属性落到 DOM 上；
+ * 一旦我们用 components 接管了某个标签，属性就只送到我们的组件为止，没人会替我们落地。
+ * 而本项目注入的 data-qo-line 恰好全部落在被接管的标签上——漏透传的后果不是
+ * 「少一个 data 属性」这么轻：
+ *   querySelectorAll('[data-qo-line]') 一个元素都取不到 ⇒ pickScrollTop 收到空列表
+ *   ⇒ 预览永远从顶部开始，也就是「预览滚动跟随光标」这个功能整体失效。
+ * 2026-09-30 实测踩到（rc5 上线后用户反馈「预览滚动还是不对」），
+ * tests/markdown-layout.test.ts 的 S2 用**真实渲染产物**钉住它。
+ *
+ * 为什么是「只放 data-*」的白名单，而不是整体 spread（或剔除 node 后全放）：
+ *   - node 是 hast 节点对象，直传会被 React 序列化成 node="[object Object]" 打到真实元素上；
+ *   - hast 会带出 className / src / href 之类的原始属性，而我们有两条刻意的例外：
+ *     img **故意不渲染 <img>**（只出占位文案，透传 src 等于把外链地址写进 DOM），
+ *     code 的 className 是语言标记，透传会盖掉行内代码自己的样式；
+ *   - 白名单让「透传」在任何组件上都不会改变既有渲染结果，只剩我们要的行号锚点。
+ *     将来要放别的属性（比如标题锚点 id）时，在这里显式加白名单即可。
+ */
+function dataAttrs(props: object): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(props)) {
+    if (!key.startsWith('data-')) continue
+    if (typeof value === 'string') out[key] = value
+  }
+  return out
 }
 
 // break-words（overflow-wrap: break-word）必须留在容器上，靠继承覆盖所有后代文本。
@@ -79,7 +112,11 @@ export default function Markdown({ source, className = '' }: { source: string; c
           img: ({ alt }) => (
             <span className="text-neutral-500 dark:text-neutral-400">［图片：{alt || '未命名'}］</span>
           ),
-          p: ({ children }) => <p className="mb-3 whitespace-pre-wrap last:mb-0">{children}</p>,
+          // 下面这些组件都必须把行号锚点透传出去（见 dataAttrs 注释）。锚点会落在：
+          // 块级标签本身（p / h1-h3 / ul / ol / blockquote / hr）与**围栏代码块的内层 <code>**
+          // ——mdast-util-to-hast 把 hProperties 应用在 code 上而不是外层 pre（实测）。
+          // li / a / strong / em 是行内或必然嵌套的元素，拿不到顶层锚点，透传只是顺带。
+          p: ({ children, ...rest }) => <p className="mb-3 whitespace-pre-wrap last:mb-0" {...dataAttrs(rest)}>{children}</p>,
           // 标题阶梯：24 / 20 / 18，正文是 16（外层容器的 text-base）。
           //
           // 改造前是 18 / 16 / 16 —— h2 与 h3 字号**完全相同**，只差一个字重级别；
@@ -97,26 +134,28 @@ export default function Markdown({ source, className = '' }: { source: string; c
           // 标题与上方内容留得多、与自己下方的内容贴得近，这是标题的常规排版逻辑。
           // mb 在 2026-09-30 从 12/10/8 收到 10/8/6：实测标题下方留白偏松，且三级都收紧
           // 相同的 2px，保持原有阶梯比例不变（不是只改某一级）。
-          h1: ({ children }) => <h1 className="mb-2.5 mt-7 text-2xl font-semibold leading-snug first:mt-0">{children}</h1>,
-          h2: ({ children }) => <h2 className="mb-2 mt-6 text-xl font-semibold leading-snug first:mt-0">{children}</h2>,
-          h3: ({ children }) => <h3 className="mb-1.5 mt-5 text-lg font-semibold leading-snug first:mt-0">{children}</h3>,
-          ul: ({ children }) => <ul className="mb-3 list-disc pl-5 last:mb-0">{children}</ul>,
-          ol: ({ children }) => <ol className="mb-3 list-decimal pl-5 last:mb-0">{children}</ol>,
-          li: ({ children }) => <li className="mb-1 last:mb-0">{children}</li>,
-          blockquote: ({ children }) => (
-            <blockquote className="mb-3 border-l-2 border-neutral-200 pl-3 text-neutral-500 last:mb-0 dark:border-neutral-700 dark:text-neutral-400">
+          h1: ({ children, ...rest }) => <h1 className="mb-2.5 mt-7 text-2xl font-semibold leading-snug first:mt-0" {...dataAttrs(rest)}>{children}</h1>,
+          h2: ({ children, ...rest }) => <h2 className="mb-2 mt-6 text-xl font-semibold leading-snug first:mt-0" {...dataAttrs(rest)}>{children}</h2>,
+          h3: ({ children, ...rest }) => <h3 className="mb-1.5 mt-5 text-lg font-semibold leading-snug first:mt-0" {...dataAttrs(rest)}>{children}</h3>,
+          ul: ({ children, ...rest }) => <ul className="mb-3 list-disc pl-5 last:mb-0" {...dataAttrs(rest)}>{children}</ul>,
+          ol: ({ children, ...rest }) => <ol className="mb-3 list-decimal pl-5 last:mb-0" {...dataAttrs(rest)}>{children}</ol>,
+          li: ({ children, ...rest }) => <li className="mb-1 last:mb-0" {...dataAttrs(rest)}>{children}</li>,
+          blockquote: ({ children, ...rest }) => (
+            <blockquote className="mb-3 border-l-2 border-neutral-200 pl-3 text-neutral-500 last:mb-0 dark:border-neutral-700 dark:text-neutral-400" {...dataAttrs(rest)}>
               {children}
             </blockquote>
           ),
-          code: ({ children }) => <code className={INLINE_CODE_CLASS}>{children}</code>,
+          // 行内代码与围栏代码块的**内层** code 共用这个组件：行号锚点落在围栏代码块的
+          // 内层 code 上，所以要透传；className 不在白名单里，语言标记不会盖掉这里的样式。
+          code: ({ children, ...rest }) => <code className={INLINE_CODE_CLASS} {...dataAttrs(rest)}>{children}</code>,
           // break-normal：把容器上继承下来的 overflow-wrap 重置回 normal。
           // 代码块要保留源码原样换行 + 自己的横向滚动（overflow-x-auto），不能被强制断行。
-          pre: ({ children }) => (
-            <pre className="mb-3 overflow-x-auto rounded-xl bg-neutral-50 p-3 text-sm last:mb-0 break-normal dark:bg-neutral-900">
+          pre: ({ children, ...rest }) => (
+            <pre className="mb-3 overflow-x-auto rounded-xl bg-neutral-50 p-3 text-sm last:mb-0 break-normal dark:bg-neutral-900" {...dataAttrs(rest)}>
               {children}
             </pre>
           ),
-          hr: () => <hr className="my-4 border-neutral-200 dark:border-neutral-800" />,
+          hr: (props) => <hr className="my-4 border-neutral-200 dark:border-neutral-800" {...dataAttrs(props)} />,
           strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
           em: ({ children }) => <em className="italic">{children}</em>,
         }}
