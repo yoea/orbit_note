@@ -17,15 +17,17 @@
 //   跨设备不准确，写进备份只会误导恢复。这句话靠**台账 + 对账测试**兜底，而不是靠人记得
 //   ——见下面的 ENTRY_COLUMN_COVERAGE。给 diary_entries 加列时先在那里登记。
 import { countWords } from './markdown'
+import { displayLocationName } from './location'
 import { hex32ToUuid, isUuid, uuidToHex32, uuidV5 } from './uuid-v5'
 import type { DecryptedEntry } from './entries'
 
 /** Day One / Journey 的导入器认这个文件名（放在 zip 根目录） */
 export const JOURNAL_JSON_NAME = 'Journal.json'
 /** 1 = 首版；2 = 曾加入 `orbit.viewCount`（本机打开次数，可选字段）；
- *  3 = 撤出 viewCount —— 导出只含数据库里的笔记字段，不含任何本机数据。
+ *  3 = 撤出 viewCount —— 导出只含数据库里的笔记字段，不含任何本机数据；
+ *  4 = 加入 `starred`（收藏，Day One 原生字段）与结构化地名（`orbit.locationProvince/City/District`）。
  *  解析器不看版本号，各版本文件都能照常导入。 */
-export const FORMAT_VERSION = 3
+export const FORMAT_VERSION = 4
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 「不留字段」台账
@@ -43,10 +45,14 @@ export const ENTRY_COLUMN_COVERAGE: Record<string, { json: string; csv: string |
   ciphertext: { json: 'text（导出的是解密后的正文，不是密文）', csv: 'body', note: '密文本体不落盘' },
   iv: { json: 'text（同上）', csv: 'body', note: '同上' },
   encryption_version: { json: '—', csv: null, note: '恒为 1；导入时按当前版本重新加密' },
+  starred: { json: 'starred', csv: 'starred', note: 'Day One 原生就有这一位，直接对位（不再恒为 false）' },
   latitude: { json: 'location.latitude', csv: 'latitude' },
   longitude: { json: 'location.longitude', csv: 'longitude' },
-  location_accuracy: { json: 'orbit.locationAccuracy', csv: 'location_accuracy' },
-  location_name: { json: 'location.placeName', csv: 'location_name' },
+  location_accuracy: { json: 'orbit.locationAccuracy', csv: 'location_accuracy', note: 'Day One 结构里没有这一项' },
+  location_province: { json: 'location.administrativeArea / orbit.locationProvince', csv: 'location_province' },
+  location_city: { json: 'location.localityName / orbit.locationCity', csv: 'location_city' },
+  location_district: { json: 'orbit.locationDistrict', csv: 'location_district', note: 'Day One 没有区县级字段' },
+  location_name: { json: 'location.placeName（兜底）/ orbit.locationName', csv: 'location_name', note: '已废弃的老字段，只有老数据有值；照原样带上以免「往返无损」出现空洞' },
   weather: { json: 'orbit.weatherText / weather.conditionsDescription', csv: 'weather' },
   timezone: { json: 'timeZone', csv: 'timezone' },
   word_count: { json: 'orbit.wordCount', csv: 'word_count' },
@@ -57,8 +63,10 @@ export const ENTRY_COLUMN_COVERAGE: Record<string, { json: string; csv: string |
 /** CSV 列顺序（Excel 打开的第一行）。列集合必须与 ENTRY_COLUMN_COVERAGE 的 csv 栏完全一致。
  *  ★ 不含本机字段：打开次数等本机数据不进文件（原因见 lib/client/views.ts 顶部说明）。 */
 export const CSV_COLUMNS = [
-  'id', 'created_at', 'updated_at', 'body', 'word_count',
-  'latitude', 'longitude', 'location_accuracy', 'location_name', 'weather', 'timezone',
+  'id', 'created_at', 'updated_at', 'body', 'word_count', 'starred',
+  'latitude', 'longitude', 'location_accuracy',
+  'location_province', 'location_city', 'location_district', 'location_name',
+  'weather', 'timezone',
 ] as const
 
 /** 与服务端 `ciphertext` 上限一致（lib/server/validation.ts）。导入侧先本地预检，
@@ -70,7 +78,12 @@ export const MAX_IMPORT_ENTRIES = 20_000
 export interface JournalLocation {
   latitude: number
   longitude: number
+  /** 组合展示串（大→小，如「云南省 昆明市 五华区」）——给 Day One / Journey 直接读 */
   placeName?: string
+  /** Day One 原生的「省/州」字段 ← 我们的 province（同样写进 orbit，保证往返无损） */
+  administrativeArea?: string
+  /** Day One 原生的「市/地方」字段 ← 我们的 city */
+  localityName?: string
 }
 
 export interface JournalEntry {
@@ -79,6 +92,7 @@ export interface JournalEntry {
   modifiedDate: string
   timeZone?: string
   text: string
+  /** Day One 原生字段：收藏（星标）。我们也有收藏功能，所以现在是**如实**写出而不是恒 false */
   starred: boolean
   location?: JournalLocation
   weather?: { conditionsDescription: string }
@@ -89,6 +103,13 @@ export interface JournalEntry {
     wordCount: number
     weatherText: string | null
     locationAccuracy: number | null
+    /** 结构化地名三级（Day One 只有两级，区县放不下 ⇒ 必须自己带） */
+    locationProvince: string | null
+    locationCity: string | null
+    locationDistrict: string | null
+    /** 已废弃的单一地名串（只有老数据有值）。**照原样带上**：写 null 会让
+     *  「导入后能完整恢复所有字段」在这一个字段上出现空洞。 */
+    locationName: string | null
   }
 }
 
@@ -117,30 +138,41 @@ export function buildJournalFile(
   opts: { now?: Date } = {},
 ): JournalFile {
   const { now = new Date() } = opts
-  const entries: JournalEntry[] = items.map(({ entry: e, plain }) => ({
-    uuid: uuidToHex32(e.id),
-    creationDate: iso(e.createdAt),
-    modifiedDate: iso(e.updatedAt),
-    ...(e.timezone ? { timeZone: e.timezone } : {}),
-    text: plain,
-    starred: false,
-    ...(e.latitude != null && e.longitude != null
-      ? {
-          location: {
-            latitude: e.latitude,
-            longitude: e.longitude,
-            ...(e.locationName ? { placeName: e.locationName } : {}),
-          },
-        }
-      : {}),
-    ...(e.weather ? { weather: { conditionsDescription: e.weather } } : {}),
-    orbit: {
-      id: e.id,
-      wordCount: e.wordCount,
-      weatherText: e.weather,
-      locationAccuracy: e.locationAccuracy,
-    },
-  }))
+  const entries: JournalEntry[] = items.map(({ entry: e, plain }) => {
+    const place = displayLocationName(e)
+    return {
+      uuid: uuidToHex32(e.id),
+      creationDate: iso(e.createdAt),
+      modifiedDate: iso(e.updatedAt),
+      ...(e.timezone ? { timeZone: e.timezone } : {}),
+      text: plain,
+      starred: e.starred,
+      ...(e.latitude != null && e.longitude != null
+        ? {
+            location: {
+              latitude: e.latitude,
+              longitude: e.longitude,
+              // Day One 的位置对象是分级的：省 → administrativeArea、市 → localityName，
+              // 展示串放 placeName。三者都写，外部应用读起来才原生（我们自己的原文在 orbit 里）。
+              ...(place ? { placeName: place } : {}),
+              ...(e.locationProvince ? { administrativeArea: e.locationProvince } : {}),
+              ...(e.locationCity ? { localityName: e.locationCity } : {}),
+            },
+          }
+        : {}),
+      ...(e.weather ? { weather: { conditionsDescription: e.weather } } : {}),
+      orbit: {
+        id: e.id,
+        wordCount: e.wordCount,
+        weatherText: e.weather,
+        locationAccuracy: e.locationAccuracy,
+        locationProvince: e.locationProvince,
+        locationCity: e.locationCity,
+        locationDistrict: e.locationDistrict,
+        locationName: e.locationName,
+      },
+    }
+  })
   return {
     metadata: {
       app: 'Orbit',
@@ -179,9 +211,13 @@ export function buildCsv(items: DecryptedEntry[]): string {
       updated_at: e.updatedAt,
       body: plain,
       word_count: e.wordCount,
+      starred: e.starred ? 'true' : 'false',
       latitude: e.latitude ?? '',
       longitude: e.longitude ?? '',
       location_accuracy: e.locationAccuracy ?? '',
+      location_province: e.locationProvince ?? '',
+      location_city: e.locationCity ?? '',
+      location_district: e.locationDistrict ?? '',
       location_name: e.locationName ?? '',
       weather: e.weather ?? '',
       timezone: e.timezone ?? '',
@@ -202,8 +238,13 @@ export interface ParsedImportEntry {
   latitude: number | null
   longitude: number | null
   locationAccuracy: number | null
+  locationProvince: string | null
+  locationCity: string | null
+  locationDistrict: string | null
+  /** 老的单一地名串（自家老数据 / 外部文件） */
   locationName: string | null
   weather: string | null
+  starred: boolean
 }
 
 export interface RejectedEntry {
@@ -310,6 +351,18 @@ export async function parseJournal(data: unknown): Promise<ParseResult> {
     const tz = str(r.timeZone)
     const timezone = tz && tz.length <= 64 ? tz : null
 
+    // —— 地名：结构化三级优先，单一串兜底 ——
+    // ① 自家往返：orbit.locationProvince/City/District 原样取回；orbit.locationName 是老数据才有值。
+    // ② 外部文件（Day One / Journey）：没有 orbit 块，只有 location.placeName 一类字段 ⇒
+    //    写进老的单一串（**不猜分级**：外部字段的含义并不统一，"administrativeArea 就是省"
+    //    这种假设在非中国地址上很容易错，宁可不结构化）。这样至少展示与检索都不丢。
+    const province = str(orbit.locationProvince)?.slice(0, 64) ?? null
+    const city = str(orbit.locationCity)?.slice(0, 64) ?? null
+    const district = str(orbit.locationDistrict)?.slice(0, 64) ?? null
+    const structuredPlace = Boolean(province || city || district)
+    const legacyName = str(orbit.locationName)?.slice(0, 255) ?? null
+    const placeNameOut = structuredPlace ? legacyName : locationName
+
     // —— id 解析：① 自家往返原样保留（真无损且天然幂等）；② 外部文件按源 uuid 确定性派生；
     //    ③ 连 uuid 都没有 → 用「创建时间|正文」派生（同一份文件重复导入仍然幂等）——
     const ownId = isUuid(orbit.id) ? (orbit.id as string) : null
@@ -339,8 +392,14 @@ export async function parseJournal(data: unknown): Promise<ParseResult> {
       latitude: inRange ? lat : null,
       longitude: inRange ? lng : null,
       locationAccuracy: num(orbit.locationAccuracy),
-      locationName,
+      locationProvince: province,
+      locationCity: city,
+      locationDistrict: district,
+      locationName: placeNameOut,
       weather,
+      // 收藏：Day One 原生字段。只有明确 true 才算收藏——缺失/非布尔值一律 false
+      // （老文件里这个字段恒为 false，Day One 导出里也永远是布尔）。
+      starred: r.starred === true,
     })
   }
 

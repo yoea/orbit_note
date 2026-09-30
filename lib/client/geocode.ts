@@ -1,4 +1,5 @@
 import { idbGet, idbSet } from './idb'
+import { formatLocationName, type LocationParts } from './location'
 
 // 反查只需要「区/市」级精度，因此发送前把坐标模糊掉：
 // 保留 2 位小数 ≈ 0.01° ≈ 1.1km——足够定位到区/街道，但不再暴露精确位置。
@@ -25,8 +26,8 @@ export function coarsenCoordinate(value: number, precision: number = GEOCODE_PRE
 //   1km 半径只少 5 个百分点，不值得换这个不确定性。
 //   键与请求一旦不同源，症状是「缓存里有却每次都还打 API」，或更糟的「用 A 地的名字标 B 点」。
 //
-// 缓存内容是「模糊到 ≈1km 的坐标 → 区/市名」，属于**本地**数据、不上传；而且它让向
-// 第三方（BigDataCloud）暴露的次数下降约 3/4 —— 隐私上是净收益。
+// 缓存内容是「模糊到 ≈1km 的坐标 → 结构化地名（省/市/区）」，属于**本地**数据、不上传；
+// 而且它让向第三方（BigDataCloud）暴露的次数下降约 3/4 —— 隐私上是净收益。
 // 存 IndexedDB 而非 localStorage，是为了随 idbClearAll()（设置 → 删除所有数据）一起清掉：
 // localStorage 的 qo-* 键在清库与登出时都不会被清，而「你去过哪」不该留在设备上。
 const CACHE_IDB_KEY = 'geo-cache'
@@ -48,28 +49,64 @@ export function geocodeCacheKey(qLat: number, qLon: number): string {
   return `${qLat},${qLon}`
 }
 
-async function readCachedName(key: string): Promise<string | null> {
+function trimmed(v: unknown): string | null {
+  return typeof v === 'string' && v.trim().length > 0 ? v.trim() : null
+}
+
+async function readCachedParts(key: string): Promise<LocationParts | null> {
   try {
-    const map = await idbGet<Record<string, string>>(CACHE_IDB_KEY)
-    return map?.[key] ?? null
+    const map = await idbGet<Record<string, unknown>>(CACHE_IDB_KEY)
+    const v = map?.[key]
+    // ★ 旧版本缓存的是拼好的「区 市」字符串（没有分级）。这里**视为未命中**，重新反查一次
+    //   顺手升级成结构化——不原地解析老值，因为一个字符串里根本分不出哪一级是哪一级，
+    //   猜出来的结构只会是错的（与「不做错误猜测」的既定立场一致）。
+    if (!v || typeof v !== 'object') return null
+    const o = v as Record<string, unknown>
+    const parts: LocationParts = {
+      province: trimmed(o.province),
+      city: trimmed(o.city),
+      district: trimmed(o.district),
+    }
+    return formatLocationName(parts) ? parts : null
   } catch {
     return null // 缓存读失败绝不能影响反查本身
   }
 }
 
-async function writeCachedName(key: string, name: string): Promise<void> {
+async function writeCachedParts(key: string, parts: LocationParts): Promise<void> {
   try {
     await withCacheLock(async () => {
-      const map = (await idbGet<Record<string, string>>(CACHE_IDB_KEY)) ?? {}
-      const merged: Record<string, string> = { ...map, [key]: name }
+      const map = (await idbGet<Record<string, LocationParts>>(CACHE_IDB_KEY)) ?? {}
+      const merged: Record<string, LocationParts> = { ...map, [key]: parts }
       const keys = Object.keys(merged)
-      const kept: Record<string, string> = {}
+      const kept: Record<string, LocationParts> = {}
       for (const k of keys.length > CACHE_MAX ? keys.slice(keys.length - CACHE_MAX) : keys) kept[k] = merged[k]
       await idbSet(CACHE_IDB_KEY, kept)
     })
   } catch {
     /* 缓存写失败静默：下次再查一遍 API 而已，比抛出去打断保存流程好得多 */
   }
+}
+
+/** BigDataCloud 反向地理编码返回的三级字段（localityLanguage=zh-Hans 时为简体中文） */
+interface BdcPlace {
+  /** 街道/区县（黄浦区） */
+  locality?: string
+  /** 市（上海市） */
+  city?: string
+  /** 省 / 直辖市 / 自治区（上海市、云南省） */
+  principalSubdivision?: string
+}
+
+/** 把接口返回映射成结构化三级。三级全空 → null（调用方据此退回坐标显示）。 */
+export function partsFromBdc(d: BdcPlace | null | undefined): LocationParts | null {
+  if (!d) return null
+  const parts: LocationParts = {
+    province: trimmed(d.principalSubdivision),
+    city: trimmed(d.city),
+    district: trimmed(d.locality),
+  }
+  return formatLocationName(parts) ? parts : null
 }
 
 // 客户端直调 BigDataCloud reverse-geocode（免费无 key）：
@@ -83,12 +120,14 @@ async function writeCachedName(key: string, name: string): Promise<void> {
 //
 // ★ 只缓存**成功**结果：null 不入缓存。否则一次网络抖动会把那个格子永久标记成
 //   「这里没有地名」，之后每次都直接命中缓存返回 null，比不缓存还糟。
-export async function clientReverseGeocode(lat: number, lon: number): Promise<string | null> {
+//
+// 返回**结构化三级**（province / city / district，缺级为 null）；三级全空时返回 null。
+export async function clientReverseGeocode(lat: number, lon: number): Promise<LocationParts | null> {
   const qLat = coarsenCoordinate(lat)
   const qLon = coarsenCoordinate(lon)
   const key = geocodeCacheKey(qLat, qLon)
 
-  const cached = await readCachedName(key)
+  const cached = await readCachedParts(key)
   if (cached) return cached
 
   const url = `https://api-bdc.io/data/reverse-geocode-client?latitude=${qLat}&longitude=${qLon}&localityLanguage=zh-Hans`
@@ -96,19 +135,10 @@ export async function clientReverseGeocode(lat: number, lon: number): Promise<st
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const d = await res.json() as {
-        city?: string       // 区/市（黄浦区 / 上海市）
-        locality?: string   // 街道/区（黄浦区）
-        principalSubdivision?: string // 省/直辖市（上海市）
-      } | null
-      if (!d) return null
-      // 拼接「区 市」两级，去重（直辖市 city 与 principalSubdivision 相同）
-      const parts = [d.locality ?? d.city, d.city ?? d.principalSubdivision].filter(
-        (s, i, arr): s is string => Boolean(s) && arr.indexOf(s) === i,
-      )
-      const name = parts.length > 0 ? parts.join(' ') : null
-      if (name) await writeCachedName(key, name)
-      return name
+      const parts = partsFromBdc(await res.json() as BdcPlace | null)
+      if (!parts) return null
+      await writeCachedParts(key, parts)
+      return parts
     } catch {
       if (attempt >= 2) return null // 最后一次失败放弃
       await new Promise((r) => setTimeout(r, 800 * (attempt + 1))) // 间隔重试（800ms / 1.6s）

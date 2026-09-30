@@ -6,6 +6,18 @@ const locationFields = {
   locationAccuracy: z.number().min(0).max(10_000).nullable().optional(),
 }
 
+// 结构化地名三级（客户端反查后 PATCH 补写）。与坐标同级：明文的元数据，不进加密范围。
+// 长度上限 64 与 weather/timezone 同量级——省/市/区名最长也就十几个汉字。
+const placeFields = {
+  locationProvince: z.string().max(64).nullable().optional(),
+  locationCity: z.string().max(64).nullable().optional(),
+  locationDistrict: z.string().max(64).nullable().optional(),
+}
+
+// 收藏（星标）。与位置、天气一样属于「纯元数据更新」：不带 ciphertext 就不会更新 updatedAt，
+// 所以收藏一篇不会让详情页冒出「编辑于」（见 app/api/diary/[id]/route.ts）。
+const starredField = { starred: z.boolean().optional() }
+
 const encryptedPayload = {
   ciphertext: z.string().min(1).max(300_000),
   iv: z.string().min(1).max(64),
@@ -19,18 +31,32 @@ const wordCountField = { wordCount: z.number().int().min(0).max(1_000_000).optio
 // id 例外：离线写队列重传时由客户端生成 UUID 做幂等（重复 POST 同 id 返回已有条目，
 // 网络抖动下的「不确定上次是否成功」重传不会重复入库）
 export const diaryCreateSchema = z
-  .strictObject({ id: z.string().uuid().optional(), ...encryptedPayload, timezone: z.string().max(64).nullable().optional(), ...locationFields, ...wordCountField })
+  .strictObject({
+    id: z.string().uuid().optional(),
+    ...encryptedPayload,
+    timezone: z.string().max(64).nullable().optional(),
+    // starred 只在「离线队列冲刷」这一条路径上由客户端指定（离线时点过收藏的笔记，
+    // 联网补传时要把它一起带上）；在线新建走服务端默认 false。
+    ...starredField,
+    ...locationFields,
+    ...wordCountField,
+  })
 export const diaryUpdateSchema = z
   .strictObject({
     ciphertext: z.string().min(1).max(300_000).optional(),
     iv: z.string().min(1).max(64).optional(),
     encryptionVersion: z.number().int().min(1).max(10).optional(),
     timezone: z.string().max(64).nullable().optional(),
-    locationName: z.string().max(255).nullable().optional(), // 客户端反查后补写
+    // 旧的单一地名串。**保留**是为了让还没更新的客户端（PWA 缓存的旧包）仍能补写地点名，
+    // 新版客户端一律走 placeFields。服务端在结构化三级出现时会把它清空。
+    locationName: z.string().max(255).nullable().optional(),
     weather: z.string().max(64).nullable().optional(), // 客户端天气查询后补写
+    ...starredField,
+    ...placeFields,
     ...locationFields,
     ...wordCountField,
   })
+
   .refine((d) => (d.ciphertext === undefined) === (d.iv === undefined), {
     message: 'ciphertext 与 iv 必须成对更新',
   })
@@ -56,6 +82,8 @@ export const diaryImportEntrySchema = z.strictObject({
   locationName: z.string().max(255).nullable().optional(),
   weather: z.string().max(64).nullable().optional(),
   timezone: z.string().max(64).nullable().optional(),
+  ...starredField,
+  ...placeFields,
   ...locationFields,
   ...wordCountField,
   createdAt: isoDate,

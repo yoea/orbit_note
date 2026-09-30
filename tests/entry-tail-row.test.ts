@@ -62,15 +62,27 @@ describe('F · 查看页内容尾行与操作栏', () => {
     expect(tokens.filter((t) => t.startsWith('border-')), '尾行不该有边框').toEqual([])
   })
 
-  it('F3 操作栏只剩图标且右对齐（占位 span 与 gap-6 都已不需要）', () => {
+  it('F3 操作栏是**两组**：左＝收藏、右＝编辑/删除（收藏落最底部，用户指定的位置）', () => {
     const footerAttrs = attrs.filter((a) => a.text.includes('border-t') && a.text.includes('mt-auto'))
     expect(footerAttrs.length, '找不到操作栏的 class 属性（border-t + mt-auto）').toBeGreaterThan(0)
     const tokens = footerAttrs.flatMap((a) => classTokens(a.text))
-    expect(tokens, '操作栏没有右对齐').toContain('justify-end')
-    expect(tokens, 'justify-between 是把图标顶到右边用的，编辑于上移后不再需要').not.toContain('justify-between')
-    expect(tokens, 'gap-6 是给「编辑于 ↔ 图标组」拉间距的，现在只剩一组').not.toContain('gap-6')
-    // 图标组仍在分割线**下方**
-    expect(indexOrFail('-mr-2')).toBeGreaterThan(indexOrFail('border-t'))
+    // 有了「收藏」这一组之后 justify-between 重新成为必需（左组贴左、右组贴右）；
+    // 唯一不能回来的是「用空 span 占位把图标顶到右边」那套写法（见下条）。
+    expect(tokens, '操作栏没有两端对齐').toContain('justify-between')
+    expect(tokens, 'gap-6 是给「编辑于 ↔ 图标组」拉间距的，收藏与图标组各有自己的内边距').not.toContain('gap-6')
+    // 收藏按钮在分割线**下方**、且在编辑/删除那一组的**左边**（源码顺序即视觉顺序）。
+    // 锚点用 onClick 而不是 'StarIcon'：后者在 import 里也出现，会命中文件开头（断言空转的反面）。
+    const divider = indexOrFail('border-t')
+    const star = indexOrFail('() => void toggleStar()')
+    const iconGroup = indexOrFail('-mr-2')
+    expect(star, '收藏按钮跑到分割线上方去了（那里是内容尾行）').toBeGreaterThan(divider)
+    expect(star, '收藏按钮跑到编辑/删除右边去了（它的位置在操作栏最左）').toBeLessThan(iconGroup)
+  })
+
+  it('F6 「编辑于」不在操作栏里（它属于内容尾行）', () => {
+    const barStart = indexOrFail('mt-auto flex items-center justify-between')
+    const bar = src.slice(barStart, src.indexOf('</main>', barStart))
+    expect(bar, '「编辑于」又被放回操作栏了——它一回去，内容尾行就又空成一段留白').not.toContain('编辑于')
   })
 
   it('F4 打开次数是「图标 + 数字」且有可访问标签', () => {

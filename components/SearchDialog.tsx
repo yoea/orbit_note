@@ -12,11 +12,13 @@ import {
   firstLine,
   highlightSegments,
   isDefaultFilters,
+  locationFacets,
   matches,
   relevanceScore,
   type TimeRange,
 } from '@/lib/client/search'
 import type { DecryptedEntry } from '@/lib/client/entries'
+import { displayLocationName } from '@/lib/client/location'
 import { toPlainText } from '@/lib/client/markdown'
 
 const TIME_RANGES: TimeRange[] = ['all', '7d', '30d', 'year']
@@ -61,6 +63,12 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState('')
   const [range, setRange] = useState<TimeRange>('all')
   const [onlyWithLocation, setOnlyWithLocation] = useState(false)
+  // 收藏筛选：只看收藏（收藏是「收窄」语义，不需要「只看未收藏」这一半）
+  const [onlyStarred, setOnlyStarred] = useState(false)
+  // 地名筛选：值为 displayLocationName 的原值（null = 不限）；取自实际数据，见 facets
+  const [location, setLocation] = useState<string | null>(null)
+  // 地名选择面板（点击「地点」chip 展开；选完即收起，选中值回显在 chip 上）
+  const [locationOpen, setLocationOpen] = useState(false)
   // null = 尚未加载（还没搜过）；加载完成后持有全部已解密条目
   const [entries, setEntries] = useState<DecryptedEntry[] | null>(null)
   const [loading, setLoading] = useState(false)
@@ -102,8 +110,12 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
     ensureLoaded()
   }
 
-  const filters = { query, range, onlyWithLocation }
+  const filters = { query, range, onlyWithLocation, onlyStarred, location }
   const active = !isDefaultFilters(filters)
+
+  // 地名清单：从**全部已解密条目**里现取（服务端只有密文与元数据，但地名就是元数据，
+  // 客户端取不到别的来源）。清单里不会出现空地名，所以不会给出选了却零结果的可选项。
+  const facets = useMemo(() => locationFacets((entries ?? []).map((e) => e.entry)), [entries])
 
   const results = useMemo(() => {
     if (!entries) return []
@@ -119,7 +131,7 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
       .map((e, i) => ({ e, i, score: relevanceScore(e.entry, e.plain, q) }))
       .sort((a, b) => b.score - a.score || a.i - b.i)
       .map((x) => x.e)
-  }, [entries, query, range, onlyWithLocation]) // eslint-disable-line react-hooks/exhaustive-deps -- filters 每次渲染新建对象，按字段依赖更准确
+  }, [entries, query, range, onlyWithLocation, onlyStarred, location]) // eslint-disable-line react-hooks/exhaustive-deps -- filters 每次渲染新建对象，按字段依赖更准确
 
   const visible = results.slice(0, visibleCount)
   const trimmedQuery = query.trim()
@@ -147,7 +159,8 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
           </div>
           <button onClick={onClose} className="shrink-0 text-sm text-neutral-500 dark:text-neutral-400 active:opacity-60">取消</button>
         </div>
-        {/* 筛选条件：与关键词是「与」的关系；时间与位置都是明文元数据 */}
+        {/* 筛选条件：与关键词是「与」的关系；时间、位置、收藏、地名全部是明文元数据。
+            每个条件都只**收窄**结果集，所以任意几个同时打开 = 取交集（见 lib/client/search.ts）。 */}
         <div className="flex flex-wrap items-center gap-2 pb-3">
           {TIME_RANGES.map((r) => (
             <Chip key={r} active={range === r} onClick={() => { setRange(range === r ? 'all' : r); resetPaging() }}>
@@ -157,7 +170,49 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
           <Chip active={onlyWithLocation} onClick={() => { setOnlyWithLocation(!onlyWithLocation); resetPaging() }}>
             有位置
           </Chip>
+          <Chip active={onlyStarred} onClick={() => { setOnlyStarred(!onlyStarred); resetPaging() }}>
+            收藏
+          </Chip>
+          {/* 地点：选中后 chip 直接显示地点名（省 市 区），再点一次展开换一个 */}
+          <Chip active={location !== null} onClick={() => setLocationOpen((o) => !o)}>
+            <span className="block max-w-[9rem] truncate">{location ?? '地点'}</span>
+          </Chip>
         </div>
+        {/* 地名选择面板：清单来自**实际数据**（每个地点后面带篇数），不是让用户凭记忆敲字——
+            敲字既容易打错（「昆明市」写成「昆明」就零结果）也搜不出自己有哪些地点可选。 */}
+        {locationOpen && (
+          <div className="mb-3 max-h-[45dvh] overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-800">
+            <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
+              <li>
+                <button
+                  onClick={() => { setLocation(null); setLocationOpen(false); resetPaging() }}
+                  className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left active:opacity-60"
+                >
+                  <span className="text-sm text-neutral-700 dark:text-neutral-200">全部地点</span>
+                  {location === null && <span className="shrink-0 text-sm text-emerald-600 dark:text-emerald-400">✓</span>}
+                </button>
+              </li>
+              {loading && <li><p className="px-3 py-2.5 text-xs text-neutral-500 dark:text-neutral-400">正在解密日记…</p></li>}
+              {!loading && facets.length === 0 && (
+                <li><p className="px-3 py-2.5 text-xs text-neutral-500 dark:text-neutral-400">还没有记录过地点</p></li>
+              )}
+              {facets.map((f) => (
+                <li key={f.name}>
+                  <button
+                    onClick={() => { setLocation(f.name); setLocationOpen(false); resetPaging() }}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left active:opacity-60"
+                  >
+                    <span className="min-w-0 truncate text-sm text-neutral-700 dark:text-neutral-200">{f.name}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+                      {f.count} 篇
+                      {location === f.name && <span className="ml-2 text-emerald-600 dark:text-emerald-400">✓</span>}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       <div className="mx-auto min-h-0 w-full max-w-md flex-1 overflow-y-auto px-5 pb-safe">
@@ -193,7 +248,9 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
               </p>
               {/* 结果项沿用列表页的视觉：左侧时间 + 标题 + 命中片段（高亮） */}
               <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
-                {visible.map(({ entry, plain }) => (
+                {visible.map(({ entry, plain }) => {
+                  const place = displayLocationName(entry)
+                  return (
                   <li key={entry.id}>
                     <Link href={`/entry/${entry.id}`} className="flex flex-col gap-1 py-3 active:opacity-60">
                       <span className="flex items-baseline gap-2">
@@ -210,15 +267,17 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
                       {/* 元信息行：左下角定位，右下角天气。
                           天气必须显示——天气是检索字段之一（搜「小雨」能命中天气），
                           不展示的话命中了也看不出为什么命中；用 Highlighted 渲染，
-                          关键词命中天气时会像正文一样高亮。 */}
-                      {(entry.locationName || entry.weather) && (
+                          关键词命中天气时会像正文一样高亮。
+                          地名同样走统一展示口径（结构化三级拼接，老数据回退单一串），
+                          与列表页/详情页显示成同一个名字。 */}
+                      {(place || entry.weather) && (
                         <span className="flex items-baseline justify-between gap-2 text-xs text-neutral-500 dark:text-neutral-400">
-                          {/* 左：地点名（无定位时留空，天气仍靠右对齐） */}
+                          {/* 左：地名（无定位时留空，天气仍靠右对齐） */}
                           <span className="min-w-0 truncate">
-                            {entry.locationName && (
+                            {place && (
                               <>
                                 <span className="mr-0.5 text-[10px]">📍</span>
-                                <Highlighted text={entry.locationName} query={trimmedQuery} />
+                                <Highlighted text={place} query={trimmedQuery} />
                               </>
                             )}
                           </span>
@@ -233,7 +292,8 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
                       )}
                     </Link>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
               {/* 分批加载：卡片式按钮与筛选 Chip 同风格，明确告知「还有多少」——
                   绝不静默截断（用户看到 100 条却以为是全部，比加载慢更糟） */}

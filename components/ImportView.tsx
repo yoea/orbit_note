@@ -111,7 +111,7 @@ export default function ImportView() {
       </p>
       {/* 说的是数据库字段的恢复。本机数据（打开次数）不进备份，也别在这里暗示用户它会恢复 */}
       <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-        正文、时间、地点、天气、字数等<span className="font-medium">全部字段</span>都会一并恢复。
+        正文、时间、地点、天气、字数、收藏状态等<span className="font-medium">全部字段</span>都会一并恢复。
       </p>
 
       {offline && (

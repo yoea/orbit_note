@@ -14,6 +14,7 @@ import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
 import { isAutoPlaceNameEnabled, isLocationEnabled, isOnThisDayEnabled, isPromptEnabled, isStreakEnabled, isWeatherEnabled } from '@/lib/client/prefs'
 import { clientReverseGeocode } from '@/lib/client/geocode'
+import { locationPatch } from '@/lib/client/location'
 import { fetchWeather } from '@/lib/client/weather'
 import { playSaveSound } from '@/lib/client/sound'
 import { PROMPTS, nextPromptIndex, reportPromptShown } from '@/lib/client/prompts'
@@ -258,11 +259,12 @@ export default function DiaryEditor() {
       }
       // 地点名反查与实时天气并行 → 一次 PATCH。
       // 反查发送的是模糊后坐标（见 geocode.ts 的 coarsenCoordinate），精确坐标不出设备。
-      const [name, weather] = await Promise.all([
+      // 地名写的是**结构化三级**（省/市/区）——服务端在写入三级时会顺手清掉旧的单一地名串。
+      const [place, weather] = await Promise.all([
         isAutoPlaceNameEnabled() ? clientReverseGeocode(latitude, longitude) : Promise.resolve(null),
         isWeatherEnabled() ? fetchWeather(latitude, longitude) : Promise.resolve(null),
       ])
-      if (name) patch.locationName = name
+      if (place) Object.assign(patch, locationPatch(place))
       if (weather) patch.weather = weather
       await fetch(`/api/diary/${entryId}`, {
         method: 'PATCH',
@@ -302,6 +304,8 @@ export default function DiaryEditor() {
           ciphertext, iv,
           wordCount: countWords(body),
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          // 新建的笔记默认未收藏（收藏入口在查看页，此刻这篇还没有 id 可点）
+          starred: false,
           queuedAt: Date.now(),
         })
         if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }

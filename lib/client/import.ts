@@ -128,10 +128,14 @@ interface Ready {
   latitude: number | null
   longitude: number | null
   locationAccuracy: number | null
+  locationProvince: string | null
+  locationCity: string | null
+  locationDistrict: string | null
   locationName: string | null
   weather: string | null
   timezone: string | null
   wordCount: number
+  starred: boolean
   createdAt: string
   updatedAt: string
   bytes: number
@@ -150,10 +154,14 @@ function toPayload(e: Ready): Omit<Ready, 'bytes'> {
     latitude: e.latitude,
     longitude: e.longitude,
     locationAccuracy: e.locationAccuracy,
+    locationProvince: e.locationProvince,
+    locationCity: e.locationCity,
+    locationDistrict: e.locationDistrict,
     locationName: e.locationName,
     weather: e.weather,
     timezone: e.timezone,
     wordCount: e.wordCount,
+    starred: e.starred,
     createdAt: e.createdAt,
     updatedAt: e.updatedAt,
   }
@@ -204,10 +212,14 @@ export async function importJournalFile(opts: {
       latitude: e.latitude,
       longitude: e.longitude,
       locationAccuracy: e.locationAccuracy,
+      locationProvince: e.locationProvince,
+      locationCity: e.locationCity,
+      locationDistrict: e.locationDistrict,
       locationName: e.locationName,
       weather: e.weather,
       timezone: e.timezone,
       wordCount: e.wordCount,
+      starred: e.starred,
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,
       bytes: ciphertext.length + iv.length + 256,

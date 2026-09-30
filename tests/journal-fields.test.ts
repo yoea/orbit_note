@@ -10,6 +10,7 @@ import {
   serializeJournal,
 } from '@/lib/client/journal-format'
 import { projectRoot } from './class-attrs'
+import { entryFixture } from './entry-fixture'
 import type { DecryptedEntry } from '@/lib/client/entries'
 
 // ============================================================================
@@ -42,29 +43,34 @@ function diaryEntryColumns(): string[] {
 const ID = '0b6f1a2c-3d4e-4f50-8a9b-1c2d3e4f5a6b'
 
 const sample: DecryptedEntry = {
-  entry: {
+  // 全字段默认值见 tests/entry-fixture.ts：这里只覆盖本文件关心的字段
+  entry: entryFixture({
     id: ID,
-    ciphertext: 'irrelevant',
-    iv: 'irrelevant',
     createdAt: '2024-03-05T01:02:03.000Z',
     updatedAt: '2024-04-06T07:08:09.000Z',
     wordCount: 42,
     latitude: 31.2304,
     longitude: 121.4737,
     locationAccuracy: 25,
-    locationName: '上海市黄浦区',
+    locationProvince: '上海市',
+    locationCity: '上海市',
+    locationDistrict: '黄浦区',
+    locationName: null, // 有结构化三级 ⇒ 老地名串为空（真实数据就是这个形态）
     weather: '晴 25°C',
     timezone: 'Asia/Shanghai',
-  },
+    starred: true,
+  }),
   plain: '# 标题\n\n正文 **加粗**',
 }
 
 describe('导出字段台账（对账 schema.ts）', () => {
-  it('F0 防空转：schema 里能读到 13 列', () => {
+  it('F0 防空转：schema 里能读到 17 列', () => {
     const cols = diaryEntryColumns()
-    expect(cols.length, `读到的列：${cols.join(', ')}`).toBe(13)
+    expect(cols.length, `读到的列：${cols.join(', ')}`).toBe(17)
     expect(cols).toContain('ciphertext')
     expect(cols).toContain('location_accuracy')
+    expect(cols).toContain('starred')
+    expect(cols).toContain('location_province')
   })
 
   it('F1 每一列都在台账里登记 → 新增列忘了导出会直接红', () => {
@@ -100,7 +106,7 @@ describe('导出字段台账（对账 schema.ts）', () => {
 // 打开次数「随备份往返」的断言已随功能撤下：本机数据不进备份。这里改为钉住
 // 「数据库字段的往返无损」——这才是导出功能真正的承诺。
 describe('自家导出 → 再导入 往返无损（数据库字段）', () => {
-  it('F4 导出文件能被 parseJournal 原样取回（id / 正文 / 时间 / 地点 / 天气 / 字数）', async () => {
+  it('F4 导出文件能被 parseJournal 原样取回（id / 正文 / 时间 / 三级地名 / 天气 / 字数 / 收藏）', async () => {
     const file = buildJournalFile([sample])
     const parsed = await parseJournal(JSON.parse(serializeJournal(file)))
     expect(parsed.rejected).toHaveLength(0)
@@ -113,9 +119,13 @@ describe('自家导出 → 再导入 往返无损（数据库字段）', () => {
     expect(e.latitude).toBe(31.2304)
     expect(e.longitude).toBe(121.4737)
     expect(e.locationAccuracy).toBe(25)
-    expect(e.locationName).toBe('上海市黄浦区')
+    expect(e.locationProvince).toBe('上海市')
+    expect(e.locationCity).toBe('上海市')
+    expect(e.locationDistrict).toBe('黄浦区')
+    expect(e.locationName).toBeNull()
     expect(e.weather).toBe('晴 25°C')
     expect(e.timezone).toBe('Asia/Shanghai')
+    expect(e.starred).toBe(true)
   })
 
   it('F5 导出不含任何本机字段，旧文件里残留也不会让解析报错', async () => {
@@ -137,6 +147,8 @@ describe('自家导出 → 再导入 往返无损（数据库字段）', () => {
     const r = await parseJournal(legacy)
     expect(r.rejected).toHaveLength(0)
     expect(r.entries[0].id).toBe(ID)
+    // 老文件里没有 starred 位 ⇒ 未收藏（不能被当成 undefined 漏进上传 payload）
+    expect(r.entries[0].starred).toBe(false)
   })
 })
 
@@ -146,16 +158,21 @@ describe('CSV 字段覆盖', () => {
   const csv = buildCsv([flat])
   const lines = csv.replace(/^\uFEFF/, '').split('\n')
 
-  it('F8 表头与列顺序一致，含 location_accuracy 且不含本机字段 view_count', () => {
+  it('F8 表头与列顺序一致，含 starred / 结构化地名，且不含本机字段 view_count', () => {
     expect(lines[0]).toBe(CSV_COLUMNS.join(','))
     expect(lines[0]).toContain('location_accuracy')
+    expect(lines[0]).toContain('starred')
+    expect(lines[0]).toContain('location_province')
+    expect(lines[0]).toContain('location_name')
     expect(lines[0]).not.toContain('view_count')
   })
 
-  it('F9 数据行按列顺序取值（含定位精度）', () => {
+  it('F9 数据行按列顺序取值（含收藏、定位精度与三级地名）', () => {
     expect(lines[1].split(',')).toEqual([
       ID, '2024-03-05T01:02:03.000Z', '2024-04-06T07:08:09.000Z', '单行正文', '42',
-      '31.2304', '121.4737', '25', '上海市黄浦区', '晴 25°C', 'Asia/Shanghai',
+      'true',
+      '31.2304', '121.4737', '25', '上海市', '上海市', '黄浦区', '',
+      '晴 25°C', 'Asia/Shanghai',
     ])
   })
 

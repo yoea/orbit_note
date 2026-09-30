@@ -159,11 +159,11 @@ export default function ExportView() {
       </p>
       {/* 「全部字段」是承诺，得让用户看得见（否则恢复时才发现少了东西） */}
       <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-        含每条日记在数据库里的<span className="font-medium">全部字段</span>：正文、创建与修改时间、坐标与地点名、定位精度、天气、时区、字数；重新导入即完整恢复。
+        含每条日记在数据库里的<span className="font-medium">全部字段</span>：正文、创建与修改时间、坐标与结构化地名（省/市/区）、定位精度、天气、时区、字数与收藏状态；重新导入即完整恢复。
       </p>
       {/* 坐标不模糊是刻意的决策（模糊会损失数据），但必须显式告知后果 */}
       <p className="mt-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
-        ⚠️ 导出文件含<span className="font-medium">未经模糊的原始坐标与地点名</span>（精确到米）。
+        ⚠️ 导出文件含<span className="font-medium">未经模糊的原始坐标与地名</span>（精确到米）。
         任何拿到该文件的人都能还原你去过哪里，请勿放进公共网盘或随手转发。
       </p>
 

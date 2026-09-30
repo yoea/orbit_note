@@ -8,7 +8,7 @@ import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { copyText } from '@/lib/client/clipboard'
 import { clientReverseGeocode } from '@/lib/client/geocode'
-import { getPosition, parseCoords } from '@/lib/client/location'
+import { displayLocationName, getPosition, hasStructuredLocation, locationPatch, parseCoords } from '@/lib/client/location'
 import { isAutoPlaceNameEnabled } from '@/lib/client/prefs'
 import { cacheEntriesPage, getCachedEntryById, getQueuedEntryById, removeCachedEntry, removeQueuedEntry, resolveEntryLoad, updateQueuedEntry } from '@/lib/client/offline'
 import { weatherEmoji } from '@/lib/client/weather'
@@ -19,6 +19,7 @@ import Toast from './Toast'
 import Markdown from './Markdown'
 import MarkdownBoundary from './MarkdownBoundary'
 import MarkdownToolbar from './MarkdownToolbar'
+import StarIcon from './StarIcon'
 import { countWords } from '@/lib/client/markdown'
 import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
 
@@ -34,9 +35,13 @@ interface Entry {
   latitude: number | null
   longitude: number | null
   locationAccuracy: number | null
+  locationProvince: string | null
+  locationCity: string | null
+  locationDistrict: string | null
   locationName: string | null
   weather: string | null
   timezone: string | null
+  starred: boolean
 }
 
 // 日记详情视图（原生路由页 /entry/[id] 渲染；DEK 会话级持久化，导航/重载自动恢复）
@@ -93,7 +98,7 @@ export default function EntryView({ id }: { id: string }) {
     applyText: setPlain,
   })
 
-  // 复制坐标到剪贴板并提示；无地点名时顺带查询一次（已有点名不重复查询，失败静默保持坐标）
+  // 复制坐标到剪贴板并提示；无地点名时顺带查询一次（已有地名不重复查询，失败静默保持坐标）
   async function copyCoords() {
     if (entry?.latitude == null || entry.longitude == null) return
     const lat = entry.latitude // 闭包内提取，避免 TS 收缩丢失
@@ -104,19 +109,13 @@ export default function EntryView({ id }: { id: string }) {
       if (coordsTimerRef.current) clearTimeout(coordsTimerRef.current)
       coordsTimerRef.current = setTimeout(() => setCoordsCopied(false), 2000)
     }
-    if (!entry.locationName) {
+    if (!hasStructuredLocation(entry) && !entry.locationName) {
       void (async () => {
         try {
-          // 客户端直调反查（大陆可达、CORS 开放），成功后 PATCH 存库并更新界面
-          const name = await clientReverseGeocode(lat, lon)
-          if (name) {
-            await fetch(`/api/diary/${entry.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ locationName: name }),
-            })
-            setEntry((prev) => prev ? { ...prev, locationName: name } : prev)
-          }
+          // 客户端直调反查（大陆可达、CORS 开放），成功后 PATCH 存库并更新界面。
+          // 写的是**结构化三级**（省/市/区），服务端会顺手清掉旧的单一地名串。
+          const parts = await clientReverseGeocode(lat, lon)
+          if (parts) await persistLocation(locationPatch(parts))
         } catch { /* 查询失败静默：保持坐标显示 */ }
       })()
     }
@@ -136,13 +135,14 @@ export default function EntryView({ id }: { id: string }) {
     setEntry((prev) => (prev ? { ...prev, ...data.entry } : prev))
   }
 
-  // 地点名异步反查并补写（尽力而为）：失败静默——详情页的自动补查与点击坐标都能兜底
-  function backfillLocationName(latitude: number, longitude: number) {
+  // 地点名异步反查并补写（尽力而为）：失败静默——详情页的自动补查与点击坐标都能兜底。
+  // 写的是结构化三级（省/市/区）。
+  function backfillPlace(latitude: number, longitude: number) {
     if (!isAutoPlaceNameEnabled()) return
     void (async () => {
-      const name = await clientReverseGeocode(latitude, longitude)
-      if (!name) return
-      try { await persistLocation({ locationName: name }) } catch { /* 忽略 */ }
+      const parts = await clientReverseGeocode(latitude, longitude)
+      if (!parts) return
+      try { await persistLocation(locationPatch(parts)) } catch { /* 忽略 */ }
     })()
   }
 
@@ -164,7 +164,7 @@ export default function EntryView({ id }: { id: string }) {
     try {
       await persistLocation({ latitude, longitude, locationAccuracy: accuracy })
       setAddLocationOpen(false)
-      backfillLocationName(latitude, longitude)
+      backfillPlace(latitude, longitude)
     } catch {
       setCoordError('保存位置失败，请重试')
     } finally {
@@ -187,7 +187,7 @@ export default function EntryView({ id }: { id: string }) {
       setCoordInput('')
       setCoordError(null)
       setAddLocationOpen(false)
-      backfillLocationName(parsed.latitude, parsed.longitude)
+      backfillPlace(parsed.latitude, parsed.longitude)
     } catch {
       setCoordError('保存位置失败，请重试')
     } finally {
@@ -196,7 +196,7 @@ export default function EntryView({ id }: { id: string }) {
   }
 
   // 移除定位：立即生效且不可逆，调用前由 UI 二次确认。
-  // 服务端在 latitude 为 null 时会把 locationName 一并清空。
+  // 服务端在 latitude 为 null 时会把地名（结构化三级 + 旧的单一串）一并清空。
   async function removeLocationNow() {
     setConfirmRemoveLocation(false)
     setSavingLocation(true)
@@ -282,16 +282,21 @@ export default function EntryView({ id }: { id: string }) {
     void bumpEntryViewCount(entry.id).then(setViewCount).catch(() => { /* 静默 */ })
   }, [entry])
 
-  // 打开详情页自动补地点名：有坐标但地点名为空 → 反查 → PATCH 存库 + 更新界面。
+  // 打开详情页自动补地名：有坐标但**没有结构化地名** → 反查 → PATCH 存库 + 更新界面。
   // 受「自动补全地点名」开关控制（关闭后不自动外发坐标，点击坐标仍可手动查询）。
   // 发送前坐标会被模糊到约 1km（见 geocode.ts 的 coarsenCoordinate）。
   // 同一篇每次加载只自动尝试一次；失败写 30 分钟冷却，避免反复打第三方接口。
+  //
+  // ★ 触发条件是「没有结构化三级」而不是「没有地名」：老数据只有那个「区 市」的单一串
+  //   （分不出省/市/区，也就没法按省/市筛选）。这样**老条目在被打开时自动升级**成结构化，
+  //   不必一次性回填（旧串里根本没有省的信息，猜出来的结构只会是错的）。
+  //   代价：老条目会在首次打开时多打一次反查（仍受上面的开关与坐标模糊约束）。
   useEffect(() => {
     if (!entry) return
     const entryId = entry.id
     const latitude = entry.latitude
     const longitude = entry.longitude
-    if (latitude == null || longitude == null || entry.locationName) return
+    if (latitude == null || longitude == null || hasStructuredLocation(entry)) return
     if (!isAutoPlaceNameEnabled()) return
     if (autoGeocodeTriedRef.current === entryId) return
     autoGeocodeTriedRef.current = entryId
@@ -302,18 +307,22 @@ export default function EntryView({ id }: { id: string }) {
     } catch { /* sessionStorage 不可用则忽略冷却 */ }
     void (async () => {
       try {
-        const name = await clientReverseGeocode(latitude, longitude)
-        if (!name) {
+        const parts = await clientReverseGeocode(latitude, longitude)
+        if (!parts) {
           try { sessionStorage.setItem(cooldownKey, String(Date.now())) } catch { /* 忽略 */ }
           return
         }
         await fetch(`/api/diary/${entryId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ locationName: name }),
+          body: JSON.stringify(locationPatch(parts)),
         })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data: { entry?: Entry } | null) => {
+            // 以服务端返回为准（它同时清掉了旧的单一地名串），别自己拼状态
+            if (data?.entry) setEntry((prev) => (prev && prev.id === entryId ? { ...prev, ...data.entry } : prev))
+          })
         try { sessionStorage.removeItem(cooldownKey) } catch { /* 忽略 */ }
-        setEntry((prev) => (prev && prev.id === entryId ? { ...prev, locationName: name } : prev))
       } catch {
         try { sessionStorage.setItem(cooldownKey, String(Date.now())) } catch { /* 忽略 */ }
       }
@@ -392,6 +401,43 @@ export default function EntryView({ id }: { id: string }) {
   }, [entry, plain, id, pendingSync])
 
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+
+  // —— 收藏（星标）——
+  // 只改元数据：PATCH 不带 ciphertext ⇒ 服务端不更新 updatedAt ⇒ 收藏一篇**不算编辑**，
+  // 详情页不会因此多出一行「编辑于」（与定位改动同一条约定）。
+  const [starBusy, setStarBusy] = useState(false)
+
+  async function toggleStar() {
+    if (!entry || starBusy) return
+    const next = !entry.starred
+    setStarBusy(true)
+    // 乐观更新：纯展示状态，等一个往返才变色会显得「点了没反应」
+    setEntry((prev) => (prev ? { ...prev, starred: next } : prev))
+    try {
+      if (pendingSync) {
+        // 还没上服务器的笔记：收藏写进本地写队列，联网补传时一起带上
+        //（否则服务端会用默认值 false 把它抹掉——见 lib/client/offline.ts 的 QueuedEntry.starred）
+        const ok = await updateQueuedEntry(id, { starred: next })
+        if (!ok) throw new Error('保存失败')
+      } else {
+        const res = await fetch(`/api/diary/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ starred: next }),
+        })
+        if (!res.ok) throw new Error('保存失败')
+        const data = await res.json() as { entry: Entry }
+        // 本地密文缓存同步更新：否则离线（读缓存）看到的还是改之前的收藏态
+        void cacheEntriesPage([data.entry])
+        setEntry((prev) => (prev ? { ...prev, ...data.entry } : prev))
+      }
+    } catch {
+      setEntry((prev) => (prev ? { ...prev, starred: !next } : prev)) // 失败回滚，不留假状态
+      setError('收藏失败，请重试')
+    } finally {
+      setStarBusy(false)
+    }
+  }
 
   const remove = useCallback(async () => {
     // 未同步笔记：还没上过服务器，移出本地队列即完成删除。
@@ -476,6 +522,8 @@ export default function EntryView({ id }: { id: string }) {
   const { latitude: entryLat, longitude: entryLon } = entry
   const hasCoords = entryLat != null && entryLon != null
   const displayCoords = entryLat != null && entryLon != null ? `${entryLat.toFixed(6)}, ${entryLon.toFixed(6)}` : ''
+  // 地名展示口径：结构化三级优先、老数据回退单一串（与列表页/搜索共用同一个函数）
+  const placeName = displayLocationName(entry)
   const locationBusy = locating || savingLocation
   return (
     <main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-y-auto px-5 safe-pt">
@@ -541,7 +589,7 @@ export default function EntryView({ id }: { id: string }) {
               >
                 <span className="mr-0.5 text-[10px]">📍</span>
                 {/* 有地址信息只显示地址；没有则只显示经纬度（不显示精度） */}
-                {entry.locationName ?? displayCoords}
+                {placeName ?? displayCoords}
                 {/* 已复制提示：跟在地点名/坐标后面 */}
                 {coordsCopied && <span className="ml-1.5 text-[10px] font-medium text-emerald-500">已复制坐标</span>}
               </button>
@@ -724,44 +772,58 @@ export default function EntryView({ id }: { id: string }) {
             {isEdited && <span>编辑于 {fmtDate(editedAt)}</span>}
           </div>
 
-          {/* 底部操作栏：只剩「编辑 / 删除」两个图标（右对齐）。
-              原先这里是 justify-between + 左侧放「编辑于」，靠一个空 <span /> 占位把图标
-              顶到右边；「编辑于」上移到内容尾行之后，占位 span 与 gap-6 都不再需要。 */}
-          <div className="mt-auto flex items-center justify-end border-t border-neutral-100 py-4 dark:border-neutral-800">
+          {/* 底部操作栏：**左＝收藏（这一篇的状态）**，右＝编辑 / 删除（对这个页面的操作）。
+              「收藏」在本页最底部（用户明确要求的位置），且带文字标签——它是这一页唯一的
+              "正向"操作，只放一颗孤零零的图标容易被当成装饰（星形本身就是评分控件的常见外形）。
+              断网且条目来自云端缓存时禁用（PATCH 发不出去，与编辑/删除同一判据）；
+              未同步笔记走本地写队列，不受此限。 */}
+          <div className="mt-auto flex items-center justify-between border-t border-neutral-100 py-4 dark:border-neutral-800">
+            <button
+              onClick={() => void toggleStar()}
+              disabled={starBusy || (localReadonly && !pendingSync)}
+              aria-pressed={entry.starred}
+              aria-label={entry.starred ? '取消收藏' : '收藏'}
+              title={entry.starred ? '取消收藏' : '收藏'}
+              className="-ml-2 flex shrink-0 items-center gap-1.5 rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
+            >
+              {/* 暖色 Q 版五角星：实心=已收藏，描边=未收藏（同一颗星的两个状态，不用两套图形） */}
+              <StarIcon filled={entry.starred} className="h-[18px] w-[18px]" />
+              <span className="text-sm">{entry.starred ? '已收藏' : '收藏'}</span>
+            </button>
             <div className="-mr-2 flex items-center gap-1">
-            {/* 编辑 / 删除：**图标按钮**（原先是「编辑」「删除」两段文字，删除还用了 text-red-500，
-                在查看页底部过于抢眼）。降权三招：去文字、改图标、删除不再用红色
-                ——破坏性由点击后的 ConfirmDialog 二次确认承担，不必靠颜色预警。
-                图标 18px + 中性色，与页面其它次级元素同级；aria-label/title 保住
-                可访问性与桌面端 tooltip（移动端无 hover）。
-                离线只读：云端缓存条目在断网时不可编辑/删除（PATCH/DELETE 发不出去，
-                硬点只会「保存失败」）。未同步笔记（pendingSync）不受限——编辑/删除
-                都在本地队列完成。 */}
-            <button
-              onClick={() => { editSnapshotRef.current = plain; closeAddLocation(); resetPreview(); setEditing(true) }}
-              disabled={decryptFailed || (localReadonly && !pendingSync)}
-              aria-label="编辑"
-              title="编辑"
-              className="rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]" aria-hidden>
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setConfirmingDelete(true)}
-              disabled={localReadonly && !pendingSync}
-              aria-label="删除"
-              title="删除"
-              className="rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]" aria-hidden>
-                <path d="M3 6h18" />
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-              </svg>
-            </button>
+              {/* 编辑 / 删除：**图标按钮**（原先是「编辑」「删除」两段文字，删除还用了 text-red-500，
+                  在查看页底部过于抢眼）。降权三招：去文字、改图标、删除不再用红色
+                  ——破坏性由点击后的 ConfirmDialog 二次确认承担，不必靠颜色预警。
+                  图标 18px + 中性色，与页面其它次级元素同级；aria-label/title 保住
+                  可访问性与桌面端 tooltip（移动端无 hover）。
+                  离线只读：云端缓存条目在断网时不可编辑/删除（PATCH/DELETE 发不出去，
+                  硬点只会「保存失败」）。未同步笔记（pendingSync）不受限——编辑/删除
+                  都在本地队列完成。 */}
+              <button
+                onClick={() => { editSnapshotRef.current = plain; closeAddLocation(); resetPreview(); setEditing(true) }}
+                disabled={decryptFailed || (localReadonly && !pendingSync)}
+                aria-label="编辑"
+                title="编辑"
+                className="rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]" aria-hidden>
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setConfirmingDelete(true)}
+                disabled={localReadonly && !pendingSync}
+                aria-label="删除"
+                title="删除"
+                className="rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]" aria-hidden>
+                  <path d="M3 6h18" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+              </button>
             </div>
           </div>
         </>

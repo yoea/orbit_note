@@ -15,11 +15,12 @@
 | 兜底 | 256-bit 恢复密钥，仅显示一次，通行密钥全丢时找回数据 |
 | 多设备 | 同一账号可注册多把通行密钥，逐设备管理（禁用 / 启用 / 踢下线） |
 | 草稿 | IndexedDB 本地优先 + 服务器同步 + 冲突处理，关页面不丢输入 |
-| 记录 | 可选保存坐标（自动反查地点名）、保存时自动记录实时天气 |
+| 记录 | 可选保存坐标（自动反查**结构化地名：省 / 市 / 区**）、保存时自动记录实时天气 |
+| 收藏 | 星标收藏（数据库布尔列），暖色五角星**只在查看页与日记列表页**展示 |
 | 习惯 | 连续写作天数（Streak）、每日提示、往年的今天回忆卡、保存音效 |
-| 回顾 | 写作频率热力图、按日分组时间线、篇数/天数/总字数统计 |
+| 回顾 | 写作频率热力图、按日分组时间线、篇数/天数/总字数统计；搜索支持时间 / 位置 / **收藏** / **地名**四种筛选且可任意组合 |
 | 导航 | 底部 tab bar（写 / 日记 / 设置）+ 组共享布局；详情/子页保留返回箭头 |
-| 导出 | 验证身份（通行密钥或恢复密钥）后解密导出全部日记为 CSV |
+| 导出 | 验证身份（通行密钥或恢复密钥）后解密导出全部日记为 Day One 兼容 JSON 或 CSV，并支持导入回本应用 |
 | 数据主权 | 删除全部数据需输入文字 + 生物识别双重确认 |
 
 ## 技术栈
@@ -83,7 +84,7 @@ lib/client/             客户端逻辑：crypto/（加密/KDF/PRF/恢复密钥/
                         idb、draft-sync、location、geocode、weather、sound、streak、prefs、prompts
 lib/server/             服务端逻辑：auth、session、webauthn、validation、ratelimit、
                         security-headers、proxy-guard、weather、db/（schema + 连接）
-drizzle/                SQL 迁移文件（0000 ~ 0012）
+drizzle/                SQL 迁移文件（0000 ~ 0013；0013 = 结构化地名三级 + starred）
 proxy.ts                Next 16 middleware（安全头 + 粗粒度路由保护）
 scripts/                deploy.sh（一键部署）、generate-icons.js
 docs/                   设计文档、安全审计、手动测试清单、部署示例
@@ -96,12 +97,14 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
 |---|---|---|
 | `credentials` | 通行密钥凭证 | `credential_id` 唯一、`counter` 防重放、`disabled` 软禁用、`device` 标识设备 |
 | `key_wrappers` | 密钥包装行 | 每凭证一条 `passkey_prf`（唯一索引）+ 全局一条 `recovery`；`recovery_key_hash` 用于灾难恢复登录 |
-| `diary_entries` | 日记条目 | 仅 `ciphertext` + `iv` + 元数据（经纬度 / 地点名 / 天气 / 时区 / 字数 / 时间戳），无明文列 |
+| `diary_entries` | 日记条目 | 仅 `ciphertext` + `iv` + 元数据（经纬度 / 结构化地名三级 / 旧地名串 / 天气 / 时区 / 字数 / 收藏 / 时间戳），无明文列 |
 | `drafts` | 单行草稿 | 同样只存 `ciphertext` + `iv` |
 | `user_prefs` | 偏好开关 | 存数据库以便多端同步，非 localStorage |
 | `prompt_stats` | 每日提示展示统计 | `prompt_id`（p_0..p_99）计数 |
 
-> 注意：经纬度、时间戳等元数据 **不在加密范围内**（设计如此）。数据库泄露会暴露位置轨迹，但不暴露正文。
+> 注意：经纬度、结构化地名、天气、收藏状态等元数据 **不在加密范围内**（设计如此）。数据库泄露会暴露位置轨迹与"哪几篇被收藏"，但不暴露正文。
+>
+> `location_name`（单一地名串）已废弃，只有 0013 之前写入的老数据有值；读路径只作展示兜底，老条目在详情页被打开时会自动重新反查并升级为结构化三级（见 `lib/client/location.ts`）。
 
 ## API 端点
 
@@ -112,6 +115,7 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
 
 **需要登录（`requireAuth` 拦截，未登录 401）**
 - `GET|POST /api/diary`、`GET|PATCH|DELETE /api/diary/[id]`
+- `POST /api/diary/import`（批量导入，允许客户端指定 createdAt/updatedAt 以保留原始时间）
 - `GET /api/diary/stats`、`GET /api/diary/on-this-day`
 - `GET|PUT|DELETE /api/draft`
 - `GET|POST /api/keys/wrappers`、`PUT /api/keys/wrappers/recovery`
@@ -132,7 +136,7 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
 
 | 服务 | 用途 | 数据流向 | 调用方 |
 |---|---|---|---|
-| BigDataCloud | 经纬度 → 地点名反查 | 坐标发送给该服务 | 浏览器直调 |
+| BigDataCloud | 经纬度 → 结构化地名（省/市/区）反查 | 坐标**模糊到 ≈1km** 后发送给该服务 | 浏览器直调（结果按格子缓存在本地 IndexedDB） |
 | 和风天气 QWeather | 保存时记录实时天气 | 坐标发送（服务器代理，JWT 认证） | 服务器 |
 | W3C Geolocation | 获取坐标 | 浏览器原生能力 | 浏览器 |
 
@@ -182,8 +186,10 @@ bash scripts/deploy.sh
 
 1. **首次访问** → 初始化：创建通行密钥 → 保存恢复密钥 → 完成。
 2. **写**（首页）→ 输入即自动存草稿 → 点「保存」落库（可记录位置/天气）。
-3. **日记** → 热力图 + 按日分组列表 → 点条目进详情（可编辑 / 删除 / 复制坐标）；右上角 🔍 搜索。
-4. **设置** → 个人信息与名字、通行密钥管理、重生成恢复密钥、偏好设置、导出 CSV、退出登录、删除全部数据。
+3. **日记** → 热力图 + 按日分组列表（已收藏的条目在标题旁带暖色五角星）→ 点条目进详情
+   （可编辑 / 删除 / 复制坐标 / **最底部收藏**）；右上角 🔍 搜索，支持时间 / 位置 / 收藏 / 地名筛选并任意组合。
+4. **写**（首页）→ 输入即自动存草稿 → 点「保存」落库（可记录位置/天气）。
+5. **设置** → 个人信息与名字、通行密钥管理、重生成恢复密钥、偏好设置、备份与恢复（导出 / 导入）、退出登录、删除全部数据。
 
 ## 许可证
 

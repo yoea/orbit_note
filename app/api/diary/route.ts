@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   if (!rateLimit('diary-create', 30, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
   const body = diaryCreateSchema.safeParse(await req.json().catch(() => null))
   if (!body.success) return NextResponse.json({ error: 'bad_request', details: body.error.issues }, { status: 400 })
-  const { id, ciphertext, iv, encryptionVersion, latitude, longitude, locationAccuracy, timezone, wordCount } = body.data
+  const { id, ciphertext, iv, encryptionVersion, latitude, longitude, locationAccuracy, timezone, wordCount, starred } = body.data
   // 客户端 id（离线写队列）：重复 POST 同 id = 网络抖动后的不确定重传，返回已有条目（200）
   // 而非报错——幂等保证离线日记不重复入库。created_at 仍由服务器决定（客户端时钟不可信）。
   if (id) {
@@ -45,6 +45,8 @@ export async function POST(req: Request) {
     latitude: latitude ?? null, longitude: longitude ?? null, locationAccuracy: locationAccuracy ?? null,
     timezone: timezone ?? null,
     wordCount: wordCount ?? 0,
+    // 离线队列补传时可能带着「离线期间点过的收藏」；在线新建恒为 false（服务端默认）
+    starred: starred ?? false,
   }).returning()
   return NextResponse.json({ entry }, { status: 201 })
 }

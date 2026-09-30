@@ -5,6 +5,9 @@ import { eq } from 'drizzle-orm'
 import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { diaryUpdateSchema } from '@/lib/server/validation'
 
+/** 结构化地名三级：写入其中任意一级都意味着「地名换成了结构化口径」，见下面的 set.locationName = null */
+const PLACE_FIELDS = ['locationProvince', 'locationCity', 'locationDistrict'] as const
+
 function parseId(param: string): string | null {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(param) ? param : null
 }
@@ -29,10 +32,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const patch = body.data
   const set: Record<string, unknown> = { ...patch }
   // 仅内容编辑（ciphertext/iv 成对出现）才更新"编辑时间"；纯元数据更新
-  // （如点击坐标补充查询地点名）不算编辑——详情页不会显示"编辑于"
+  // （补地点名、改收藏状态）不算编辑——详情页不会显示"编辑于"
   if (patch.ciphertext !== undefined) set.updatedAt = new Date()
-  // 用户移除坐标 → 地点名一并清除（保留坐标时不重新反查，避免重复外部调用）
-  if (patch.latitude === null) set.locationName = null
+  // 用户移除坐标 → 地点相关字段一并清除（结构化三级与旧的单一地名串都不留孤值）
+  if (patch.latitude === null) {
+    set.locationName = null
+    set.locationProvince = null
+    set.locationCity = null
+    set.locationDistrict = null
+  } else if (PLACE_FIELDS.some((k) => patch[k] !== undefined) && patch.locationName === undefined) {
+    // 结构化三级已给出 ⇒ 旧的单一地名串作废（否则同一篇会同时存在两套地名，展示口径分裂：
+    // 展示层以结构化优先，这列留着就只是永远不会被读到的陈旧数据）。
+    set.locationName = null
+  }
   const [updated] = await db.update(diaryEntries)
     .set(set)
     .where(eq(diaryEntries.id, id))

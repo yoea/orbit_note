@@ -44,13 +44,28 @@ export const diaryEntries = pgTable('diary_entries', {
   latitude: doublePrecision('latitude'),
   longitude: doublePrecision('longitude'),
   locationAccuracy: doublePrecision('location_accuracy'),
-  // 保存时由经纬度反查的地点名（BigDataCloud，失败为 null 则显示原坐标）
+  // ── 结构化地名（省 / 市 / 区）─────────────────────────────────────────────
+  // 反查接口（BigDataCloud）本来就**分级**返回（principalSubdivision / city / locality），
+  // 早先把它拼成一个「区 市」字符串是**有损**的：既分不出「昆明」是市还是区，
+  // 也没法按「省」或「市」筛选。三级各自一列，缺失的级为 null（市辖区/国外地址常有缺级）。
+  locationProvince: text('location_province'),
+  locationCity: text('location_city'),
+  locationDistrict: text('location_district'),
+  // ★ 旧字段（已废弃）：单一地名串（如「五华区 昆明市」）。
+  //   只有本功能上线**之前**写入的老数据会有值；写路径不再产生它
+  //   （见 app/api/diary/[id]/route.ts：写入结构化三级时顺手清空它）。
+  //   读路径只作为展示兜底（lib/client/location.ts 的 displayLocationName），
+  //   老条目被打开时会自动重新反查并升级成结构化三级。
   locationName: text('location_name'),
   // 保存时和风天气获取的实时天气文本（如"晴 25°C"，失败为 null 不显示）
   weather: text('weather'),
   timezone: text('timezone'),
   // 解密时计算的字数（列表/统计无需解密即可显示）
   wordCount: integer('word_count').notNull().default(0),
+  // 「收藏」（星标）：单一布尔列就够了，刻意不做多集合/多标签（本项目单用户）。
+  // 与位置、天气同级：属于**明文的元数据**（不进加密范围，也不影响 updatedAt——
+  // 收藏一篇不算「编辑」，详情页不会因此显示「编辑于」）。
+  starred: boolean('starred').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

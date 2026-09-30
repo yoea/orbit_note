@@ -9,6 +9,8 @@ import { cacheEntriesPage, cacheStats, getCachedEntries, getCachedStats, getQueu
 import SearchDialog from './SearchDialog'
 import SearchIcon from './SearchIcon'
 import ContributionHeatmap from './ContributionHeatmap'
+import StarIcon from './StarIcon'
+import { displayLocationName } from '@/lib/client/location'
 import { deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
 
 const PAGE_SIZE = 10
@@ -25,9 +27,13 @@ interface Entry {
   latitude: number | null
   longitude: number | null
   locationAccuracy: number | null
+  locationProvince: string | null
+  locationCity: string | null
+  locationDistrict: string | null
   locationName: string | null
   weather: string | null
   timezone: string | null
+  starred: boolean
 }
 
 interface DecryptedItem {
@@ -37,14 +43,16 @@ interface DecryptedItem {
   preview: string // 去除标题行后的剩余正文
   wordCount: number // 解密时计算（trim 后长度，与详情页/编辑器口径一致）
   lat: number | null
+  /** 展示用的地名串（结构化三级拼接，老数据回退单一串）——见 displayLocationName */
   locationName: string | null
   pending: boolean // 离线新增、尚未同步到服务器的笔记（列表显示「未同步」徽标）
+  starred: boolean // 收藏（暖色 Q 版五角星，只在列表与查看页展示）
 }
 
 interface Group {
   key: string // yyyy-mm-dd（本地时区）
   label: string // 今天 / 昨天 / 2026年8月25日 · 星期二
-  items: { id: string; time: string; title: string; preview: string; wordCount: number; lat: number | null; locationName: string | null; pending: boolean }[]
+  items: { id: string; time: string; title: string; preview: string; wordCount: number; lat: number | null; locationName: string | null; pending: boolean; starred: boolean }[]
   // 组头统计（服务端全量聚合——分页只加载了部分，不能从已加载条目统计）
   statCount: number
   statWords: number
@@ -230,8 +238,11 @@ export default function DiaryListView() {
           preview,
           wordCount: text.length,
           lat: e.latitude,
-          locationName: e.locationName,
+          // 展示口径统一走 displayLocationName（结构化优先、老数据回退单一串）——
+          // 与详情页/搜索用同一个函数，同一地点不会在不同页面显示成不同名字。
+          locationName: displayLocationName(e),
           pending: pendingIds.has(e.id),
+          starred: e.starred,
         })
       } catch {
         // 单条解密失败跳过（数据损坏不阻塞列表）
@@ -344,6 +355,7 @@ export default function DiaryListView() {
           lat: i.lat,
           locationName: i.locationName,
           pending: i.pending,
+          starred: i.starred,
         })),
       }
     })
@@ -408,6 +420,17 @@ export default function DiaryListView() {
                       <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">{item.time}</span>
                       {/* 标题 = 首行加粗 */}
                       <span className="line-clamp-1 font-medium text-neutral-800 dark:text-neutral-200">{item.title}</span>
+                      {/* 收藏：暖色 Q 版五角星（**纯展示**，点击收藏只在查看页——列表行整体是一个链接） */}
+                      {item.starred && (
+                        <span
+                          role="img"
+                          aria-label="已收藏"
+                          title="已收藏"
+                          className="inline-flex shrink-0 translate-y-[1px]"
+                        >
+                          <StarIcon filled className="h-3.5 w-3.5" />
+                        </span>
+                      )}
                       {/* 未同步徽标：离线新增、尚未上传服务器的笔记（断网图标，同步后消失） */}
                       {item.pending && (
                         <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">

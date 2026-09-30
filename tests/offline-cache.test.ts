@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { mergeEntriesById, queuedToEntry, remainingAfterFlush, staleCachedIds, unionWithPending } from '@/lib/client/offline'
 import { diaryCreateSchema } from '@/lib/server/validation'
+import { entryFixture, queuedFixture } from './entry-fixture'
 import type { EncryptedEntry } from '@/lib/client/entries'
 
 // 离线缓存与写队列的纯函数逻辑（idb 相关路径由组件集成行为覆盖）
 // E2EE 提醒：缓存里只有密文——测试数据同样只造密文字段。
 
 function entry(id: string, createdAt: string): EncryptedEntry {
-  return { id, ciphertext: `ct-${id}`, iv: `iv-${id}`, createdAt, updatedAt: createdAt, wordCount: 1, latitude: null, longitude: null, locationAccuracy: null, locationName: null, weather: null, timezone: null }
+  return entryFixture({ id, ciphertext: `ct-${id}`, iv: `iv-${id}`, createdAt, updatedAt: createdAt })
 }
 
 describe('mergeEntriesById（缓存合并）', () => {
@@ -34,9 +35,9 @@ describe('mergeEntriesById（缓存合并）', () => {
 
 describe('remainingAfterFlush（队列冲刷保留决策）', () => {
   const q = [
-    { id: '1', ciphertext: 'a', iv: 'a', wordCount: 1, timezone: null, queuedAt: 1 },
-    { id: '2', ciphertext: 'b', iv: 'b', wordCount: 1, timezone: null, queuedAt: 2 },
-    { id: '3', ciphertext: 'c', iv: 'c', wordCount: 1, timezone: null, queuedAt: 3 },
+    queuedFixture({ id: '1', ciphertext: 'a', iv: 'a', queuedAt: 1 }),
+    queuedFixture({ id: '2', ciphertext: 'b', iv: 'b', queuedAt: 2 }),
+    queuedFixture({ id: '3', ciphertext: 'c', iv: 'c', queuedAt: 3 }),
   ]
 
   it('全部确认 → 队列清空', () => {
@@ -57,8 +58,8 @@ describe('remainingAfterFlush（队列冲刷保留决策）', () => {
 })
 
 describe('queuedToEntry（队列项 → 条目形态）', () => {
-  it('字段映射：createdAt/updatedAt 取 queuedAt，定位/天气为 null', () => {
-    const e = queuedToEntry({ id: 'u1', ciphertext: 'ct', iv: 'iv', wordCount: 12, timezone: 'Asia/Shanghai', queuedAt: Date.UTC(2026, 8, 29, 1, 2, 3) })
+  it('字段映射：createdAt/updatedAt 取 queuedAt，定位/天气为 null，收藏照实带出', () => {
+    const e = queuedToEntry(queuedFixture({ id: 'u1', ciphertext: 'ct', iv: 'iv', wordCount: 12, timezone: 'Asia/Shanghai', starred: true, queuedAt: Date.UTC(2026, 8, 29, 1, 2, 3) }))
     expect(e.id).toBe('u1')
     expect(e.ciphertext).toBe('ct')
     expect(e.iv).toBe('iv')
@@ -69,11 +70,14 @@ describe('queuedToEntry（队列项 → 条目形态）', () => {
     expect(e.latitude).toBeNull()
     expect(e.longitude).toBeNull()
     expect(e.locationName).toBeNull()
+    expect(e.locationProvince).toBeNull()
     expect(e.weather).toBeNull()
+    // 收藏是离线时就能确定的状态：不在队列里带上，补传后会被服务端默认值抹成未收藏
+    expect(e.starred).toBe(true)
   })
 
   it('可直接并入列表数据流（与 EncryptedEntry 同构，解密路径无需分支）', () => {
-    const e = queuedToEntry({ id: 'u2', ciphertext: 'ct', iv: 'iv', wordCount: 1, timezone: null, queuedAt: 0 })
+    const e = queuedToEntry(queuedFixture({ id: 'u2', ciphertext: 'ct', iv: 'iv', queuedAt: 0 }))
     const merged = mergeEntriesById([entry('a', '2026-01-01')], [e])
     expect(merged.map((x) => x.id).sort()).toEqual(['a', 'u2'])
   })
@@ -156,5 +160,11 @@ describe('diaryCreateSchema 客户端 id（离线幂等）', () => {
   it('仍拒绝未知键（created_at 等不可由客户端指定）', () => {
     expect(diaryCreateSchema.safeParse({ ...base, createdAt: '2026-01-01' }).success).toBe(false)
     expect(diaryCreateSchema.safeParse({ ...base, updatedAt: '2026-01-01' }).success).toBe(false)
+  })
+
+  it('接受离线补传的 starred（离线点过的收藏必须能一起补传）', () => {
+    expect(diaryCreateSchema.safeParse({ ...base, starred: true }).success).toBe(true)
+    expect(diaryCreateSchema.safeParse({ ...base, starred: false }).success).toBe(true)
+    expect(diaryCreateSchema.safeParse({ ...base, starred: 'yes' }).success).toBe(false)
   })
 })

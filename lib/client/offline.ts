@@ -18,6 +18,11 @@ export interface QueuedEntry {
   iv: string
   wordCount: number
   timezone: string | null
+  /**
+   * 收藏状态也要入队：离线时点过收藏的笔记，联网补传时必须把这一位一起带上，
+   * 否则「点了没反应」——按钮有反馈、列表也亮着星，而补传后被服务端默认值抹成未收藏。
+   */
+  starred: boolean
   queuedAt: number
 }
 
@@ -302,7 +307,7 @@ export async function getQueuedCount(): Promise<number> {
 
 // 队列项 → 列表/详情可直接消费的条目形态（与 EncryptedEntry 同构）。
 // createdAt/updatedAt 都取 queuedAt（创建时刻）；timezone 之外的定位/天气字段离线拿不到，
-// 置 null（这些字段的补写本来就是保存成功后的服务端异步操作）。
+// 置 null（这些字段的补写本来就是保存成功后的服务端异步操作）。收藏是本地就能确定的，照实带出。
 export function queuedToEntry(item: QueuedEntry): import('./entries').EncryptedEntry {
   const iso = new Date(item.queuedAt).toISOString()
   return {
@@ -315,9 +320,13 @@ export function queuedToEntry(item: QueuedEntry): import('./entries').EncryptedE
     latitude: null,
     longitude: null,
     locationAccuracy: null,
+    locationProvince: null,
+    locationCity: null,
+    locationDistrict: null,
     locationName: null,
     weather: null,
     timezone: item.timezone,
+    starred: item.starred,
   }
 }
 
@@ -337,9 +346,12 @@ export async function getQueuedEntryById(id: string): Promise<import('./entries'
   return item ? queuedToEntry(item) : null
 }
 
-// 离线编辑「未同步笔记」：更新队列项的密文/字数（id/queuedAt 不变——创建时刻稳定，
-// 编辑时刻由调用方在 UI 层表达为 updatedAt）。条目不在队列中时静默忽略（返回 false）。
-export async function updateQueuedEntry(id: string, patch: { ciphertext: string; iv: string; wordCount: number }): Promise<boolean> {
+// 离线编辑「未同步笔记」：更新队列项（id/queuedAt 不变——创建时刻稳定，
+// 编辑时刻由调用方在 UI 层表达为 updatedAt）。只传要改的字段即可（改正文传三件套、改收藏只传 starred）。
+// 条目不在队列中时静默忽略（返回 false）。
+export type QueuedEntryPatch = Partial<Pick<QueuedEntry, 'ciphertext' | 'iv' | 'wordCount' | 'starred'>>
+
+export async function updateQueuedEntry(id: string, patch: QueuedEntryPatch): Promise<boolean> {
   const queue = (await idbGet<QueuedEntry[]>(QUEUE_KEY)) ?? []
   const idx = queue.findIndex((q) => q.id === id)
   if (idx < 0) return false
@@ -381,6 +393,8 @@ export async function flushOfflineQueue(): Promise<number> {
           longitude: null,
           locationAccuracy: null,
           timezone: item.timezone,
+          // 离线期间点过的收藏要一起补传（服务端默认 false，不带就等于把星弄丢了）
+          starred: item.starred,
         }),
       })
       if (res.ok) {

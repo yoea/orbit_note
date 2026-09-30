@@ -11,6 +11,9 @@
 //     · 键用了原始坐标 ⇒ 缓存永远不命中，「明明缓存过还是每次打 API」；
 //     · 键比请求更粗 ⇒ 「用 A 地的名字标 B 点」（写错地名，静默）。
 //
+// ★ 缓存值是**结构化三级**（省/市/区），不是拼好的字符串。旧版本存的字符串一律
+//   视为未命中（G6）——一个字符串里分不出哪一级是哪一级，解析出来只会是错的。
+//
 // 用内存版 idb 替身：真机上的另一类失败正是「两次写入交叠」的时序问题，纯函数测试看不见
 // （与 offline-cache-race.test.ts 同一套替身约定，含结构化克隆语义）。
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -43,16 +46,24 @@ vi.stubGlobal('fetch', async (url: string) => {
   if (h.fail) throw new Error('network down')
   return {
     ok: true,
+    // BigDataCloud 的分级字段：locality = 区县，city = 市（这里刻意不给 principalSubdivision，
+    // 用来验证「缺级为 null」而不是被落成空串）。
     json: async () => (h.empty ? null : { locality: '五华区', city: '昆明市' }),
   }
 })
 
 const { clientReverseGeocode, coarsenCoordinate, geocodeCacheKey } = await import('@/lib/client/geocode')
+const { formatLocationName } = await import('@/lib/client/location')
 
 const CACHE_KEY = 'geo-cache'
-function cachedMap(): Record<string, string> {
-  return (h.store.get(CACHE_KEY) as Record<string, string> | undefined) ?? {}
+type Parts = { province: string | null; city: string | null; district: string | null }
+function cachedMap(): Record<string, Parts> {
+  return (h.store.get(CACHE_KEY) as Record<string, Parts> | undefined) ?? {}
 }
+
+/** 接口（模拟）→ 期望的结构化结果 / 展示串 */
+const WANT: Parts = { province: null, city: '昆明市', district: '五华区' }
+const WANT_TEXT = '昆明市 五华区'
 
 // 昆明五华区一带的两个点，模糊后落在**同一个格子**（25.05, 102.68）
 const A = { lat: 25.049642, lon: 102.676280 }
@@ -78,9 +89,9 @@ describe('G · 地名反查缓存', () => {
   })
 
   it('G1 同一格子的第二次调用不再打 API（命中缓存）', async () => {
-    expect(await clientReverseGeocode(A.lat, A.lon)).toBe('五华区 昆明市')
+    expect(await clientReverseGeocode(A.lat, A.lon)).toEqual(WANT)
     expect(h.urls.length).toBe(1)
-    expect(await clientReverseGeocode(B.lat, B.lon)).toBe('五华区 昆明市')
+    expect(await clientReverseGeocode(B.lat, B.lon)).toEqual(WANT)
     expect(h.urls.length, '同格子仍然打了第二次 API —— 缓存没命中').toBe(1)
   })
 
@@ -98,7 +109,7 @@ describe('G · 地名反查缓存', () => {
     await clientReverseGeocode(A.lat, A.lon)
     h.urls.length = 0
     h.fail = true // 之后网络完全不可达
-    expect(await clientReverseGeocode(B.lat, B.lon)).toBe('五华区 昆明市')
+    expect(await clientReverseGeocode(B.lat, B.lon)).toEqual(WANT)
     expect(h.urls.length, '断网了却还在尝试请求').toBe(0)
   })
 
@@ -110,8 +121,8 @@ describe('G · 地名反查缓存', () => {
 
     // 网络恢复后再查：必须仍然会去打 API，并能拿到结果
     h.empty = false
-    expect(await clientReverseGeocode(A.lat, A.lon)).toBe('五华区 昆明市')
-    expect(cachedMap()).toEqual({ '25.05,102.68': '五华区 昆明市' })
+    expect(await clientReverseGeocode(A.lat, A.lon)).toEqual(WANT)
+    expect(cachedMap()).toEqual({ '25.05,102.68': WANT })
   })
 
   it('G5 并发写不同格子时不丢（读-改-写必须串行化）', async () => {
@@ -121,5 +132,21 @@ describe('G · 地名反查缓存', () => {
     ])
     // 未串行化时后提交者用「自己读到的空快照」整表覆盖 ⇒ 先写的那个格子白查了
     expect(Object.keys(cachedMap()).sort()).toEqual(['25.05,102.68', '25.12,99.16'])
+  })
+
+  it('G6 旧版字符串缓存视为未命中，重新反查并升级为结构化', async () => {
+    // 本功能上线前缓存的是拼好的「区 市」字符串
+    h.store.set(CACHE_KEY, { '25.05,102.68': '五华区 昆明市' })
+    expect(await clientReverseGeocode(A.lat, A.lon)).toEqual(WANT)
+    expect(h.urls.length, '命中老字符串缓存后没有再查 —— 会被永久钉在旧格式上').toBe(1)
+    // 升级后的缓存必须是对象，否则下次仍然走老路径
+    expect(typeof cachedMap()['25.05,102.68']).toBe('object')
+  })
+
+  it('G7 缓存里的三级能直接拼成展示串（与 UI 同源，不在缓存里存拼好的串）', async () => {
+    const parts = await clientReverseGeocode(A.lat, A.lon)
+    expect(formatLocationName(parts!)).toBe(WANT_TEXT)
+    // 钉住「缓存里存的是结构，不是串」——否则 G6 的升级逻辑会被绕过
+    expect(Object.values(cachedMap())[0]).not.toBe(WANT_TEXT)
   })
 })

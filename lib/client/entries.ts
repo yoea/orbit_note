@@ -13,9 +13,16 @@ export interface EncryptedEntry {
   latitude: number | null
   longitude: number | null
   locationAccuracy: number | null
+  /** 结构化地名三级（省/市/区，缺级为 null）——展示一律走 displayLocationName，见 lib/client/location.ts */
+  locationProvince: string | null
+  locationCity: string | null
+  locationDistrict: string | null
+  /** 已废弃的单一地名串：只有老数据（本功能上线前）才有值，仅作展示兜底 */
   locationName: string | null
   weather: string | null
   timezone: string | null
+  /** 收藏（星标）：明文的元数据列，入数据库、跟随导出与导入 */
+  starred: boolean
 }
 
 export interface DecryptedEntry {

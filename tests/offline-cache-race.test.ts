@@ -22,6 +22,7 @@
 // 纯函数测试看不见它。真 idb 的行为（事务串行、结构化克隆）在这里只取我们依赖的部分：
 // 每次读写都是异步的、写入覆盖整个值。
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { entryFixture, queuedFixture } from './entry-fixture'
 
 const h = vi.hoisted(() => ({
   store: new Map<string, unknown>(),
@@ -50,11 +51,10 @@ const {
   getQueuedEntries, getQueuedEntryById, pruneCachedEntries, removeCachedEntry, unionWithPending,
 } = await import('@/lib/client/offline')
 
-interface E { id: string; ciphertext: string; iv: string; createdAt: string; updatedAt: string; wordCount: number; latitude: null; longitude: null; locationAccuracy: null; locationName: null; weather: null; timezone: null }
-
-// E2EE 提醒：测试数据也只造密文字段（缓存里本来就只有密文）
-function e(id: string, createdAt: string): E {
-  return { id, ciphertext: `ct-${id}`, iv: `iv-${id}`, createdAt, updatedAt: createdAt, wordCount: 1, latitude: null, longitude: null, locationAccuracy: null, locationName: null, weather: null, timezone: null }
+// E2EE 提醒：测试数据也只造密文字段（缓存里本来就只有密文）。
+// 全字段默认值走 tests/entry-fixture.ts，避免每次给 diary_entries 加列都要回来补字面量。
+function e(id: string, createdAt: string) {
+  return entryFixture({ id, ciphertext: `ct-${id}`, iv: `iv-${id}`, createdAt, updatedAt: createdAt })
 }
 
 async function cachedIds(): Promise<string[]> {
@@ -109,7 +109,7 @@ describe('R · 缓存写入的并发完整性', () => {
       e('s1', '2026-09-01T00:00:00.000Z'),
       e('s2', '2026-09-02T00:00:00.000Z'),
     ])
-    await enqueueOfflineEntry({ id: 'q1', ciphertext: 'ct-q1', iv: 'iv-q1', wordCount: 3, timezone: null, queuedAt: Date.UTC(2026, 8, 30) })
+    await enqueueOfflineEntry(queuedFixture({ id: 'q1', ciphertext: 'ct-q1', iv: 'iv-q1', wordCount: 3, queuedAt: Date.UTC(2026, 8, 30) }))
 
     // 列表的数据源（离线分支）：缓存 ∪ 队列
     const list = unionWithPending(await getCachedEntries(), await getQueuedEntries())
