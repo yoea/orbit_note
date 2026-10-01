@@ -12,7 +12,7 @@ import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
-import { getPromptTiming, isAutoPlaceNameEnabled, isLocationEnabled, isOfflineCacheEnabled, isOnThisDayEnabled, isPromptEnabled, isStreakEnabled, isWeatherEnabled } from '@/lib/client/prefs'
+import { isAutoPlaceNameEnabled, isLocationEnabled, isOfflineCacheEnabled, isOnThisDayEnabled, isPromptEnabled, isStreakEnabled, isWeatherEnabled } from '@/lib/client/prefs'
 import { clientReverseGeocode } from '@/lib/client/geocode'
 import { locationPatch } from '@/lib/client/location'
 import { fetchWeather } from '@/lib/client/weather'
@@ -41,14 +41,9 @@ export default function DiaryEditor() {
   const [otdHidden, setOtdHidden] = useState(false)
   // 每日提示：索引初始 0（确定值，SSR/客户端一致），mount 后随机；行始终存在（占位，不跳动）
   const [promptIdx, setPromptIdx] = useState<number>(0)
-  // 每日提示出现时机（偏好 qo-prompt-timing，默认 'always'＝保持既有行为）。
-  // 惰性初值同步读：这是渲染条件，必须首帧正确。
-  const [promptTiming] = useState(() => getPromptTiming())
-  // 每日提示是否显示（B4）：偏好在 `isPromptEnabled()` 之外再叠一层时机档，
-  // 'empty' 档只在「正文还没写」时出现（有内容就收起来，把版面让给正文）；
-  // 'always' 档是默认（= 既有行为，任何时刻都显示）。
+  // 每日提示是否显示：只受偏好开关控制（2026-10-01 时机档已删，回归纯开关）。
   // ★ 必须在下面的上报 effect 之前声明（effect 依赖它决定「是否真的显示了」）。
-  const isPromptVisible = isPromptEnabled() && (promptTiming === 'always' || text.trim() === '')
+  const isPromptVisible = isPromptEnabled()
   const textRef = useRef('')
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingDraftRef = useRef<{ ciphertext: string; iv: string } | null>(null)
@@ -171,10 +166,9 @@ export default function DiaryEditor() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- 带副作用的客户端专属初始化
     setPromptIdx(nextPromptIndex())
   }, [])
-  // ★ 上报时机必须与「提示是否真的渲染」对齐（B4）：
-  // 提示出现的三档里 'empty' 只在正文为空时显示——此时若照旧按 promptIdx 变化就上报，
-  // 就会出现「提示没显示但出现次数 +1」的失真。因此把 isPromptVisible 一并纳入依赖，
-  // 只有可见时才上报（不可见时不报，切回可见的那次会补报一次，语义正确）。
+  // ★ 上报时机必须与「提示是否真的渲染」对齐：
+  // 若照旧按 promptIdx 变化就上报，偏好关闭时会出现「提示没显示但出现次数 +1」的
+  // 失真。因此把 isPromptVisible 一并纳入依赖，只有可见时才上报。
   useEffect(() => {
     if (isPromptVisible) reportPromptShown(promptIdx)
   }, [promptIdx, isPromptVisible])
@@ -431,8 +425,7 @@ export default function DiaryEditor() {
           </button>
         </div>
       )}
-      {/* 每日提示：随机一句，点击换一条（写作灵感）。
-          显示条件见 isPromptVisible（开关 × 时机档）：'empty' 档在正文有内容后收起。 */}
+      {/* 每日提示：随机一句，点击换一条（写作灵感）。显示条件见 isPromptVisible（偏好开关）。 */}
       {isPromptVisible && (
         <button
           onClick={() => setPromptIdx(nextPromptIndex(promptIdx))}

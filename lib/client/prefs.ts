@@ -18,19 +18,9 @@ export const HEATMAP_KEY = 'qo-show-heatmap'
 // 刻意不加入 ALL_KEYS（不与服务器同步）：缓存是设备本地属性——
 // 手机可能开着、电脑可能关着，跨端同步开关反而会互相覆盖出错误状态。
 export const OFFLINE_KEY = 'qo-offline-cache'
-// 主题外观：'system' | 'light' | 'dark'。
-// 刻意不加入 ALL_KEYS（不与服务器同步）：外观是设备属性（手机常跟随系统、
-// 桌面可能固定浅色），跨端同步会互相覆盖。也刻意不进 /api/prefs 的白名单——
-// 该通道目前只接受 '0'/'1' 布尔值。
-export const THEME_KEY = 'qo-theme'
-export const THEME_VALUES = ['system', 'light', 'dark'] as const
-export type ThemeValue = (typeof THEME_VALUES)[number]
-// 每日提示出现时机：'always'（总是，默认）| 'empty'（仅在正文为空时）。
-// 布尔语义（'0'/'1'）表达不了三态以上，这里是两档但语义不是「开关」而是「时机」，
-// 因此同样走字符串值 + 不进服务器同步（避免再扩 /api/prefs 的布尔校验通道）。
-export const PROMPT_TIMING_KEY = 'qo-prompt-timing'
-export const PROMPT_TIMINGS = ['always', 'empty'] as const
-export type PromptTiming = (typeof PROMPT_TIMINGS)[number]
+// 已删除的键（2026-10-01 用户拍板，勿加回来）：
+//   qo-theme（主题外观三档）——应用恒跟随系统 prefers-color-scheme，不再提供切换；
+//   qo-prompt-timing（每日提示出现时机）——「显示每日提示」回归纯开关。
 
 const ALL_KEYS = [LOCATION_KEY, WEATHER_KEY, STREAK_KEY, PROMPT_KEY, OTD_KEY, GEOCODE_KEY, SAVE_SOUND_KEY, SHOW_VIEWS_KEY, HEATMAP_KEY]
 
@@ -98,43 +88,4 @@ export function isHeatmapEnabled(): boolean {
 // 默认给能力；不想要的用户可在偏好里关掉并一键清除本地数据）
 export function isOfflineCacheEnabled(): boolean {
   return get(OFFLINE_KEY)
-}
-
-// 主题外观：读当前档位（异常/未设置一律回退 'system'）。
-// 与布尔偏好不同，这里不能用 get()——它把非 '0' 一律当真。
-export function getTheme(): ThemeValue {
-  if (typeof window === 'undefined') return 'system'
-  try {
-    const v = localStorage.getItem(THEME_KEY)
-    return (THEME_VALUES as readonly string[]).includes(v ?? '') ? (v as ThemeValue) : 'system'
-  } catch { return 'system' }
-}
-
-// 写主题档位（纯本地，不同步服务器）+ 立即应用到 <html> 的 class
-export function setTheme(value: ThemeValue): void {
-  try { localStorage.setItem(THEME_KEY, value) } catch { /* 忽略 */ }
-  applyTheme(value)
-}
-
-// 把主题档位落到 <html>：只有 'dark' 加 .dark 类，其余（system/light）都不加。
-// 'light' 与 'system' 的区别由 CSS 侧的 @custom-variant 处理：
-// system 档跟随 prefers-color-scheme，light 档强制浅色（用 .theme-light 标记）。
-export function applyTheme(value: ThemeValue): void {
-  if (typeof document === 'undefined') return
-  const el = document.documentElement
-  el.classList.toggle('dark', value === 'dark')
-  el.classList.toggle('theme-light', value === 'light')
-}
-
-// 每日提示出现时机：读当前档位（异常/未设置一律回退 'always' = 保持既有行为）
-export function getPromptTiming(): PromptTiming {
-  if (typeof window === 'undefined') return 'always'
-  try {
-    const v = localStorage.getItem(PROMPT_TIMING_KEY)
-    return (PROMPT_TIMINGS as readonly string[]).includes(v ?? '') ? (v as PromptTiming) : 'always'
-  } catch { return 'always' }
-}
-
-export function setPromptTiming(value: PromptTiming): void {
-  try { localStorage.setItem(PROMPT_TIMING_KEY, value) } catch { /* 忽略 */ }
 }

@@ -213,3 +213,20 @@
 - `Temp/nonvacuous_prefs.py`：12 个破坏用例，**12/12 全部变红并按 md5 还原**。
 - 门禁 `npm run verify` 全绿：lint 0 / **494 passed（47 files）** / build / typecheck。
 
+
+## 七、第三轮删减（2026-10-01，用户拍板）
+
+上线一天后的反馈收窄：
+
+1. **删除主题外观（A2 / `qo-theme`）**：应用恒跟随系统 `prefers-color-scheme`。
+   连带删掉：`prefs.ts` 的 `THEME_*` 与 `applyTheme`/`getTheme`/`setTheme`、
+   `layout.tsx` 的首帧内联脚本、`globals.css` 的 `.theme-light` 变量块与末尾整张反向压制表、
+   `PrefsDialog` 的 `SegmentedPicker`（随之失去唯一使用者）与主题行。
+2. **删除每日提示出现时机（B4 / `qo-prompt-timing`）**：「显示每日提示」回归纯开关，
+   `isPromptVisible = isPromptEnabled()`；「上报与渲染对齐」的修复保留（守卫改名 B4-2）。
+3. **「显示打开次数」描述去括号**：`详情页底部的打开次数（仅隐藏显示，仍会统计）` → `详情页底部的打开次数`。
+
+守卫更新：A2 的四条断言删除，换成 **R1~R3「已删除项不得回来」反向守卫**（主题键/首帧脚本/压制表/时机档/SegmentedPicker/rows 分叉/括号文案，加回来即红）。
+`Temp/nonvacuous_prefs_removal.py` 10 用例 10/10 变红并按字节还原。
+偏好总数回到 **10 项**（9 同步 + 离线缓存本地 + 导出格式记忆本地）。
+门禁全绿：lint 0 / **495 passed（47 files）** / build / typecheck。

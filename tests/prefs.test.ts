@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readdirSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -72,10 +72,9 @@ describe('偏好键三处同步', () => {
   it('P1 服务器同步键集合 = ALL_KEYS 集合（漏一个就是隐性 bug）', () => {
     const clientKeys = allKeyIdents().map(keyLiteral).sort()
     const srvKeys = serverKeys().sort()
-    // 刻意不进服务器同步的键（值域非 '0'/'1'，或属设备属性）：
-    //   qo-offline-cache（缓存是设备属性）、qo-theme / qo-prompt-timing（字符串值）、
-    //   qo-export-format（设备习惯，见 ExportView）。
-    const LOCAL_ONLY = ['qo-offline-cache', 'qo-theme', 'qo-prompt-timing', 'qo-export-format']
+    // 刻意不进服务器同步的键（设备属性）：
+    //   qo-offline-cache（缓存是设备属性）、qo-export-format（设备习惯，见 ExportView）。
+    const LOCAL_ONLY = ['qo-offline-cache', 'qo-export-format']
     expect(srvKeys).toEqual(clientKeys.filter((k) => !LOCAL_ONLY.includes(k)))
   })
 
@@ -95,7 +94,7 @@ describe('偏好键三处同步', () => {
 
   it('P4 本机专属键不得出现在服务器白名单（防「以为同步了其实只在本机」）', () => {
     const srv = serverKeys()
-    for (const k of ['qo-offline-cache', 'qo-theme', 'qo-prompt-timing', 'qo-export-format']) {
+    for (const k of ['qo-offline-cache', 'qo-export-format']) {
       expect(srv, `${k} 是设备本地键，不该进 PREF_KEYS`).not.toContain(k)
     }
   })
@@ -149,81 +148,46 @@ describe('B3 热力图显示开关', () => {
   })
 })
 
-describe('B4 每日提示出现时机', () => {
-  it('B4-1 提示渲染走 isPromptVisible（开关 × 时机），不是裸 isPromptEnabled()', () => {
+describe('B4 每日提示', () => {
+  it('B4-1 提示渲染走 isPromptVisible（偏好开关），时机档已删', () => {
     const src = code('components/DiaryEditor.tsx')
     expect(src).toContain('{isPromptVisible && (')
     // 渲染条件处不得再直接调 isPromptEnabled()
     expect(src, '渲染条件应统一走 isPromptVisible').not.toContain('{isPromptEnabled() && (')
+    // 时机档（qo-prompt-timing）已删除，不得回来
+    expect(src, '提示时机档应已删除').not.toContain('promptTiming')
   })
 
-  it('B4-2 isPromptVisible 同时含开关与时机档判断', () => {
-    const src = code('components/DiaryEditor.tsx')
-    const i = pos(src, 'const isPromptVisible')
-    const line = src.slice(i, src.indexOf('\n', i))
-    expect(line).toContain('isPromptEnabled()')
-    expect(line).toContain('promptTiming')
-  })
-
-  it('B4-3 上报时机与「是否真的显示」对齐（否则会出现「没显示却 +1」）', () => {
+  it('B4-2 上报时机与「是否真的显示」对齐（否则会出现「没显示却 +1」）', () => {
     const src = code('components/DiaryEditor.tsx')
     const i = pos(src, 'reportPromptShown(promptIdx)')
     const before = src.slice(Math.max(0, i - 120), i)
     expect(before, '上报前应先判断 isPromptVisible').toContain('if (isPromptVisible)')
-    // 依赖数组必须含 isPromptVisible，否则正文从空变非空时不重算
+    // 依赖数组必须含 isPromptVisible，否则开关切换时不重算
     const after = src.slice(i, i + 120)
     expect(after).toContain('isPromptVisible]')
   })
 })
 
-describe('A2 主题外观', () => {
-  it('A2-1 prefs.ts 提供主题三档与首帧应用函数', () => {
-    const src = code(PREFS)
-    expect(src).toContain("THEME_VALUES = ['system', 'light', 'dark']")
-    expect(src).toContain('export function applyTheme')
-    expect(src).toContain("el.classList.toggle('theme-light'")
+describe('R 已删除的偏好不得回来（2026-10-01 用户拍板）', () => {
+  it('R1 主题外观：应用恒跟随系统，无主题偏好 / 首帧脚本 / 压制表', () => {
+    expect(code(PREFS), 'prefs.ts 不应再有主题键').not.toContain('THEME')
+    expect(code('app/layout.tsx'), 'layout 不应再有首帧主题脚本').not.toContain('qo-theme')
+    expect(read('app/globals.css'), 'globals.css 不应再有 .theme-light 压制').not.toContain('theme-light')
+    expect(code(DIALOG), '设置页不应再有主题行').not.toContain('主题外观')
   })
 
-  it('A2-2 root layout 有首帧内联脚本（否则会闪一下系统色）', () => {
-    const src = code('app/layout.tsx')
-    expect(src).toContain('qo-theme')
-    expect(src, '必须在 <head> 内联同步执行').toContain('dangerouslySetInnerHTML')
-    // 脚本要落在 head 里（paint 之前）
-    expect(pos(src, '<head>')).toBeLessThan(pos(src, 'themeInitScript }'))
+  it('R2 提示时机：qo-prompt-timing 及分段单选控件已删', () => {
+    expect(code(PREFS), 'prefs.ts 不应再有时机键').not.toContain('PROMPT_TIMING')
+    expect(code(DIALOG), '设置页不应再有时机单选').not.toContain('出现时机')
+    expect(code(DIALOG), 'SegmentedPicker 应随之删除（无使用者）').not.toContain('SegmentedPicker')
   })
 
-  it('A2-3 globals.css 有强制浅色的反向压制（否则「浅色」档在深色系统下无效）', () => {
-    const src = code('app/globals.css')
-    expect(src).toContain('.theme-light {')
-    expect(src, '需要逐类覆盖 dark: 工具类').toContain('.theme-light .dark\\:bg-neutral-800')
-  })
-
-  it('A2-4 压制表覆盖源码里实际用到的全部 dark: 类（新增类忘了补 → 这里红）', () => {
-    const css = read('app/globals.css')
-    // 收集源码里实际出现的 dark: 工具类（排除注释，且只看真实 class 串）
-    const found = new Set<string>()
-    const walk = (dir: string) => {
-      for (const e of readdirSync(join(projectRoot, dir), { withFileTypes: true })) {
-        if (e.name.startsWith('.') || e.name === 'node_modules' || e.name === 'Temp') continue
-        const rel = `${dir}/${e.name}`
-        if (e.isDirectory()) walk(rel)
-        else if (/\.(tsx|ts)$/.test(e.name)) {
-          const src = read(rel).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-          for (const m of src.matchAll(/dark:([A-Za-z0-9:_\[\]/.%-]+)/g)) found.add(m[1])
-        }
-      }
-    }
-    for (const f of ['components', 'app', 'lib']) walk(f)
-    expect(found.size, '未扫到任何 dark: 类，解析失败').toBeGreaterThan(20)
-
-    // 压制表对每个 dark: 类都要有一条 `.theme-light .dark\:<转义后的类名>` 规则。
-    // 注意：断言必须锚定「.theme-light 」前缀——只查 `.dark\:xxx` 会命中 Tailwind
-    // 自己生成的那条裸类规则，从而永远通过（真实踩到的空转）。
-    // Tailwind 的 CSS 转义规则：类名里**每个**冒号、斜杠、点都插反斜杠
-    // （`.dark\:placeholder\:text-neutral-400`、`.dark\:bg-neutral-900\/40`）。
-    const cssClass = (cls: string) => `.dark\\:${cls.replace(/[:/.[\]%]/g, (c) => `\\${c}`)}`
-    const missing = [...found].filter((cls) => !css.includes(`.theme-light ${cssClass(cls)}`))
-    expect(missing, `以下 dark: 类未被 .theme-light 压制：${missing.join(', ')}`).toEqual([])
+  it('R3 偏好行统一是布尔开关：rows 渲染不得按 key 分叉出第二种控件', () => {
+    const dialog = code(DIALOG)
+    expect(dialog, 'rows 渲染不得再按 key 分叉').not.toContain('row.key ===')
+    // 「显示打开次数」的描述不带括号补充（2026-10-01 用户要求精简）
+    expect(dialog).toContain("hint: '详情页底部的打开次数'")
   })
 })
 

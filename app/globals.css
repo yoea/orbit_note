@@ -17,26 +17,6 @@
   }
 }
 
-/* ★ 主题偏好「强制浅色」档（<html class="theme-light">）。
-   本项目 dark: 工具类走的是 Tailwind 默认的 @media (prefers-color-scheme: dark)，
-   没有 .dark 类；这样「跟随系统」与「深色」两档都不用额外声明（深色档交给系统媒体
-   查询本来就对——只是系统为浅色时用户选了深色就无法生效，这是刻意取舍：避免为
-   279 处既有 dark: 变体全部改写成类策略）。
-   只有「浅色」档需要一条反向压制：系统是深色时把根色与滚动条压回浅色值。
-   ★ 这两块必须排在文件末尾的 @layer base 之外（unlayered），才能盖过上面的媒体查询。 */
-.theme-light {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-@media (prefers-color-scheme: dark) {
-  html.theme-light .thin-scrollbar {
-    scrollbar-color: rgba(0, 0, 0, 0.25) transparent;
-  }
-  html.theme-light .thin-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.25);
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
@@ -154,53 +134,3 @@ html {
   to { opacity: 1; }
 }
 .animate-fade-in { animation: fade-in 0.3s ease-out; }
-
-/* ★★ 主题「强制浅色」档的收尾压制（必须留在文件最后）。
-   上面的 .theme-light 只改了 CSS 变量，但 35 处 dark: 工具类是 Tailwind 编译出的
-   裸类（`.dark\:bg-neutral-950{background-color:…}`，无 :root 前缀 ⇒ 特异性仅 0,1,0）。
-   因此这里要用 `.theme-light .dark\:xxx`（特异性 0,2,0）逐个盖掉——只有这样才能在
-   系统为深色时把整页压回浅色，而不必改写 33 个组件里的既有 class。
-   ⚠️ 这张表按「当前实际用到的 dark: 类」手工汇总，**新增 dark: 工具类时要同步补一行**；
-   守卫 tests/prefs.test.ts 的 A2-4 会扫源码里实际出现的 dark: 类，缺一即红。 */
-
-/* 背景：深色面 → 浅色面 */
-.theme-light .dark\:bg-neutral-950,
-.theme-light .dark\:bg-neutral-900,
-.theme-light .dark\:bg-neutral-800,
-.theme-light .dark\:bg-neutral-700,
-.theme-light .dark\:bg-neutral-600 { background-color: var(--color-white); }
-.theme-light .dark\:bg-neutral-900\/40 { background-color: color-mix(in srgb, var(--color-neutral-900) 40%, transparent); }
-.theme-light .dark\:active\:bg-neutral-700:active,
-.theme-light .dark\:active\:bg-neutral-800:active { background-color: var(--color-neutral-100); }
-.theme-light .dark\:bg-amber-950,
-.theme-light .dark\:bg-amber-500\/15,
-.theme-light .dark\:bg-amber-400\/25 { background-color: var(--color-amber-100); }
-.theme-light .dark\:bg-emerald-950 { background-color: var(--color-emerald-100); }
-.theme-light .dark\:bg-emerald-500 { background-color: var(--color-emerald-500); }
-/* 文字：深色端亮字 → 浅色端深字（配对同一套语义） */
-.theme-light .dark\:text-neutral-100,
-.theme-light .dark\:text-neutral-200 { color: var(--color-neutral-900); }
-.theme-light .dark\:text-neutral-300,
-.theme-light .dark\:text-neutral-400 { color: var(--color-neutral-500); }
-.theme-light .dark\:text-neutral-600 { color: var(--color-neutral-400); }
-.theme-light .dark\:text-amber-200,
-.theme-light .dark\:text-amber-300,
-.theme-light .dark\:text-amber-400 { color: var(--color-amber-700); }
-.theme-light .dark\:text-emerald-200,
-.theme-light .dark\:text-emerald-300,
-.theme-light .dark\:text-emerald-400 { color: var(--color-emerald-700); }
-.theme-light .dark\:text-blue-400 { color: var(--color-blue-600); }
-.theme-light .dark\:text-red-400 { color: var(--color-red-600); }
-
-/* 边框 / 分隔线：深色端暗线 → 浅色端亮线 */
-.theme-light .dark\:border-neutral-600,
-.theme-light .dark\:border-neutral-700,
-.theme-light .dark\:border-neutral-800 { border-color: var(--color-neutral-200); }
-.theme-light .dark\:border-amber-900 { border-color: var(--color-amber-200); }
-.theme-light .dark\:border-emerald-900 { border-color: var(--color-emerald-200); }
-.theme-light .dark\:border-red-800,
-.theme-light .dark\:border-red-900 { border-color: var(--color-red-200); }
-.theme-light .dark\:divide-neutral-800 > :not(:last-child) { border-color: var(--color-neutral-100); }
-
-/* 占位符 */
-.theme-light .dark\:placeholder\:text-neutral-400::placeholder { color: var(--color-neutral-500); }
