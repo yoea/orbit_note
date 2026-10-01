@@ -1,16 +1,32 @@
 #!/bin/bash
 # Quiet Orbit 一键部署（本地执行）
-# 流程：schema 检查 → 同步代码（复用依赖缓存）→ 构建 → 打包（不含 node_modules）→ 上传 → 远程更新 → 验证
+# 流程：schema 检查 → 同步代码（复用依赖缓存）→ 构建 → 打包 standalone 产物 → 上传 → 远程解包 + 重启 → 验证
 # 用法：bash scripts/deploy.sh
 #
-# 性能设计（2026-09-28 大改，部署从 ~2m48s 降到 ~30s）：
+# ★ 本脚本**不依赖任何 agent / IDE 环境**，可直接在终端跑（Windows 用 Git Bash；Linux / macOS 同理）。
+#   全链路唯一与 WorkBuddy 沾边的是 [2/8] 与 [4/8] 内联的 `CODEBUDDY_SAFE_DELETE_ENABLED=0`：
+#   它是「在 WorkBuddy 里关掉 safe-delete shim」的**可选开关**，普通终端只是一个没人读的环境变量。
+#   终端运行前的三个前置（缺一个都会失败，且报错位置都已尽量写明）：
+#     ① `.env.local` 存在且含 `REMOTE_HOST`（~/.ssh/config 里的别名）+ `REMOTE_UPDATE`（服务器端脚本绝对路径）
+#        —— 它同时被 [4/8] `cp` 成 `.env` 供构建期读取 NEXT_PUBLIC_* 等；**该文件含真实密钥，绝不入库**。
+#     ② `~/.ssh/config` 里该别名可用、且 IdentityFile 私钥**确实可读**（本项目私钥在 OneDrive 目录下，
+#        若被“仅在线”占位而没落地，ssh 会失败且不会告诉你原因）。
+#     ③ PATH 上有 node / npm / ssh / scp / curl / tar / sha256sum（版本号还依赖 git + tag）。
+#   非 MSYS 环境（无 cygpath/cmd）同样可跑：rm_tree() 会自动退化为 `rm -rf`，只是 Windows 上慢几秒。
+#
+# 性能设计（2026-09-28 大改，把「无缓存全量重来」的 ~2m48s 压掉）：
+#   ⚠️ 实测口径（2026-10-01 复核）：**全程约 85~100s**，其中本地半程（build + 打包 + 冒烟）仅 ~16s，
+#   其余是 scp 上传与远程步骤。2026-09-28 记录过的「~30s」是当时更小的产物 + 更快的网络下的值，
+#   别拿它当基线判故障。判断卡在哪一步只看脚本逐步打印的耗时。
 #   1) BUILD_DIR（/tmp/qo-prod）常驻：node_modules 与 .next/cache 跨部署保留。
 #      package-lock.json 未变化时跳过 npm ci（省 ~30s）；Turbopack 增量构建（省冷编译）。
-#   2) 上传包只含 .next/public/package.json 等运行时文件，**不含 node_modules**
-#      （原 95M/解压 771M → 现 ~6M）。依赖变化时由服务器端 update.sh 执行
-#      npm ci --omit=dev（服务器已验证可直连 registry.npmjs.org）。
-#   3) 服务器解压前 rm -rf .next —— 既消除孤儿 chunk 累积（曾累积 526 个文件/74M，
-#      污染一切 grep 核验），也让 .next 体积恒定。
+#   2) 上传包是 **Next standalone 产物**（server.js + start.sh + 追踪出的最小 node_modules
+#      + .next + public），约 8MB。**服务器不装依赖、不构建、也不需要访问 npm registry**——
+#      这是 2026-09-29 事故（服务器跑 npm ci --omit=dev 把 IO 打满、站点与 SSH 全部不可达、
+#      node_modules 被拦腰截断 ⇒ pm2 崩溃循环）之后的硬约束。**别再退回「服务器装依赖」。**
+#   3) 服务器解压前 rm -rf .next node_modules public（三者都必须整体替换）——既消除孤儿
+#      chunk 累积（曾累积 526 个文件/74M，污染一切 grep 核验），也避免 node_modules 被
+#      「覆盖式解包」留下残缺（事故现场就是它只剩 110 个包、`next: not found` 崩溃循环）。
 #   4) 清 .next 用 cmd 的原生 rmdir（见 rm_tree）：Windows 上 MSYS rm -rf 要 7.2s
 #      （约 15ms/文件 × 600+ 文件），原生只要 1.6s。.next/cache 先移出再放回。
 #   5) 线上 BUILD_ID 由 update.sh 回读打印，deploy.sh 捕获其输出即可终验，
@@ -152,7 +168,15 @@ mark "同步源码"
 echo "代码已同步"
 
 echo "=== [3/8] 版本号（git describe → 最近 tag） ==="
-VERSION="$(git -C "$PROJECT_DIR" describe --tags --abbrev=0 --always)"
+# `--always` 兜底：无 tag 时退化为短 hash。但「不是 git 仓库 / 机器上没有 git」时 describe 返回非零，
+# 而 `VAR="$(...)"` 在 set -e 下会**静默中止整个脚本、不打印任何报错**（RUNBOOK 里那类「静默杀手」）。
+# 因此显式兜住，换成一条看得懂的失败原因。
+VERSION="$(git -C "$PROJECT_DIR" describe --tags --abbrev=0 --always 2>/dev/null || true)"
+if [ -z "$VERSION" ]; then
+  echo "❌ 无法确定版本号：$PROJECT_DIR 不是 git 仓库，或机器上没有 git。" >&2
+  echo "   版本号来自 git describe，会写进产物 .version 并显示在页面页脚。" >&2
+  exit 1
+fi
 echo "$VERSION" > "$BUILD_DIR/.version"
 echo "版本：$VERSION"
 
@@ -171,7 +195,11 @@ else
   echo "依赖未变化，跳过 npm ci（复用 $BUILD_DIR/node_modules）"
 fi
 cp "$PROJECT_DIR/.env.local" .env
-npm run build 2>&1 | tail -3
+# CODEBUDDY_SAFE_DELETE_ENABLED=0：在 WorkBuddy 里跑时关掉 safe-delete shim。构建期要批量删
+# `.next/cache`（该目录是**跨部署保留**的，大改路由后 Turbopack 会在里面批量清），被 shim 拦下的
+# 表现形式是「构建拖到 3 分 20 秒、且最终不产出 BUILD_ID」。普通终端里这个变量无人读取，设了无副作用
+# ⇒ 一律内联设置，让两种环境行为一致（此前只在 [2/8] 的 find 上用了内联形式，构建这步漏了）。
+CODEBUDDY_SAFE_DELETE_ENABLED=0 npm run build 2>&1 | tail -3
 mark "next build"
 # 构建产物硬校验：缺 BUILD_ID 说明 build 实际失败，立即中止，不要上传半成品
 if [ ! -f .next/BUILD_ID ]; then

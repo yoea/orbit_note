@@ -149,44 +149,58 @@ npm run dev
 
 ## 部署（生产）
 
-### 方式一：本地构建产物部署（推荐，本项目使用）
+### 本地构建产物部署（本项目使用）
 
-服务器无需安装构建工具链，避免构建时磁盘/内存打满。
+**不依赖任何 agent / IDE**——`scripts/deploy.sh` 就是一个普通 bash 脚本，直接在终端跑。
 
 ```bash
-# 本地执行（服务器信息通过环境变量提供，不硬编码在脚本中）
-export REMOTE_HOST=myserver            # ~/.ssh/config 中的主机别名
-export REMOTE_UPDATE=/path/to/update.sh # 服务器端 update.sh 绝对路径
 bash scripts/deploy.sh
 ```
 
-流程：**生产库 schema 前置检查** → 同步代码（构建目录常驻，复用 node_modules 与构建缓存）→ 注入版本号（git describe + 构建时间戳）→ 本地构建（lockfile 未变时跳过 `npm ci`）→ 打包（**只含 `.next`/`public`/配置文件，不含 node_modules**）→ scp 上传（约 6MB）→ 服务器清 `.next` + 解压 + 依赖检查（lockfile 变化才 `npm ci --omit=dev`）+ `pm2 restart` → HTTP 轮询验证。
-稳态全程约 45 秒（原来约 2 分 48 秒）；脚本每步都会打印耗时，瓶颈可直接从输出定位。
+**前置条件（缺一个都会失败）**
+
+1. **配置 `.env.local`**（项目根，已在 `.gitignore` 内）：
+   - `REMOTE_HOST` = `~/.ssh/config` 里的主机别名
+   - `REMOTE_UPDATE` = 服务器端 `update.sh` 的绝对路径
+   - 它同时被 `cp` 成构建期的 `.env`，所以还要含 `DATABASE_URL`、`NEXT_PUBLIC_*` 等（见 `.env.example`）。
+   - ⚠️ 该文件含真实密钥，**绝不入库**。
+2. **SSH 可用**：`~/.ssh/config` 里该别名指向正确，且 `IdentityFile` 私钥**确实可读**（若私钥放在 OneDrive 等同步目录里且只是「仅在线」占位，ssh 会失败且不会告诉你原因）。
+3. **PATH 上有** `node` / `npm` / `ssh` / `scp` / `curl` / `tar` / `sha256sum`，以及 `git`（版本号取自 `git describe`，仓库需带 tag）。
+4. **运行环境**：Windows 用 **Git Bash**（MSYS）；Linux / macOS 用任意 bash 均可。非 MSYS 环境下脚本会自动退化为普通 `rm -rf`，只是 Windows 上慢几秒。
+
+**流程**：生产库 schema 前置检查 → 同步代码到常驻构建目录（复用 `node_modules` 与构建缓存）→ 注入版本号 → 本地构建 → 组装 **Next.js standalone** 产物（`server.js` + `start.sh` + 追踪出的最小 `node_modules` + `.next` + `public`）并**在项目外的隔离目录启动冒烟** → scp 上传（约 8MB）→ 服务器 `rm -rf .next node_modules public` + 解压 + `pm2 restart` → HTTP 轮询验证 → BUILD_ID 终验。
+本项目实测约 **85–100 秒**（脚本逐步打印耗时，上传带宽是主要变量）。
+
+> **服务器只做「解包 + 重启」——不装依赖、不构建、不需要访问 npm registry。** 这是 2026-09-29 事故后的硬约束：旧流程会在 lockfile 变化时于服务器跑 `npm ci --omit=dev`，而这台机器 CPU/磁盘很弱且带宽受限，实测把线上 IO 打满、站点与 SSH 全部不可达。**不要改回去。**
+
+**只跑本地半程**（改过打包/构建逻辑后先验证产物能起来，不碰服务器）：
+
+```bash
+DRY_RUN=1 bash scripts/deploy.sh
+```
 
 > ⚠️ **迁移必须先在服务器执行**。`deploy.sh` / `update.sh` 都不跑迁移，所以 deploy 的第 1 步会对照 `drizzle/*.sql` 检查生产库 schema（表与列），**发现落后即中止**，不会白跑一次构建。
 > 紧急情况下可用 `SKIP_SCHEMA_CHECK=1 bash scripts/deploy.sh` 跳过——但只在明确知道为什么要跳过时用。
 
-**服务器端只需**：Node.js 20+、PM2、PostgreSQL、解压工具、可访问 npm registry（仅在依赖变化时安装生产依赖）。
+**服务器端只需**：Node.js 20+、PM2、PostgreSQL、解压工具。
 
-### 方式二：服务器直接构建
+### ~~服务器直接构建~~（已废弃，勿用）
 
-```bash
-# 服务器
-npm ci
-cp .env.local .env   # 生产环境变量
-npm run build
-npm prune --omit=dev
-pm2 start npm --name orbit -- start
-pm2 save && pm2 startup   # 开机自启
-```
+> 早期文档写过的 `npm ci && npm run build && pm2 start npm -- start` 流程**已彻底废弃**——它在服务器上装依赖并构建，正是上面那起「IO 打满、SSH 不可达、pm2 崩溃循环」事故的直接成因。生产配置改走**本地构建 → 上传 standalone 产物**。
 
 ### 数据库迁移
 
-应用全部迁移文件（按序号）后，新版本只需执行新增的 `drizzle/000X_*.sql`：
+迁移**不随部署自动执行**——必须先在服务器上按序手工执行新增的 `drizzle/000X_*.sql`（`deploy.sh` 第 1 步会对照 `drizzle/*.sql` 校验生产库 schema 是否跟上，落后即中止）。
+
+本项目生产库跑在 **Docker 容器 `postgre-db`** 里、**宿主机没有 `psql`**，所以要在服务器上用容器内的客户端执行：
 
 ```bash
-psql "$DATABASE_URL" -f drizzle/0007_flippant_beast.sql
+# 在服务器上执行（<pw> = 容器 POSTGRES_PASSWORD）
+docker exec -i -e PGPASSWORD=<pw> postgre-db \
+  psql -U quiet_orbit -d quiet_orbit -f - < drizzle/0007_flippant_beast.sql
 ```
+
+迁移前先备份（`docker exec -e PGPASSWORD=<pw> postgre-db pg_dump -U quiet_orbit quiet_orbit > backup.sql`），改完**直接查库核对**（`information_schema.columns`）。
 
 > ⚠️ **HTTPS 提醒**：生产环境 WebAuthn（通行密钥）要求 HTTPS（localhost 除外）。证书申请、反向代理等属于运维范畴，请自行配置（如 Caddy / Nginx / 云厂商 LB）。
 
