@@ -120,7 +120,7 @@ describe('S · 收藏（星标）', () => {
     // 位置：必须在分割线（「编辑于」行与操作栏的分界）**下方**，且在左组里、排在打开次数之后
     const divider = indexOrFail(view, 'border-t', VIEW_FILE)
     const star = indexOrFail(view, '() => void toggleStar()', VIEW_FILE)
-    const eye = indexOrFail(view, 'viewCount > 0', VIEW_FILE)
+    const eye = indexOrFail(view, 'showViews && (', VIEW_FILE)
     expect(star, '收藏按钮跑到「编辑于」那一行里去了（用户要求在最底部）').toBeGreaterThan(divider)
     expect(eye, '打开次数没有排在收藏前面（用户要求「排在最前」）').toBeLessThan(star)
   })

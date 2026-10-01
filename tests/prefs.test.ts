@@ -126,9 +126,11 @@ describe('A1 保存音效开关', () => {
 })
 
 describe('B1 打开次数显示开关', () => {
-  it('B1-1 详情页眼睛的渲染条件包含偏好判断', () => {
+  it('B1-1 眼睛恒渲染（含 0 次），只由偏好做条件——修「0→1 闪现」', () => {
     const src = code('components/EntryView.tsx')
-    expect(src).toContain('showViews && viewCount > 0')
+    expect(src, '渲染条件应只剩偏好开关').toContain('showViews && (')
+    // `viewCount > 0 &&` 是布局闪现的根源：图标在计数返回后凭空插入 DOM（2026-10-01 修）
+    expect(src, '不得回到「次数 > 0 才显示」').not.toContain('viewCount > 0 &&')
   })
 
   it('B1-2 关掉显示不等于停止计数：上报逻辑与偏好解耦', () => {

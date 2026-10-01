@@ -110,3 +110,39 @@ describe('V-endpoint · 打开次数端点', () => {
     expect(ROUTE, 'set 里出现了 updatedAt —— 回看会把自己标成「已编辑」').not.toContain('updatedAt')
   })
 })
+
+// ── EntryView 的计数时机（2026-10-01 定）：停留满 1 秒才算「打开过」──
+// 语义变更：此前 entry 一就位就立刻 POST；现在延迟 1 秒——误触 / 秒退不计数、不发请求。
+// 界面先按 entry.viewCount 原样显示（0 就显示 0），到点后数字才原地跳到 +1。
+const VIEW = stripComments(
+  readFileSync(join(projectRoot, 'components/EntryView.tsx'), 'utf8'),
+)
+
+describe('V-timing · 计数延迟 1 秒（不满 1 秒的打开不算）', () => {
+  it('V8 计数请求包在 setTimeout 里，时长是具名常量 1 秒', () => {
+    expect(VIEW, '延迟时长应收敛为具名常量（魔法数字会被随手改掉）').toContain('VIEW_COUNT_DELAY_MS = 1_000')
+    const call = VIEW.indexOf('bumpEntryViewCount(entry.id)')
+    const timer = VIEW.indexOf('setTimeout(')
+    expect(call, 'EntryView 里找不到计数调用').toBeGreaterThanOrEqual(0)
+    expect(timer, '计数调用不在 setTimeout 里——「停留满 1 秒才计」被改没了').toBeGreaterThanOrEqual(0)
+    expect(timer, 'setTimeout 必须出现在计数调用之前').toBeLessThan(call)
+    // setTimeout 的收尾就是延迟常量（`}, VIEW_COUNT_DELAY_MS)`），比截窗口更稳
+    expect(VIEW, '延迟时长不是 VIEW_COUNT_DELAY_MS').toContain('}, VIEW_COUNT_DELAY_MS)')
+  })
+
+  it('V9 1 秒内离开不计数：回调先查 aliveRef，离开后连请求都不发', () => {
+    const call = VIEW.indexOf('bumpEntryViewCount(entry.id)')
+    // 从 setTimeout 到计数调用之间必须存在 aliveRef 守卫
+    const timer = VIEW.indexOf('setTimeout(')
+    const between = VIEW.slice(timer, call)
+    expect(between, '回调里没有 aliveRef 守卫——用户秒退后请求照样发出，1 秒语义名存实亡')
+      .toContain('if (!aliveRef.current) return')
+  })
+
+  it('V10 去重：viewCountedRef 先挡后置位（StrictMode 双挂载 / setEntry 重跑不得重复计数）', () => {
+    // 没有置位的话：开发模式双挂载 +2；同一篇上改定位 / 收藏 / 保存触发的 setEntry
+    // 会让本 effect 重跑、再武装一个定时器 ⇒ 多次 +1。
+    expect(VIEW, '缺了去重的「挡」——重跑会重复计数').toContain('if (!entry || viewCountedRef.current) return')
+    expect(VIEW, '缺了去重的「置位」——挡永远不生效，每次重跑都重新武装定时器').toContain('viewCountedRef.current = true')
+  })
+})

@@ -50,7 +50,7 @@ function windowFrom(hay: string, needle: string, len: number): string {
 describe('F · 查看页底部（编辑于行 + 4 图标操作栏）', () => {
   it('F0 解析自检：锚点齐全（防断言空转）', () => {
     expect(src.length).toBeGreaterThan(2000)
-    for (const needle of ['MarkdownBoundary', '编辑于', '打开过', DATE_ROW, BAR, '-mr-2', 'fmtDate', 'viewCount > 0']) {
+    for (const needle of ['MarkdownBoundary', '编辑于', '打开过', DATE_ROW, BAR, '-mr-2', 'fmtDate', 'showViews && (']) {
       expect(src, `找不到锚点「${needle}」`).toContain(needle)
     }
     expect(attrs.length, '没能解析出任何 class 属性').toBeGreaterThan(10)
@@ -92,7 +92,7 @@ describe('F · 查看页底部（编辑于行 + 4 图标操作栏）', () => {
     expect(tokens, 'mt-auto 归「编辑于」行所有，操作栏不该再写').not.toContain('mt-auto')
 
     const divider = indexOrFail(BAR)
-    const eye = indexOrFail('viewCount > 0')
+    const eye = indexOrFail('showViews && (')
     const star = indexOrFail('() => void toggleStar()')
     const iconGroup = indexOrFail('-mr-2')
     expect(eye, '打开次数还在分割线上方（那是「编辑于」那一行的地盘）').toBeGreaterThan(divider)
@@ -105,8 +105,11 @@ describe('F · 查看页底部（编辑于行 + 4 图标操作栏）', () => {
     expect(bar, '操作栏里找不到打开次数').toContain('打开过')
     expect(bar, '打开次数没有可访问标签（图标 + 裸数字对屏幕阅读器等于噪声）').toContain('role="img"')
     // 眼睛图标与星/编辑/删除同尺寸（原先它是 h-3.5 w-3.5，视觉上属于另一档）
-    const eyeLine = windowFrom(bar, 'viewCount > 0', 900)
+    const eyeLine = windowFrom(bar, 'showViews && (', 900)
     expect(eyeLine, '眼睛图标不是 18px，与其它三个图标不统一').toContain('h-[18px] w-[18px]')
+    // 恒渲染（2026-10-01 定）：`viewCount > 0` 条件渲染会让 0 次文章首次打开时
+    // 图标在计数返回后凭空插入 DOM = 布局闪现。现在只允许偏好开关做条件。
+    expect(eyeLine, '眼睛又变回「次数 > 0 才渲染」——0→1 会布局闪现').not.toContain('viewCount > 0')
   })
 
   it('F5 收藏只剩图标两态 —— 不得再出现收藏的文字标签', () => {

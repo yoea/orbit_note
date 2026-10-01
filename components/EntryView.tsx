@@ -46,6 +46,10 @@ interface Entry {
   viewCount: number
 }
 
+// 打开详情页后停留多久才算一次「打开」：不满这个时长（误触 / 秒退）不计数、不发请求。
+// 界面先按 entry.viewCount 原样显示（0 就显示 0），到点后数字才原地跳到 +1。
+const VIEW_COUNT_DELAY_MS = 1_000
+
 // 日记详情视图（原生路由页 /entry/[id] 渲染；DEK 会话级持久化，导航/重载自动恢复）
 export default function EntryView({ id }: { id: string }) {
   const router = useRouter()
@@ -67,10 +71,18 @@ export default function EntryView({ id }: { id: string }) {
   // 网络不可达、数据来自本地（缓存或队列）：此时云端条目不可改（PATCH/DELETE 发不出去）
   const [localReadonly, setLocalReadonly] = useState(false)
   const [coordsCopied, setCoordsCopied] = useState(false)
-  // 「打开次数」：**数据库列**（见 lib/client/views.ts）。0 = 还没数到（或数不成），
-  // 此时底部不渲染那只眼睛——「0 次」和「没数到」对用户是同一件事，不必显示成「0」。
-  const [viewCount, setViewCount] = useState(0)
+  // 「打开次数」：**数据库列**（见 lib/client/views.ts）。不再另设 state——直接渲染
+  // entry.viewCount（bump 响应会整行合并进 entry），消除「初始 0 → 突然跳到 N」的中间帧。
   const viewCountedRef = useRef(false)
+  // 组件是否仍挂载：延迟计数在 1 秒后才触发，期间用户可能已离开本页。
+  // ★ 不用「effect cleanup + clearTimeout」实现「离开就不计」——StrictMode（仅开发模式）
+  //   会假卸载一次，而 viewCountedRef 又挡住重挂载后的重新武装，那样开发模式会永远数不上；
+  //   aliveRef 双挂载后仍为 true（setup 会再跑一次），只有**真离开**才变 false。
+  const aliveRef = useRef(true)
+  useEffect(() => {
+    aliveRef.current = true
+    return () => { aliveRef.current = false }
+  }, [])
   // 打开次数是否显示（偏好 qo-show-views，默认开）。用惰性初值同步读取：
   // 本组件是客户端组件、偏好读取无异步时序，首帧即为真值（与 isAutoPlaceNameEnabled
   // 在 effect 里读不同——那是「用的时候才读」，这里是渲染条件，必须首帧正确）。
@@ -278,8 +290,8 @@ export default function EntryView({ id }: { id: string }) {
   // 「打开次数」+1：服务器**原子自增**（POST /api/diary/[id]/view），见 lib/client/views.ts。
   // ★ 四条约束：
   //   1) 只在**正文真正就位**后计（entry 有值）——「打不开」的说明页不算看过；
-  //   2) 先把 entry.viewCount 落到界面：离线 / 限流时数不成，显示的就是**上次同步到的值**，
-  //      而不是凭空跳到 0；
+  //   2) **停留满 1 秒才计**（2026-10-01 定）：误触 / 秒退不算「打开过」，也省一次写请求。
+  //      数字先以 entry.viewCount 原样显示（0 就显示 0），1 秒后响应回来才原地跳到 +1；
   //   3) viewCountedRef 去重：React 开发模式（StrictMode）会双挂载 effect，
   //      不去重的话每打开一次会 +2；同一篇上的后续 setEntry（改定位 / 收藏 / 编辑保存）
   //      也会让本 effect 重跑，同样靠它挡住；
@@ -287,17 +299,20 @@ export default function EntryView({ id }: { id: string }) {
   useEffect(() => {
     if (!entry || viewCountedRef.current) return
     viewCountedRef.current = true
-    setViewCount(entry.viewCount)
     // 队列里的条目（离线新增、尚未上传）服务器上还不存在 ⇒ 自增必然 404，直接跳过。
     // 离线打开任何一篇都不计数（见 views.ts 的取舍说明），不是这里漏了。
     if (pendingSync) return
-    void bumpEntryViewCount(entry.id).then((updated) => {
-      if (!updated) return // 离线 / 限流 / 已删除：静默，保持上面那个值
-      setViewCount(updated.viewCount)
-      setEntry((prev) => (prev ? { ...prev, ...updated } : prev))
-      // 本地密文缓存同步更新：否则下次离线打开这一篇会读到 +1 之前的旧值
-      void cacheEntriesPage([updated])
-    })
+    // 1 秒内离开（返回 / 误触）：回调里查 aliveRef，请求都不发。
+    // ⚠️ 刻意不在本 effect 的 cleanup 里 clearTimeout——见 aliveRef 声明处的说明。
+    setTimeout(() => {
+      if (!aliveRef.current) return
+      void bumpEntryViewCount(entry.id).then((updated) => {
+        if (!updated) return // 离线 / 限流 / 已删除：静默，保持当前显示
+        setEntry((prev) => (prev ? { ...prev, ...updated } : prev))
+        // 本地密文缓存同步更新：否则下次离线打开这一篇会读到 +1 之前的旧值
+        void cacheEntriesPage([updated])
+      })
+    }, VIEW_COUNT_DELAY_MS)
   }, [entry, pendingSync])
 
   // 打开详情页自动补地名：有坐标但**没有结构化地名** → 反查 → PATCH 存库 + 更新界面。
@@ -795,13 +810,16 @@ export default function EntryView({ id }: { id: string }) {
           <div className="flex items-center justify-between border-t border-neutral-100 py-4 dark:border-neutral-800">
             <div className="-ml-2 flex items-center gap-1">
               {/* 打开次数：受偏好 qo-show-views 控制（默认开）。
-                  ★ 只隐藏「显示」，计数本身照常——bumpEntryViewCount 在挂载时
-                  已无条件上报，与本行渲染无关（关掉显示不等于停止统计）。 */}
-              {showViews && viewCount > 0 && (
+                  ★ 只隐藏「显示」，计数本身照常——bumpEntryViewCount 照常上报，
+                  与本行渲染无关（关掉显示不等于停止统计）。
+                  ★ 恒渲染（含 0 次，2026-10-01 定）：此前 `viewCount > 0` 的条件渲染让
+                  「0 次的文章首次打开」在计数返回后图标才凭空插入 DOM = 布局闪现；
+                  现在图标恒在，数字只是原地跳变（0 → 1）。 */}
+              {showViews && (
                 <span
                   role="img"
-                  aria-label={`打开过 ${viewCount} 次`}
-                  title={`打开过 ${viewCount} 次`}
+                  aria-label={`打开过 ${entry.viewCount} 次`}
+                  title={`打开过 ${entry.viewCount} 次`}
                   className="flex items-center gap-1.5 p-2 text-sm tabular-nums text-neutral-500 dark:text-neutral-400"
                 >
                   {/* 眼睛图标：18px + strokeWidth 2，与星、编辑、删除统一 */}
@@ -809,7 +827,7 @@ export default function EntryView({ id }: { id: string }) {
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                     <circle cx="12" cy="12" r="3" />
                   </svg>
-                  <span aria-hidden="true">{viewCount}</span>
+                  <span aria-hidden="true">{entry.viewCount}</span>
                 </span>
               )}
               <button
