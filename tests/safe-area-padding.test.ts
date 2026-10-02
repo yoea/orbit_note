@@ -178,25 +178,21 @@ describe('顶部安全区（不滚动）', () => {
     expect(css, 'body 未禁止 overscroll').toMatch(/body\s*\{[^}]*overscroll-behavior:\s*none/)
   })
 
-  it('G11 ★ .safe-pt 在触屏上有下限，但**不得**按「浏览器顶部有地址栏」加留白', () => {
-    // 根因：`env(safe-area-inset-top)` 在某些环境下算成 0，留白为 0 ⇒ 内容直接落在玻璃顶栏底下。
-    // 而顶栏在「文档滚动过」之后会合成那一层的真实像素 ⇒ 用户看到的「滑动后虚化重现」。
-    // ★ 必须剥注释再断言：globals.css 里那段「反面教训」注释本身就写着 `display-mode: browser`，
-    //   不剥会让下面那条反向断言自己把自己判红。
+  it('G11 ★ .safe-pt 只写 env() 原值，不得"替系统/浏览器预留"留白', () => {
+    // 两轮试错的沉淀：留白高度 = 系统顶栏的真实高度 = `env(safe-area-inset-top)`，由系统报，不由我们猜。
+    //   · `@media (display-mode: browser) → max(env, 6rem)`：假定 Safari 地址栏在顶部，
+    //     但 iOS 26 默认 Compact、地址栏在底部 ⇒ 白吃 40 多 px 空白（v1.27.1 撤回）。
+    //   · `@media (pointer: coarse) → max(env, 2.75rem)`：假定 env 可能算成 0；
+    //     但 env 为 0 恰说明系统没东西压在内容上 ⇒ 垫一块就是纯空白（v1.27.2 撤回）。
+    // ★ 必须剥注释再断言：globals.css 里那段「两次加保险都加错了」的注释本身就写着这些关键字，
+    //   不剥会让下面两条反向断言自己把自己判红。
     const css = stripComments(readFileSync(join(projectRoot, 'app/globals.css'), 'utf8'))
-    expect(css, '缺少触屏下限：env 为 0 时状态栏那一条没有任何东西盖住').toMatch(
-      /@media \(pointer: coarse\)\s*\{\s*\.safe-pt\s*\{\s*padding-top:\s*max\(env\(safe-area-inset-top\),\s*2\.75rem\)/,
-    )
-    // 基础规则必须保留 env() 原值：桌面端不加任何留白
-    expect(css, '基础 .safe-pt 必须保留 env() 原值（桌面端不加留白）').toMatch(
-      /\.safe-pt\s*\{\s*padding-top:\s*env\(safe-area-inset-top\);?\s*\}/,
-    )
-    // ★ 反向钉死（2026-10-02 当天加过又撤回）：按 display-mode: browser 加 `max(env, 6rem)`，
-    //   理由是「Safari 顶栏压在状态栏下面那一条上」。但 iOS 26 Safari 默认是 Compact 布局
-    //   （地址栏在**底部**），顶部只有状态栏 ⇒ 用户直接看到顶部一大块空白。
-    //   地址栏位置是用户设置项，CSS 无从得知，所以这种「替浏览器预留」的写法不许再出现。
-    expect(css, '不得按浏览器顶栏高度预留留白（地址栏默认在底部，会留出一大块空白）').not.toMatch(
-      /display-mode:\s*browser/,
-    )
+
+    const defs = [...css.matchAll(/\.safe-pt\s*\{[^}]*\}/g)].map((m) => m[0])
+    expect(defs.length, '`.safe-pt` 只应有一条定义（多一条就是在凭空加留白）').toBe(1)
+    expect(defs[0], '`.safe-pt` 必须就是 env() 原值').toMatch(/padding-top:\s*env\(safe-area-inset-top\)\s*;/)
+
+    expect(css, '不得再按 pointer 加下限（会凭空垫出一块空白）').not.toMatch(/pointer:\s*coarse/)
+    expect(css, '不得再按 display-mode 预留浏览器 chrome').not.toMatch(/display-mode/)
   })
 })

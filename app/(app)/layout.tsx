@@ -60,9 +60,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             **合成它下面那层的真实像素**；而 sticky 元素本身带背景，恰好会被系统顶栏当作
             采样/合成对象，把它卷进这条链路。固定/粘性元素在顶边缘**不该自带背景色**
             （Safari 26 的已知行为：顶边缘的 fixed/sticky 元素会被顶栏读取并合成）。
-          · 本轮：占位块回到**普通流内块 + 实色底**，把「盖住顶栏」这件事交给
-            `.safe-pt` 的高度（触屏有下限、浏览器模式再多让一条 Safari 顶栏）。
-            实色底仍然是必须的：那一层必须是一整块纯色，玻璃合成它才不会显形。 */}
+          · 本轮：占位块回到**普通流内块 + 实色底**，高度**就是 `.safe-pt` 的 `env()` 原值**——
+            不再"替系统/浏览器预留"（那两次尝试都凭空垫出了一块空白，已在 globals.css 记明）。
+            实色底是必须的：那一层必须是一整块纯色，系统顶栏无论怎么合成它都不会显形。 */}
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 bg-white safe-pt dark:bg-neutral-950" aria-hidden />
         {/* 页面淡入**只挂在这里**，不要挂到各页面自己的根节点上（2026-09-30 修复）。
