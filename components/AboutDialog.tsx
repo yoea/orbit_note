@@ -15,8 +15,9 @@ import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
 //   弹窗只有三层（遮罩 → 卡片 → 内容/底栏），卡片本身只有 384px 宽，再套圆角灰卡只会更碎。
 // - **文案一律单行**：关于页是「一眼扫过」的位置，不是说明书。亮点写结果、不写原理。
 // - **高度预算**：滚动区 `max-h-[70dvh]`（与 PasskeysDialog / RecoveryRegenerateDialog 同）。
-//   内容总高约 563px ⇒ 在 390×844 上留有余量、在 375×667 上才需要滚动。各段间距（pt-5 / pb-4 /
-//   py-2.5）就是照这个预算定的：**加一行内容前先算总高**，否则常见机型会凭空多出一条滚动条。
+//   2026-10-02 做了一轮「更紧凑」（用户要求）：Hero 里的版本胶囊取消（版本移到页脚同一行）、
+//   各段间距各收 4~8px、第三方说明精简成一句 —— 内容总高从约 563px 降到约 470px，
+//   375×667 这类小屏也基本不用滚动。**加一行内容前先算总高**，否则常见机型会凭空多出滚动条。
 // - 底栏沿用 DIALOG_FOOTER_BUTTON_CLASS（自带 w-full）——块级卡片里漏了它，按钮会缩成
 //   两个字宽贴在左边（rc6 真实事故，见 tests/dialog-footer.test.ts）。
 //
@@ -141,25 +142,14 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
         <div className="h-[3px] w-full bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500" />
 
         <div className="thin-scrollbar max-h-[70dvh] overflow-y-auto">
-          {/* Hero：品牌字标 + 一句话定位 + 版本（顺带 GitHub 入口）。
-              上下内边距刻意收得比同族弹窗紧一点：整卡要能在一屏内放完（见文件头「高度预算」）。 */}
-          <div className="px-6 pb-4 pt-5 text-center">
+          {/* Hero：品牌字标 + 一句话定位。上下内边距刻意比其他弹窗紧：整卡要能在一屏内放完
+              （见文件头「高度预算」）。
+              ★ 2026-10-02 起 Hero 里**不再有版本胶囊**——用户要求「版本号移到底部与版权、
+              开源说明同一行」，GitHub 入口随之搬到页脚那一行（少一个胶囊 = 少约 36px 高度，
+              这是本次「更紧凑」里最大的一笔）。 */}
+          <div className="px-6 pb-3 pt-4 text-center">
             <OrbitLogo size="lg" />
-            <p className="mt-1.5 text-sm text-neutral-500 dark:text-neutral-400">端到端加密的私人日记</p>
-            <a
-              href="https://github.com/yoea/orbit_note"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="GitHub 项目地址"
-              className="mt-3.5 inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1 text-[11px] tabular-nums text-neutral-500 active:opacity-60 dark:border-neutral-700 dark:text-neutral-400"
-            >
-              <svg viewBox="0 0 16 16" className="h-3 w-3 shrink-0 fill-current" aria-hidden="true">
-                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
-              </svg>
-              {/* 版本号本身**已带 "v" 前缀**（来自 git tag，如 v1.18.1）——模板里不能再补一个 v，
-                  否则渲染成 "vv1.18.1"（2026-09-30 用户反馈）。 */}
-              <span>{process.env.NEXT_PUBLIC_VERSION ?? 'dev'}</span>
-            </a>
+            <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">端到端加密的私人日记</p>
           </div>
 
           <p className="px-6 pb-1 text-[11px] font-medium text-neutral-500 dark:text-neutral-400">核心优势</p>
@@ -167,7 +157,7 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
               divide 分隔线内缩在 px-6 之内（行自身不加左右 padding），视觉上更收敛。 */}
           <ul className="divide-y divide-neutral-100 px-6 dark:divide-neutral-800">
             {HIGHLIGHTS.map(({ Icon, title, desc }) => (
-              <li key={title} className="flex items-center gap-3 py-2.5">
+              <li key={title} className="flex items-center gap-3 py-2">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 via-rose-400 to-violet-500 text-white">
                   <Icon className="h-[19px] w-[19px]" />
                 </span>
@@ -179,9 +169,9 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
             ))}
           </ul>
 
-          <p className="px-6 pb-2 pt-4 text-[11px] font-medium text-neutral-500 dark:text-neutral-400">更多特色</p>
+          <p className="px-6 pb-1.5 pt-3 text-[11px] font-medium text-neutral-500 dark:text-neutral-400">更多特色</p>
           {/* 两列网格：图标与文字同色（继承 li 的 currentColor），比逐个上色更干净。 */}
-          <ul className="grid grid-cols-2 gap-x-3 gap-y-2.5 px-6">
+          <ul className="grid grid-cols-2 gap-x-3 gap-y-2 px-6">
             {MORE.map(({ Icon, label }) => (
               <li key={label} className="flex items-center gap-2 text-neutral-600 dark:text-neutral-300">
                 <Icon className="h-4 w-4 shrink-0" />
@@ -190,16 +180,33 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
             ))}
           </ul>
 
-          {/* 页脚：数据流向透明 + 版权。
-              版权行从原全局页脚搬来：页脚已由底部 TabBar 取代，版权声明不能随之丢失。
-              颜色沿用 AA 配对——neutral-300/600 那一对是**反向**的（浅色底用浅灰 ≈1.5:1），
-              10px 小字在手机上等于看不见。 */}
-          <div className="mt-5 border-t border-neutral-100 px-6 pb-4 pt-3.5 dark:border-neutral-800">
+          {/* 页脚：数据流向透明 + 版本 / 版权 / 开源同一行（2026-10-02 用户要求更紧凑）。
+              · 版本号从 Hero 的胶囊移到这里，GitHub 入口跟着搬过来（作为行首的文本链接）；
+              · 第三方说明精简成一句（原文点名了 BigDataCloud 与和风天气，太长）；
+              · 颜色沿用 AA 配对——neutral-300/600 那一对是**反向**的（浅色底用浅灰 ≈1.5:1），
+                10px 小字在手机上等于看不见。 */}
+          <div className="mt-4 border-t border-neutral-100 px-6 pb-3 pt-3 dark:border-neutral-800">
             <p className="text-[10px] leading-relaxed text-neutral-500 dark:text-neutral-400">
-              地点名与天气分别来自 BigDataCloud 与和风天气，查询时会发送坐标。
+              地名与天气来自第三方服务，查询时会发送坐标。
             </p>
-            <p className="mt-2 text-[10px] text-neutral-500 dark:text-neutral-400">
-              © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'} · MIT 开源
+            <p className="mt-1.5 text-[10px] text-neutral-500 dark:text-neutral-400">
+              <a
+                href="https://github.com/yoea/orbit_note"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="GitHub 项目地址"
+                className="active:opacity-60"
+              >
+                GitHub
+              </a>
+              <span className="mx-1">·</span>
+              {/* 版本号本身**已带 "v" 前缀**（来自 git tag，如 v1.18.1）——模板里不能再补一个 v，
+                  否则渲染成 "vv1.18.1"（2026-09-30 用户反馈）。 */}
+              {process.env.NEXT_PUBLIC_VERSION ?? 'dev'}
+              <span className="mx-1">·</span>
+              © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'}
+              <span className="mx-1">·</span>
+              MIT 开源
             </p>
           </div>
         </div>

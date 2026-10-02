@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { classTokens, projectClassAttrs } from './class-attrs'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { classTokens, projectClassAttrs, projectRoot } from './class-attrs'
 
 // ============================================================================
 // 底部留白 / 安全区守卫
@@ -143,5 +145,34 @@ describe('顶部安全区（不滚动）', () => {
     ]
     const offenders = targets.filter((rel) => tokensOf(rel).includes('safe-pt'))
     expect(offenders, '这些页面由 layout 提供安全区，自己再写一份会叠出双份留白').toEqual([])
+  })
+
+  // ── 2026-10-02 二次修「顶部虚化」：光「不滚动」不够，占位块还必须**实色 + sticky** ──
+  //
+  // iOS 26 / Safari 26 的 Liquid Glass 顶栏是半透明玻璃，会实时合成它下面那层像素；
+  // 底色按「该边缘上 fixed/sticky 元素的 background-color」推导 ⇒ 透明占位块等于没做，
+  // 采样落空后回退到系统默认玻璃，下层内容直接透出来（= 用户看到的虚化）。
+  it('G9 顶部安全区占位块是实色 + sticky（透明块会让玻璃顶栏透出下层内容）', () => {
+    // 注意：同一文件里还有一个 `flex-1 … safe-pt` 的加载态占位 <main>（那不是顶部安全区），
+    // 所以这里按「同时有 shrink-0」把真正的占位块挑出来，否则会断言到错的元素上。
+    const strip = projectClassAttrs()
+      .find((a) => {
+        const t = classTokens(a.text)
+        return a.file === 'app/(app)/layout.tsx' && t.includes('safe-pt') && t.includes('shrink-0')
+      })
+    expect(strip, '找不到顶部安全区占位块（G7 已断言它存在，这里按元素取更精确的断言）').toBeTruthy()
+    const t = classTokens(strip!.text)
+    expect(t, '必须是 sticky：Safari 的顶栏底色只从 fixed/sticky 元素采样').toContain('sticky')
+    expect(t, '必须有实色底（浅色端）').toContain('bg-white')
+    expect(t, '必须有实色底（深色端）').toContain('dark:bg-neutral-950')
+    expect(t, '占位块不能是透明的').not.toContain('bg-transparent')
+  })
+
+  it('G10 globals.css 里 html 显式声明背景色 + 文档层不橡皮筋', () => {
+    const css = readFileSync(join(projectRoot, 'app/globals.css'), 'utf8')
+    // 回退链的最后一环：顶栏找不到可采样元素时会读 html/body 背景，必须也是实色
+    expect(css, 'html 未显式声明背景色').toMatch(/html\s*\{[^}]*background-color:\s*var\(--background\)/)
+    // 文档层橡皮筋会把整页拖出背景带，那条带子正好落在系统栏底下
+    expect(css, 'body 未禁止 overscroll').toMatch(/body\s*\{[^}]*overscroll-behavior:\s*none/)
   })
 })

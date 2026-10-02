@@ -47,14 +47,21 @@ describe('P · TabBar 底部的版本/版权行', () => {
   it('P3 贴安全区留白上沿 ⇒ 留了一点底部边距，又不会压到 home indicator', () => {
     const src = code(TABBAR)
     expect(src, '缺少基于 safe-area-inset-bottom 的定位').toContain('max(env(safe-area-inset-bottom),1rem)')
-    // 扣掉负值里的 4px 就是「留白上沿再下 4px」；不能是 bottom-0（贴屏幕底边）
+    // 扣掉负值里的 8px 就是「留白上沿再下 8px」（2026-10-02 用户反馈「位置偏高」后由 4px 下移）；
+    // 不能是 bottom-0（贴屏幕底边）
+    expect(src, '版本行应再下移 8px').toContain('max(env(safe-area-inset-bottom),1rem)-8px)')
     expect(src).not.toMatch(/className="[^"]*\bbottom-0\b/)
   })
 
-  it('P4 字号比登录页页脚更小，配色仍是 AA 配对（不能再低，见 R1/R2）', () => {
-    const i = code(TABBAR).indexOf('NEXT_PUBLIC_VERSION')
-    const around = code(TABBAR).slice(Math.max(0, i - 600), i + 200)
-    expect(around, '字号应比页脚的 10px 再小一档').toContain('text-[9px]')
+  it('P4 比登录页页脚更小/更淡，配色仍写完整 AA 配对', () => {
+    const src = code(TABBAR)
+    const i = src.indexOf('NEXT_PUBLIC_VERSION')
+    const around = src.slice(Math.max(0, i - 600), i + 200)
+    expect(around, '字号应比页脚的 10px 小两档（2026-10-02 用户要求再小一点）').toContain('text-[8px]')
+    // 透明度走**元素 opacity**，不是 text-neutral-500/60 —— 后者会被 footnote-contrast 的 R3
+    // 判定为「叠加透明度压低有效对比度」。两者视觉相近，但只有元素 opacity 不碰配色 token。
+    expect(around, '缺少降低透明度的写法').toContain('opacity-60')
+    expect(around, '不得改用文字色 alpha（会触发 R3）').not.toMatch(/text-neutral-\d{2,3}\/\d/)
     expect(around, '配色必须沿用 text-neutral-500 dark:text-neutral-400').toContain('text-neutral-500 dark:text-neutral-400')
   })
 })

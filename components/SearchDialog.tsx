@@ -110,10 +110,18 @@ function PanelHint({ error, loaded, empty }: { error: string | null; loaded: boo
   )
 }
 
-// 筛选项面板的容器（限高 + 内部滚动，与设置页弹窗同一套做法）
-function Panel({ children }: { children: React.ReactNode }) {
+// 筛选项面板的容器（与设置页弹窗同一套做法）。
+//
+// scroll=false 用于**内容高度固定**的面板（时间面板）：里面只有一行「全部时间」+ 一张固定
+// 6 行的日历，高度是确定的，再套 max-h/overflow 只会平白多出一条滚动条（用户在键盘弹起
+// ——dvh 变矮——时看到的就是它）。地点面板行数不定，继续走滚动 + 细滚动条。
+function Panel({ children, scroll = true }: { children: React.ReactNode; scroll?: boolean }) {
   return (
-    <div className="mb-3 max-h-[45dvh] overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-800">
+    <div
+      className={`mb-3 rounded-xl border border-neutral-200 dark:border-neutral-800 ${
+        scroll ? 'thin-scrollbar max-h-[45dvh] overflow-y-auto' : ''
+      }`}
+    >
       {children}
     </div>
   )
@@ -126,14 +134,23 @@ function Panel({ children }: { children: React.ReactNode }) {
  *   搜索面板本身已经是全屏浮层，再叠一层会有两层遮罩、返回路径也说不清；
  *   内联进时间面板后，「看 9月2日」与「看 9 月」在同一个面板里并列，语义连续。
  *
- * 只有**有日记的日子**可点（清单来自已解密条目，与月份清单、地点清单同一条约定：
- * 不给「选了却零结果」的档位），未来日期不可点。
+ * ★ 日历**恒定渲染**，只让底部那行状态文字变（2026-10-02 修「先闪一下才出日历」）：
+ *   此前是「加载中 → 一行提示 → 解密完 → 换成整张日历」两段渲染，面板高度从一行文字
+ *   跳到一整张日历，用户看到的就是闪一下 + 布局弹跳。状态行放在**固定高度**的槽位里
+ *   （h-5），所以加载完成时高度一点不变。
  *
- * 组件随面板卸载而卸载 ⇒ 每次打开都从「当前选中的那天（或今天）」重新定位，不残留上次翻到的月份。
+ * 只有**有日记的日子**可点（清单来自已解密条目，与地点清单同一条约定：不给「选了却零结果」
+ * 的档位），未来日期不可点，解密完成前全部不可点。
+ *
+ * 格子用**固定高度 h-9** 而不是 aspect-square：后者高度随容器宽度变化（桌面 448px 宽时
+ * 每格 ~50px，一整张日历能到 300px 高），固定高度既更紧凑又与屏宽无关，换月时高度恒定。
  */
-function DayPicker({ dayKeys, selected, onPick }: {
+type DayPickerStatus = 'loading' | 'error' | 'ready'
+
+function DayPicker({ dayKeys, selected, status, onPick }: {
   dayKeys: Set<string>
   selected: TimeRange
+  status: DayPickerStatus
   onPick: (range: TimeRange) => void
 }) {
   const today = dayKeyOf(new Date())
@@ -149,6 +166,15 @@ function DayPicker({ dayKeys, selected, onPick }: {
   const canGoNext = !atCurrentMonth
   const go = (delta: number) => setView((v) => shiftMonth(v.year, v.month, delta))
 
+  const ready = status === 'ready'
+  // 状态行文案（空串也占位，保证高度恒定）
+  const note =
+    status === 'loading' ? '正在解密日记…'
+      : status === 'error' ? '日记加载失败'
+        : dayKeys.size === 0 ? '还没有日记'
+          : !monthHasRecord ? '这个月没有记录'
+            : ''
+
   return (
     <div className="px-3 pb-2 pt-1">
       <div className="flex items-center justify-between pb-1">
@@ -163,8 +189,10 @@ function DayPicker({ dayKeys, selected, onPick }: {
       </div>
       <div className="grid grid-cols-7 gap-1 pt-1">
         {grid.flat().map((day, i) => {
-          if (day === null) return <span key={`e${i}`} />
-          const hasRecord = dayKeys.has(day)
+          // 补位格也给固定高度：否则「整行都是补位」的月份（如 2 月恰好 4 行）会塌掉一行，
+          // 换月时高度跳动。
+          if (day === null) return <span key={`e${i}`} className="h-9" />
+          const hasRecord = ready && dayKeys.has(day)
           const isFuture = day > today
           const disabled = !hasRecord || isFuture
           const isSelected = selected === dayRangeKey(day)
@@ -175,7 +203,7 @@ function DayPicker({ dayKeys, selected, onPick }: {
               disabled={disabled}
               aria-label={hasRecord ? `${day} · 有日记` : day}
               aria-current={day === today ? 'date' : undefined}
-              className={`aspect-square rounded-md text-xs tabular-nums ${
+              className={`h-9 rounded-md text-xs tabular-nums ${
                 isSelected
                   ? 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 font-medium text-white'
                   /* 不可点：标准次级文字（WCAG AA 下限配对）。刻意不做成「灰到看不见」——
@@ -190,9 +218,8 @@ function DayPicker({ dayKeys, selected, onPick }: {
           )
         })}
       </div>
-      {!monthHasRecord && (
-        <p className="pt-1 text-center text-[11px] text-neutral-500 dark:text-neutral-400">这个月没有记录</p>
-      )}
+      {/* 状态槽：**恒定高度**（h-5 = leading-5 的行高），没有文案时也占位 ⇒ 加载完成不跳版 */}
+      <p className="h-5 pt-0.5 text-center text-[11px] leading-5 text-neutral-500 dark:text-neutral-400">{note}</p>
     </div>
   )
 }
@@ -269,6 +296,10 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
   // 坏在拿不到清单、根本选不出地点。所有面板开关都走这里，别再各自 setState。
   // 守卫 tests/search-filters-ui.test.ts 断言 `setOpenPanel` 全仓只出现在本函数里。
   function openFilterPanel(panel: FilterPanel) {
+    // 收起软键盘（2026-10-02）：搜索页进入即自动聚焦，键盘会一直占掉约一半屏高，
+    // 而 dvh 会随键盘实时变小 —— 面板的 max-h 随之缩水，日历就挤出了滚动条。
+    // 面板打开时键盘本来也用不上（下一步是点日期），先让开空间。
+    inputRef.current?.blur()
     setOpenPanel((cur) => (cur === panel ? null : panel))
     ensureLoaded()
   }
@@ -354,6 +385,15 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
               value={query}
               onChange={(e) => { setQuery(e.target.value); resetPaging() }}
               placeholder="搜索日记内容"
+              type="text"
+              /* ★ autoComplete="off"（2026-10-02 用户反馈「会触发联系人填充」）：
+                 iOS 键盘上方的「自动填充联系人」条是系统按输入框的 autocomplete 语义弹出的，
+                 不给 autocomplete 时它会猜（无 name 的纯文本输入框常常被当成「姓名」）。
+                 明确 off，并声明 inputMode/enterKeyHint 都是 search ⇒ 系统不再给联系人候选。
+                 autoComplete 之外的三个属性是既有的防误纠错设置，别去掉。 */
+              autoComplete="off"
+              inputMode="search"
+              enterKeyHint="search"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
@@ -395,18 +435,20 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
               chip 上的 ✕ 只清关键词，筛选的取消入口必须有地方放。
             日历本身列的是**真的有日记的日子**（与地点清单同一条约定），不给「点了却零结果」的档位。 */}
         {openPanel === 'time' && (
-          <Panel>
+          <Panel scroll={false}>
             <ul className={PANEL_UL}>
               <PanelRow label="全部时间" selected={range === 'all'} onClick={() => pickRange('all')} />
             </ul>
             <PanelGroupLabel>具体日期</PanelGroupLabel>
-            {entries === null || entries.length === 0 ? (
-              <ul className={PANEL_UL}>
-                <li><PanelHint error={error} loaded={entries !== null} empty="还没有日记" /></li>
-              </ul>
-            ) : (
-              <DayPicker dayKeys={dayKeys} selected={isDayRange(range) ? range : 'all'} onPick={pickRange} />
-            )}
+            {/* 日历**恒定渲染**（2026-10-02）：此前分成「加载中一行提示 → 解密完换日历」两段，
+                面板高度从一行跳到一整张日历 ⇒ 用户看到「先闪一下日历才出来」。现在只有
+                日历底部那行状态文字在变，而它是固定高度的槽位，不会带动布局。 */}
+            <DayPicker
+              dayKeys={dayKeys}
+              selected={isDayRange(range) ? range : 'all'}
+              status={entries === null ? (error ? 'error' : 'loading') : 'ready'}
+              onPick={pickRange}
+            />
           </Panel>
         )}
         {/* 地点面板：只有两档——「无位置」与「具体地点」（2026-10-02 用户要求，从三档收成两档）。

@@ -27,6 +27,18 @@ body {
 /* 高度百分比链：body h-full 依赖 html 有确定高度（视口），否则 flex 弹性布局塌陷为内容高度 */
 html {
   height: 100%;
+  /* 显式声明根背景。iOS 26 / Safari 26 的 Liquid Glass 顶栏在找不到可采样的实色
+     fixed/sticky 元素时，会依次回退到 body / 系统默认；系统默认是半透明玻璃，
+     会把下层内容透出来（用户看到的「顶部虚化」）。声明成实色 = 回退链每一环都是纯色。 */
+  background-color: var(--background);
+}
+
+/* 文档层不参与橡皮筋。本应用从不做 window 滚动（(app) 内是容器滚动），
+   页面内滚动到顶/底时手势会向文档链式传递，把整页拖出上下两条背景带——
+   那条带子正好落在系统栏底下，会被玻璃顶栏合成成「脏」的一层。
+   overscroll-behavior 只影响文档自身，不影响内部滚动容器的正常滚动。 */
+body {
+  overscroll-behavior: none;
 }
 
 .safe-pt { padding-top: env(safe-area-inset-top); }

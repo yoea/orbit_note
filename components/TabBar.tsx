@@ -104,18 +104,21 @@ export default function TabBar() {
       </ul>
       {/* 版本与版权（2026-10-02 用户要求）：放在底部安全区那块本来是空白的留白里。
           · **绝对定位** ⇒ 不参与布局，TabBar 高度与之前完全一致（用户明确要求不改高度）；
-          · 位置贴安全区留白的**上沿再下 4px**：留白是 max(env(safe-area-inset-bottom), 1rem)，
-            所以有 home indicator 的设备（env≈34px）离屏幕底边还有 30px，不会压到指示条；
-            没有指示条的环境走 1rem 下限，也仍有 12px 边距。
-          · 字号比登录页页脚（10px）再小一档，配色沿用同一个 AA 配对
-            （text-neutral-500 dark:text-neutral-400）——这是 tests/footnote-contrast.test.ts
-            的 R1/R2 规定的下限，再往下压就过不了对比度守卫（10px 小字低于 AA 等于看不见，
-            登录页页脚曾因此「像是没显示」）。
+          · 位置贴安全区留白的**上沿再下 8px**（初版是 4px，用户反馈「位置偏高」后下移）：
+            留白是 max(env(safe-area-inset-bottom), 1rem)，有 home indicator 的设备（env≈34px）
+            离屏幕底边还有 26px，不会压到指示条；没有指示条的环境走 1rem 下限，也仍有 8px 边距。
+          · 字号 8px（初版 9px）——比登录页页脚（10px）小两档，正文小字里最小的一档。
+          · 透明度用**元素级 opacity**（不是文字色的 /NN alpha）：本项目判定次级文字可读性的
+            footnote-contrast 守卫按 `text-neutral-NN` token 工作，元素 opacity 不改该 token，
+            所以配色仍写完整 AA 配对 text-neutral-500 dark:text-neutral-400。
+            这里允许压到 60% 是因为这行**刻意是装饰性**的（aria-hidden、与「关于」弹窗里的
+            版本信息重复）：用户要的就是「平时注意不到，仔细看才看得见」。正文小字**不得**
+            照抄这个写法，那会真的读不清。
           · aria-hidden：与 components/VersionFooter.tsx 一致——版本信息在「关于」弹窗里本来就有，
             不必让读屏软件在每个 tab 页都念一遍。 */}
       <p
         aria-hidden
-        className="absolute inset-x-0 bottom-[calc(max(env(safe-area-inset-bottom),1rem)-4px)] text-center text-[9px] leading-none text-neutral-500 dark:text-neutral-400"
+        className="absolute inset-x-0 bottom-[calc(max(env(safe-area-inset-bottom),1rem)-8px)] text-center text-[8px] leading-none text-neutral-500 dark:text-neutral-400 opacity-60"
       >
         Orbit {process.env.NEXT_PUBLIC_VERSION ?? 'dev'} · © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'}
       </p>

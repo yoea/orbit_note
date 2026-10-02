@@ -51,15 +51,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* 离线指示：断网时顶部悬浮的琥珀色 wifi-off 圆标（在线时不渲染）。
           位置按页面自适应空位（见 OfflineBadge），悬浮不占内容空间 */}
       <OfflineBadge />
-      {/* 顶部安全区**必须是不滚动的独立一层**（2026-10-02 修「顶部轻微虚化」）。
-          根因：iOS 对半透明状态栏做**系统级模糊**，模糊的是它下面那一层内容。
-          此前 safe-pt 挂在各页面自己的滚动容器上（SettingsView / EntryView / BackupRestoreView
-          都是 overflow-y-auto + safe-pt），于是内容一滚就滑进状态栏底下 ⇒ 顶端出现一条轻微虚化；
-          而全屏覆盖层（SearchDialog）与固定页头是「不滚动的块」，所以那两处没有——
-          这正是用户看到的「两个地方表现不一致」。放到这里之后，状态栏底下永远是这块空白，
-          任何页面（含滚动到底/到顶）都不会再把内容送进状态栏。 */}
+      {/* 顶部安全区：**不滚动 + 实色底 + sticky**（2026-10-02 二次修「顶部虚化」）。
+          第一版只把 safe-pt 从滚动容器挪到这里（一个**透明**占位块），仍被反馈「虚化还在」。
+          补上的两个事实（iOS 26 / Safari 26 的 Liquid Glass 顶栏）：
+            · 顶栏（状态栏、地址栏）是**半透明玻璃**，会实时合成它下面那一层 DOM 像素；
+            · 它的底色按「该边缘上 fixed/sticky 元素的 background-color」推导，找不到才回退到
+              body 背景，再回退到**系统默认的玻璃**（此时下层内容直接透出来 ⇒ 看到的就是虚化）。
+          ⇒ 透明占位块等于没修：这里必须**实色 + sticky**，采样能命中一块纯色，
+            顶栏就渲染成实色白/黑，下面没有任何可透出的内容。globals.css 里 html 也显式
+            声明了背景色（回退链的下一环）。
+          布局语义不变：仍是 shrink-0、仍不参与伸缩，页面内容照旧从安全区之下开始。 */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="shrink-0 safe-pt" aria-hidden />
+        <div className="sticky top-0 z-20 shrink-0 bg-white safe-pt dark:bg-neutral-950" aria-hidden />
         {/* 页面淡入**只挂在这里**，不要挂到各页面自己的根节点上（2026-09-30 修复）。
             原因：TabBar 的三个目的地是三个不同的 page 组件，切换时会**卸载/重新挂载**；
             动画类挂在页面根节点上时每次切换都会重放一遍 0.3s 的 opacity 0 → 1，

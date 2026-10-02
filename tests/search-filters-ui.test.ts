@@ -144,3 +144,32 @@ describe('搜索筛选栏：三类筛选（时间 / 收藏 / 地点）', () => {
     expect(CODE).toContain('{filtersActive && (')
   })
 })
+
+// ============================================================================
+// 2026-10-02 用户反馈三条：输入框触发联系人自动填充 / 日历先闪一下才出来 / 日历带滚动条
+// ============================================================================
+describe('搜索输入框与时间面板', () => {
+  it('F10 输入框禁用系统自动填充（iOS 键盘上方的「联系人」候选）', () => {
+    expect(CODE, '缺少 autoComplete="off"：不给语义时系统会猜，纯文本输入框常被当成姓名').toContain('autoComplete="off"')
+    expect(CODE, '应同时声明 inputMode="search"').toContain('inputMode="search"')
+    // 既有的防误纠错设置不得被删（它们与本条是互补关系，不是互斥）
+    expect(CODE).toContain('autoCorrect="off"')
+    expect(CODE).toContain('spellCheck={false}')
+  })
+
+  it('F11 时间面板的日历恒定渲染（不再「先闪一行提示 → 再换成日历」）', () => {
+    // 反向：条件渲染日历的旧写法不得回来——它会让面板高度从一行跳到一整张日历
+    expect(CODE, '时间面板又出现了「加载中就不渲染日历」的分支').not.toContain('entries === null || entries.length === 0 ?')
+    expect(CODE, '状态应作为 prop 传进日历').toContain('status={entries === null')
+    // 状态槽固定高度（h-5 + leading-5），没有文案时也占位
+    expect(CODE, '状态槽必须固定高度，否则解密完成时会跳版').toContain('h-5 pt-0.5')
+    expect(CODE, '状态槽行高必须是确定值').toContain('leading-5')
+  })
+
+  it('F12 时间面板不滚动、格子固定高度（键盘弹起时 dvh 变矮正是滚动条的成因）', () => {
+    expect(CODE, '时间面板内容是固定高度，应传 scroll={false}').toContain('<Panel scroll={false}>')
+    expect(CODE, '格子高度必须不随容器宽度变化').toContain('h-9 rounded-md text-xs')
+    expect(CODE, '不得回到 aspect-square（高度随宽度变化 → 桌面又高又容易溢出）').not.toContain('aspect-square')
+    expect(CODE, '打开面板时应收起软键盘，给日历让出高度').toContain('inputRef.current?.blur()')
+  })
+})
