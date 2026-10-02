@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { diaryEntries } from '@/lib/server/db/schema'
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq, lt, or } from 'drizzle-orm'
 import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { diaryCreateSchema } from '@/lib/server/validation'
 import { rateLimit } from '@/lib/server/ratelimit'
+
+// 游标里的次级键必须是 uuid（DB 列是 uuid 类型，乱传会让 PG 报 22P02 → 500）
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export async function GET(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
@@ -12,16 +15,47 @@ export async function GET(req: Request) {
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 100) || 100, 1), 200)
   // 分页：offset（客户端"加载更多"）
   const offset = Math.max(Number(url.searchParams.get('offset') ?? 0) || 0, 0)
+  // ── 游标分页（`before` / `beforeId`）─────────────────────────────────────
+  // 与 offset 并存，但用途不同：**游标同时服务「无限滚动」与「日期跳转」**。
+  //   · 无限滚动：拿当前最后一条的 (createdAt, id) 取下一页
+  //   · 日期跳转：before = 目标日 23:59:59.999（含当天）取第一页
+  // 为什么必须补上它（offset 的真实缺陷）：offset 是「位置」而不是「内容」，
+  // 翻页期间只要有人新增一篇（本应用写完就进列表），后面所有页整体位移 ⇒
+  // 静默重复或漏条目。漏条目还会连带把本地缓存里那条判成「已删除」而清掉
+  // （见 lib/client/offline.ts 的 staleCachedIds）。改成游标后位置由内容决定，不受影响。
+  const beforeRaw = url.searchParams.get('before')
+  // 空串按「没给」处理：调用方可能用 `&beforeId=` 这种占位写法，别把它当成非法 uuid
+  const beforeIdRaw = url.searchParams.get('beforeId') || null
+  let cursor: { at: Date; id: string | null } | null = null
+  if (beforeRaw) {
+    const at = new Date(beforeRaw)
+    if (Number.isNaN(at.getTime())) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
+    const id = beforeIdRaw
+    if (id !== null && !UUID_RE.test(id)) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
+    cursor = { at, id }
+  } else if (beforeIdRaw) {
+    // 只给 id 不给时间没有意义（无法定位），视为坏请求而不是静默忽略
+    return NextResponse.json({ error: 'bad_request' }, { status: 400 })
+  }
   // ★ 排序必须是**全序**：created_at 相同（导入的 Day One/Journey 备份是秒级精度，
   // 同一批导入里很容易撞上）时，只按 created_at 排序的结果在 LIMIT/OFFSET 分页下不保证稳定：
   // 同一行可能在两次查询里落到不同页（被跳过或重复），客户端「加载更多」就会漏条目。
-  // 漏条目本身已经够糟，更糟的是它会牵连本地缓存：列表页用「服务器某页的窗口」判定
-  // 缓存里哪些条目已被删除（lib/client/offline.ts 的 staleCachedIds），被分页跳过的那条
-  // 会被误判成「已删除」而从缓存里清掉 —— 离线点开它就只能「没反应」。
-  // 补一个 id 次级键（uuid 可比较）即得到确定的全序，分页从此稳定。
+  // 补一个 id 次级键（uuid 可比较）即得到确定的全序，分页从此稳定；
+  // 游标分支的 WHERE 也用同一组键，保证「排序」与「边界」口径完全一致。
+  // created_at 相同时用元组比较 (created_at, id) < (before, beforeId)，
+  // 否则同秒的多条会被整批跳过。
   const entries = await db.select().from(diaryEntries)
+    .where(cursor
+      ? (cursor.id
+        ? or(
+          lt(diaryEntries.createdAt, cursor.at),
+          and(eq(diaryEntries.createdAt, cursor.at), lt(diaryEntries.id, cursor.id)),
+        )
+        : lt(diaryEntries.createdAt, cursor.at))
+      : undefined)
     .orderBy(desc(diaryEntries.createdAt), desc(diaryEntries.id))
-    .limit(limit).offset(offset)
+    // 游标已定位到内容，offset 必须归零（两者语义不能叠加）
+    .limit(limit).offset(cursor ? 0 : offset)
   return NextResponse.json({ entries })
 }
 

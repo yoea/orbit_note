@@ -75,7 +75,17 @@ describe('T · 列表页首帧不再从空白重来', () => {
 
   it('T4 快照会被回写（否则只有第一次进来有内容，之后永远为空）', () => {
     const src = code(FILE)
-    expect(src, '没有把最新状态写回快照').toMatch(/snapshot = \{ items, stats, offset, hasMore \}/)
+    // 只断言「被回写、且关键字段都在」，不锁死整个字段列表——
+    // 字段会随功能增长（2026-10-02 加了 cursor 与 anchor），锁死会让守卫变成
+    // 「每次加一个视图字段就被迫改一次测试」，反而诱使人删掉它。
+    const m = src.match(/snapshot = \{([^}]*)\}/)
+    expect(m, '没有把最新状态写回快照').not.toBeNull()
+    const fields = m![1]
+    for (const k of ['items', 'stats', 'hasMore']) {
+      expect(fields, `快照漏了 ${k}`).toContain(k)
+    }
+    // anchor（日期跳转后的锚定日期）属于视图状态：漏了它，切个 tab 回来会莫名其妙回到「最新」
+    expect(fields, '快照漏了 anchor：锚定视图切 tab 回来会丢失').toContain('anchor')
   })
 
   it('T5 「还没有日记」由 !loading 守着（加载中不能说成没有日记）', () => {
