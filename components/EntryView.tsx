@@ -506,7 +506,7 @@ export default function EntryView({ id }: { id: string }) {
 
   if (error && !entry) {
     return (
-      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center px-5 safe-pt">
+      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center px-5">
         <div className="text-center">
           <p className="text-sm text-neutral-500 dark:text-neutral-400">{error}</p>
           <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">重试</button>
@@ -521,7 +521,7 @@ export default function EntryView({ id }: { id: string }) {
   // 诊断码与登录页的「诊断 no-dek」、error.tsx 的「诊断码」同风格：只有类别，不含任何内容信息。
   if (miss) {
     return (
-      <main className="mx-auto flex h-full w-full max-w-md flex-col items-center justify-center gap-3 px-5 safe-pt">
+      <main className="mx-auto flex h-full w-full max-w-md flex-col items-center justify-center gap-3 px-5">
         <p className="text-base font-medium text-neutral-800 dark:text-neutral-100">
           {miss === 'deleted' ? '这篇日记不在了' : '这篇还没缓存到本机'}
         </p>
@@ -543,7 +543,7 @@ export default function EntryView({ id }: { id: string }) {
     )
   }
 
-  if (!entry) return <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 safe-pt" />
+  if (!entry) return <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5" />
 
   const created = new Date(entry.createdAt)
   // 编辑过（updatedAt 晚于 createdAt）→ 额外显示"编辑于"；否则只显示创建时间
@@ -559,7 +559,7 @@ export default function EntryView({ id }: { id: string }) {
   const placeName = displayLocationName(entry)
   const locationBusy = locating || savingLocation
   return (
-    <main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-y-auto px-5 safe-pt">
+    <main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-y-auto px-5">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="page-header relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中。

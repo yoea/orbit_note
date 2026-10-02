@@ -101,20 +101,35 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
     } catch { /* 忽略存储失败（隐私模式等） */ }
   }
 
-  // 开关行清单：文案、落盘键与状态并排一处，省掉多段几乎相同的 JSX。
+  // 开关行清单：文案、落盘键、所属分组与状态并排一处，省掉多段几乎相同的 JSX。
   // 新增开关只需在此加一行（键与文案不会在复制粘贴中走样）。
+  //
+  // ★ 分组与排序（2026-10-02 用户要求「重分类、排序」）：按**用户在哪见到它**排，
+  //   而不是按实现顺序。四组依次是：
+  //     记录          —— 写日记时采集什么（三个都只在保存那一刻起作用）
+  //     写作页        —— 首页（写日记那页）上显示什么
+  //     日记列表与详情 —— 列表页/详情页上显示什么
+  //     其他          —— 与位置无关的杂项（音效、离线）
+  //   顺序也刻意如此：先「记录什么」（对内容有影响），再「显示什么」（只影响看不看见），
+  //   最后才是杂项。组内顺序同样按使用频率：位置 → 天气 → 地名补全；
+  //   提示 → 连续天数 → 去年的今天。
+  //   ⚠️ 渲染端只能按 `row.group` 分组，**不得按 row.key 分叉**（守卫 R3），
+  //      也不要把同一个 key 拆成两行——P2 靠「每个同步键都有一行」对账。
   const rows = [
-    { key: OFFLINE_KEY, label: '离线缓存', hint: queuedCount > 0 ? `有 ${queuedCount} 篇待同步日记，关闭开关将丢弃` : '断网时仍可解锁并新建和查看日记', enabled: offlineCache, setEnabled: setOfflineCache },
-    { key: LOCATION_KEY, label: '保存时记录位置', hint: '关闭后保存日记不再请求定位', enabled: locationEnabled, setEnabled: setLocationEnabled },
-    { key: WEATHER_KEY, label: '保存时记录天气', hint: '关闭后保存日记不再获取实时天气', enabled: saveWeather, setEnabled: setSaveWeather },
-    { key: GEOCODE_KEY, label: '自动补全地点名', hint: '关闭后不会自动把坐标转为地名', enabled: autoPlaceName, setEnabled: setAutoPlaceName },
-    { key: STREAK_KEY, label: '显示连续写作天数', hint: '首页日期旁显示连续写了 N 天', enabled: showStreak, setEnabled: setShowStreak },
-    { key: PROMPT_KEY, label: '显示每日提示', hint: '首页输入框上方的写作灵感提示', enabled: showPrompt, setEnabled: setShowPrompt },
-    { key: OTD_KEY, label: '显示去年的今天', hint: '首页顶部往年今日回忆卡片', enabled: showOtd, setEnabled: setShowOtd },
-    { key: SHOW_VIEWS_KEY, label: '显示打开次数', hint: '详情页底部的打开次数', enabled: showViews, setEnabled: setShowViews },
-    { key: HEATMAP_KEY, label: '显示写作热力图', hint: '日记页顶部的年度写作热力图', enabled: heatmap, setEnabled: setHeatmap },
-    { key: SAVE_SOUND_KEY, label: '保存音效', hint: '保存成功时播放提示音', enabled: saveSound, setEnabled: setSaveSound },
+    { group: '记录', key: LOCATION_KEY, label: '保存时记录位置', hint: '关闭后保存日记不再请求定位', enabled: locationEnabled, setEnabled: setLocationEnabled },
+    { group: '记录', key: WEATHER_KEY, label: '保存时记录天气', hint: '关闭后保存日记不再获取实时天气', enabled: saveWeather, setEnabled: setSaveWeather },
+    { group: '记录', key: GEOCODE_KEY, label: '自动补全地点名', hint: '关闭后不会自动把坐标转为地名', enabled: autoPlaceName, setEnabled: setAutoPlaceName },
+    { group: '写作页', key: PROMPT_KEY, label: '显示每日提示', hint: '首页输入框上方的写作灵感提示', enabled: showPrompt, setEnabled: setShowPrompt },
+    { group: '写作页', key: STREAK_KEY, label: '显示连续写作天数', hint: '首页日期旁显示连续写了 N 天', enabled: showStreak, setEnabled: setShowStreak },
+    { group: '写作页', key: OTD_KEY, label: '显示去年的今天', hint: '首页顶部往年今日回忆卡片', enabled: showOtd, setEnabled: setShowOtd },
+    { group: '日记列表与详情', key: HEATMAP_KEY, label: '显示写作热力图', hint: '日记页顶部固定的写作热力图', enabled: heatmap, setEnabled: setHeatmap },
+    { group: '日记列表与详情', key: SHOW_VIEWS_KEY, label: '显示打开次数', hint: '详情页底部的打开次数', enabled: showViews, setEnabled: setShowViews },
+    { group: '其他', key: SAVE_SOUND_KEY, label: '保存音效', hint: '保存成功时播放提示音', enabled: saveSound, setEnabled: setSaveSound },
+    { group: '其他', key: OFFLINE_KEY, label: '离线缓存', hint: queuedCount > 0 ? `有 ${queuedCount} 篇待同步日记，关闭开关将丢弃` : '断网时仍可解锁并新建和查看日记', enabled: offlineCache, setEnabled: setOfflineCache },
   ]
+
+  // 分组的展示顺序（**不是** Set：顺序就是这个数组的顺序，改这里即可调组序）
+  const groups = ['记录', '写作页', '日记列表与详情', '其他'] as const
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={onClose}>
@@ -127,18 +142,26 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
       >
         <h2 className="shrink-0 px-5 pb-1 pt-5 text-center text-base font-semibold">偏好设置</h2>
         {/* 唯一的滚动区就是列表自身：限高后内容再多也只在内部滚动，标题与「完成」始终可见。
-            桌面端用项目自带的细滚动条（thin-scrollbar） */}
-        <ul className="thin-scrollbar max-h-[60dvh] overflow-y-auto px-5 py-2">
-          {rows.map((row) => (
-            <li key={row.key} className="flex items-center justify-between gap-4 border-b border-neutral-100 py-3.5 last:border-b-0 dark:border-neutral-700">
-              <div>
-                <p className="text-neutral-800 dark:text-neutral-200">{row.label}</p>
-                <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{row.hint}</p>
-              </div>
-              <PrefSwitch enabled={row.enabled} ready={prefsReady} onToggle={() => toggle(row.key, row.enabled, row.setEnabled)} />
-            </li>
+            桌面端用项目自带的细滚动条（thin-scrollbar）
+            分组渲染：组标题 + 该组的开关行（分组只按 row.group 取，不按 key 分叉 —— 见 rows 注释）。 */}
+        <div className="thin-scrollbar max-h-[60dvh] overflow-y-auto px-5 py-2">
+          {groups.map((group) => (
+            <section key={group}>
+              <p className="pb-1 pt-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">{group}</p>
+              <ul className="flex flex-col">
+                {rows.filter((row) => row.group === group).map((row) => (
+                  <li key={row.key} className="flex items-center justify-between gap-4 border-b border-neutral-100 py-3.5 last:border-b-0 dark:border-neutral-700">
+                    <div>
+                      <p className="text-neutral-800 dark:text-neutral-200">{row.label}</p>
+                      <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{row.hint}</p>
+                    </div>
+                    <PrefSwitch enabled={row.enabled} ready={prefsReady} onToggle={() => toggle(row.key, row.enabled, row.setEnabled)} />
+                  </li>
+                ))}
+              </ul>
+            </section>
           ))}
-        </ul>
+        </div>
         {/* 底部「完成」：整宽一行，样式取共享常量（与 AboutDialog / PasskeysDialog /
             RecoveryRegenerateDialog 的「完成」同一份）。
             注：本卡片是 flex flex-col，按钮作为 flex item 本来就会被拉满，

@@ -33,7 +33,7 @@ export default function BackupRestoreView() {
   }
 
   return (
-    <main ref={mainRef} className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 pb-4 safe-pt">
+    <main ref={mainRef} className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 pb-4">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="page-header relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中 */}

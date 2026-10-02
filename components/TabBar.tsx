@@ -80,7 +80,7 @@ export default function TabBar() {
   const current = activeTab(pathname)
 
   return (
-    <nav className="shrink-0 border-t border-neutral-100 bg-white pb-safe dark:border-neutral-800 dark:bg-neutral-950">
+    <nav className="relative shrink-0 border-t border-neutral-100 bg-white pb-safe dark:border-neutral-800 dark:bg-neutral-950">
       <AccentGradientDefs />
       <ul className="mx-auto flex w-full max-w-md">
         {TABS.map(({ href, label, Icon }) => {
@@ -102,6 +102,23 @@ export default function TabBar() {
           )
         })}
       </ul>
+      {/* 版本与版权（2026-10-02 用户要求）：放在底部安全区那块本来是空白的留白里。
+          · **绝对定位** ⇒ 不参与布局，TabBar 高度与之前完全一致（用户明确要求不改高度）；
+          · 位置贴安全区留白的**上沿再下 4px**：留白是 max(env(safe-area-inset-bottom), 1rem)，
+            所以有 home indicator 的设备（env≈34px）离屏幕底边还有 30px，不会压到指示条；
+            没有指示条的环境走 1rem 下限，也仍有 12px 边距。
+          · 字号比登录页页脚（10px）再小一档，配色沿用同一个 AA 配对
+            （text-neutral-500 dark:text-neutral-400）——这是 tests/footnote-contrast.test.ts
+            的 R1/R2 规定的下限，再往下压就过不了对比度守卫（10px 小字低于 AA 等于看不见，
+            登录页页脚曾因此「像是没显示」）。
+          · aria-hidden：与 components/VersionFooter.tsx 一致——版本信息在「关于」弹窗里本来就有，
+            不必让读屏软件在每个 tab 页都念一遍。 */}
+      <p
+        aria-hidden
+        className="absolute inset-x-0 bottom-[calc(max(env(safe-area-inset-bottom),1rem)-4px)] text-center text-[9px] leading-none text-neutral-500 dark:text-neutral-400"
+      >
+        Orbit {process.env.NEXT_PUBLIC_VERSION ?? 'dev'} · © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'}
+      </p>
     </nav>
   )
 }

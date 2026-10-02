@@ -483,7 +483,7 @@ export default function DiaryListView() {
 
   if (error) {
     return (
-      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center px-5 safe-pt">
+      <main className="mx-auto flex h-full w-full max-w-md items-center justify-center px-5">
         <div className="text-center">
           <p className="text-sm text-neutral-500 dark:text-neutral-400">{error}</p>
           <button onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">重试</button>
@@ -501,7 +501,7 @@ export default function DiaryListView() {
        · 固定区里 stats 未就绪时也占位渲染（统计行留空行、热力图渲染空图）⇒ 数据到达时
          不会把列表整体推下去（布局不弹跳）。 */
     <main className="mx-auto flex h-full w-full max-w-md flex-col">
-      <header className="page-header relative flex shrink-0 items-center justify-end px-5 py-3 safe-pt">
+      <header className="page-header relative flex shrink-0 items-center justify-end px-5 py-3">
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">全部日记</h1>
         {/* 搜索：点击后弹出全屏搜索层（正文加密，检索只能在客户端解密后完成）。
             「找某一天」也在里面——时间档的「具体日期」日历（2026-10-02 从列表页搬过去）。 */}

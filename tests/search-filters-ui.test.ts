@@ -55,12 +55,12 @@ describe('搜索筛选栏：三类筛选（时间 / 收藏 / 地点）', () => {
     expect(CODE).not.toContain('筛选归为**三类**') // 说明性注释必须已被剥离
   })
 
-  it('F1 三类控件都在，且顺序为 时间 → 收藏 → 地点', () => {
+  it('F1 三类控件都在，且顺序为 时间 → 地点 → 收藏（2026-10-02 用户要求调换）', () => {
     const time = at(CODE, "openFilterPanel('time')")
-    const star = at(CODE, 'onClick={toggleStarred}')
     const place = at(CODE, "openFilterPanel('location')")
-    expect(time).toBeLessThan(star)
-    expect(star).toBeLessThan(place)
+    const star = at(CODE, 'onClick={toggleStarred}')
+    expect(time).toBeLessThan(place)
+    expect(place).toBeLessThan(star)
   })
 
   it('F2 ★ 打开面板必须触发惰性解密加载——所有「开」面板的调用都在 openFilterPanel 里', () => {
@@ -100,25 +100,31 @@ describe('搜索筛选栏：三类筛选（时间 / 收藏 / 地点）', () => {
     expect(CODE).not.toContain('今年')
   })
 
-  it('F5 地点面板：不限 / 只看有位置 / 具体地点 三档都在', () => {
-    expect(CODE).toContain('全部地点')
-    expect(CODE).toContain('只看有位置')
+  it('F5 地点面板只有两档：无位置 / 具体地点（2026-10-02 收档）', () => {
+    expect(CODE).toContain('无位置')
     expect(CODE).toContain('facets.map')
-    // 「有位置」不再单独占一个 chip（旧实现的独立 chip 文案就是这两个字）
-    expect(CODE).not.toContain("onClick={() => { setOnlyWithLocation(!onlyWithLocation)")
+    // 反向：被删掉的两档不得回来（「不限」不再单列一行，靠「再点一次已选项」取消）
+    expect(CODE, '「全部地点」应已删除').not.toContain('全部地点')
+    expect(CODE, '「只看有位置」应已删除').not.toContain('只看有位置')
+    // 取消手势必须存在（否则删掉「全部地点」后就只能靠「重置」）
+    expect(fnBody('pickLocation'), '再点已选中的地点应取消').toContain('cur === name ? null : name')
   })
 
-  it('F6 收藏是即时开关：没有面板可开，且两态文案区分得开', () => {
+  it('F6 收藏是即时开关，且文字恒定只变颜色（2026-10-02 用户要求）', () => {
     const body = fnBody('toggleStarred')
     expect(body).toContain('setOnlyStarred')
     expect(body).toContain('resetPaging()')
-    expect(CODE).toContain("onlyStarred ? '仅收藏' : '收藏'")
+    // 文案不得再随状态变化（选中只用颜色表达）
+    expect(CODE, '收藏 chip 文案应恒为「收藏」').toContain('<Chip active={onlyStarred} onClick={toggleStarred}>收藏</Chip>')
+    expect(CODE, '不得再出现「仅收藏」这半句').not.toContain('仅收藏')
   })
 
-  it('F7 旧的并列 chip 写法不得回流（4 个时间 chip + 独立「有位置」）', () => {
+  it('F7 旧写法不得回流（并列时间 chip / 独立「有位置」chip）', () => {
     expect(CODE).not.toContain('TIME_RANGES')
     expect(CODE).not.toContain('TIME_RANGE_LABEL')
     expect(CODE).not.toContain('setLocationOpen')
+    expect(CODE, '不得再出现旧的地点三档助手').not.toContain('pickAllPlaces')
+    expect(CODE).not.toContain('pickWithLocation')
   })
 
   it('F8 面板的空态走同一套加载/空/失败口径（不再出现「还没加载就说没有地点」）', () => {

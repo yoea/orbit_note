@@ -104,7 +104,7 @@ export default function SettingsView() {
   }
 
   return (
-    <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 pb-4 safe-pt">
+    <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5 pb-4">
       {/* 电脑版与主页同宽（手机视图宽度），不随屏幕拉伸 */}
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       {/* 本页是 tab 目的地之一，不再放返回箭头（回首页由 TabBar 的「写」承担）；

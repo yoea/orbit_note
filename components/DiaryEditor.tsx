@@ -361,7 +361,7 @@ export default function DiaryEditor() {
     // header/输入区/footer 全部在可视区内，输入区 flex 弹性分配剩余空间；页脚在流内不遮挡
     // 页面淡入不在这里（原先有 animate-fade-in）：切 tab 时本组件会重新挂载，
     // 动画随之重放 ⇒ 每次切换都白屏闪一下。已移到 (app)/layout 的 children 包裹层。
-    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5 safe-pt">
+    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="py-4">
         {/* 页头不再放「全部日记」「设置」图标——这两个目的地已由底部 TabBar 承担，

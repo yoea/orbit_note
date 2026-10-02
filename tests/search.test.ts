@@ -44,7 +44,7 @@ describe('isDefaultFilters', () => {
   it('任一条件非默认 → false（含新增的收藏与地名）', () => {
     expect(isDefaultFilters(filters({ query: '外滩' }))).toBe(false)
     expect(isDefaultFilters(filters({ range: 'd:2026-09-02' }))).toBe(false)
-    expect(isDefaultFilters(filters({ onlyWithLocation: true }))).toBe(false)
+    expect(isDefaultFilters(filters({ noLocation: true }))).toBe(false)
     expect(isDefaultFilters(filters({ onlyStarred: true }))).toBe(false)
     expect(isDefaultFilters(filters({ location: '云南省 昆明市' }))).toBe(false)
   })
@@ -134,10 +134,10 @@ describe('matches', () => {
     expect(matches(atNextDay, 'x', filters({ range: 'd:2026-09-02' }))).toBe(false)
     expect(matches(prevDay, 'x', filters({ range: 'd:2026-09-02' }))).toBe(false)
   })
-  it('只看有位置时排除无坐标条目', () => {
+  it('只看「无位置」时排除有坐标的条目', () => {
     const noLoc = { ...entry, latitude: null }
-    expect(matches(noLoc, 'x', filters({ onlyWithLocation: true }))).toBe(false)
-    expect(matches(entry, 'x', filters({ onlyWithLocation: true }))).toBe(true)
+    expect(matches(noLoc, 'x', filters({ noLocation: true }))).toBe(true)
+    expect(matches(entry, 'x', filters({ noLocation: true }))).toBe(false)
   })
   it('只看收藏时排除未收藏条目', () => {
     expect(matches(entry, 'x', filters({ onlyStarred: true }))).toBe(false)

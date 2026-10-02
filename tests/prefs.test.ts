@@ -98,6 +98,20 @@ describe('偏好键三处同步', () => {
       expect(srv, `${k} 是设备本地键，不该进 PREF_KEYS`).not.toContain(k)
     }
   })
+
+  it('P5 偏好行按四组分类、组序固定（2026-10-02 用户要求重分类与排序）', () => {
+    const dialog = code(DIALOG)
+    // 每一行都要带 group：漏了就掉出分组渲染、在设置页彻底看不见
+    for (const ident of allKeyIdents()) {
+      expect(dialog, `${ident} 的行缺少 group 字段`).toMatch(new RegExp(`group: '[^']+', key: ${ident},`))
+    }
+    const at = dialog.indexOf('const groups = [')
+    expect(at, '缺少分组顺序常量').toBeGreaterThan(-1)
+    expect(dialog.slice(at, at + 120), '组序应为 记录 → 写作页 → 日记列表与详情 → 其他')
+      .toContain("['记录', '写作页', '日记列表与详情', '其他']")
+    // 渲染端只能按 group 取行（按 key 分叉是 R3 明令禁止的写法）
+    expect(dialog, '渲染必须按 row.group 分组').toContain('rows.filter((row) => row.group === group)')
+  })
 })
 
 describe('A1 保存音效开关', () => {

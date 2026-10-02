@@ -102,3 +102,46 @@ describe('底部留白与安全区', () => {
     expect(tokens).toContain('top-0')
   })
 })
+
+// ============================================================================
+// 顶部安全区：必须是不滚动的独立一层（2026-10-02 修「顶部轻微虚化」）
+//
+// 根因：iOS 对半透明状态栏做**系统级模糊**，模糊的是它下面那一层内容。
+//   此前 safe-pt 挂在各页面的滚动容器上（SettingsView / EntryView / BackupRestoreView 都是
+//   overflow-y-auto + safe-pt），内容一滚就滑进状态栏底下 ⇒ 顶端一条轻微虚化；
+//   而全屏覆盖层（SearchDialog）与固定页头是「不滚动的块」⇒ 没有虚化。
+//   这就是用户看到的「搜索页与应用首页表现不一致」。
+//   修法：把 safe-pt 收到 (app)/layout 里一个不滚动的占位块上，各页面一律不再自带。
+// ============================================================================
+describe('顶部安全区（不滚动）', () => {
+  it('G6 safe-pt 不得与 overflow-y-auto 出现在同一个元素上', () => {
+    const offenders = projectClassAttrs()
+      .filter((a) => {
+        const tokens = classTokens(a.text)
+        return tokens.includes('safe-pt') && tokens.includes('overflow-y-auto')
+      })
+      .map((a) => `${a.file}:${a.line}`)
+    expect(offenders, '滚动容器带 safe-pt：内容会滑进状态栏底下 → iOS 系统模糊').toEqual([])
+  })
+
+  it('G7 (app)/layout 提供不滚动的顶部安全区占位块', () => {
+    const tokens = tokensOf('app/(app)/layout.tsx')
+    expect(tokens, '缺少安全区占位块').toContain('safe-pt')
+    expect(tokens, '占位块不能自己滚').not.toContain('overflow-y-auto')
+    // 占位块必须不参与伸缩（否则会被内容挤没）
+    expect(tokens).toContain('shrink-0')
+  })
+
+  it('G8 (app) 组内页面不再自带 safe-pt（由 layout 统一提供，避免双份留白）', () => {
+    // 组外页面（login/setup/error）与全屏覆盖层（SearchDialog）不经过 layout，各自保留 safe-pt
+    const targets = [
+      'components/SettingsView.tsx',
+      'components/EntryView.tsx',
+      'components/DiaryListView.tsx',
+      'components/DiaryEditor.tsx',
+      'components/BackupRestoreView.tsx',
+    ]
+    const offenders = targets.filter((rel) => tokensOf(rel).includes('safe-pt'))
+    expect(offenders, '这些页面由 layout 提供安全区，自己再写一份会叠出双份留白').toEqual([])
+  })
+})

@@ -211,7 +211,8 @@ type FilterPanel = 'time' | 'location'
 export default function SearchDialog({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState('')
   const [range, setRange] = useState<TimeRange>('all')
-  const [onlyWithLocation, setOnlyWithLocation] = useState(false)
+  // 地点这一类只有两档（2026-10-02 用户要求）：无位置 / 具体地点。两者互斥；再点一次即取消。
+  const [noLocation, setNoLocation] = useState(false)
   // 收藏筛选：只看收藏（收藏是「收窄」语义，不需要「只看未收藏」这一半）
   const [onlyStarred, setOnlyStarred] = useState(false)
   // 地名筛选：值为 displayLocationName 的原值（null = 不限）；取自实际数据，见 facets
@@ -285,22 +286,17 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
     resetPaging()
   }
 
-  // 地点三类选择互斥：不限 / 只看有位置 / 具体地点
-  function pickAllPlaces() {
+  // 地点两档互斥：无位置 / 具体地点。**再点一次已选中的那一项即取消**——
+  // 原来的「全部地点」那一行已被用户要求删除，取消只能靠这个手势或「重置」。
+  function toggleNoLocation() {
+    setNoLocation((v) => !v)
     setLocation(null)
-    setOnlyWithLocation(false)
-    setOpenPanel(null)
-    resetPaging()
-  }
-  function pickWithLocation() {
-    setLocation(null)
-    setOnlyWithLocation(true)
     setOpenPanel(null)
     resetPaging()
   }
   function pickLocation(name: string) {
-    setLocation(name)
-    setOnlyWithLocation(false)
+    setLocation((cur) => (cur === name ? null : name))
+    setNoLocation(false)
     setOpenPanel(null)
     resetPaging()
   }
@@ -309,16 +305,16 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
   function resetFilters() {
     setRange('all')
     setOnlyStarred(false)
-    setOnlyWithLocation(false)
+    setNoLocation(false)
     setLocation(null)
     setOpenPanel(null)
     resetPaging()
   }
 
-  const filters = { query, range, onlyWithLocation, onlyStarred, location }
+  const filters = { query, range, noLocation, onlyStarred, location }
   const active = !isDefaultFilters(filters)
   // 是否有任何**筛选**（不含关键词）非默认——决定「重置」按钮出不出来
-  const filtersActive = range !== 'all' || onlyStarred || onlyWithLocation || location !== null
+  const filtersActive = range !== 'all' || onlyStarred || noLocation || location !== null
 
   // 地名清单：从**全部已解密条目**里现取（服务端只有密文与元数据，但地名就是元数据，
   // 客户端取不到别的来源）。清单里不会出现空地名，所以不会给出选了却零结果的可选项。
@@ -341,7 +337,7 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
       .map((e, i) => ({ e, i, score: relevanceScore(e.entry, e.plain, q) }))
       .sort((a, b) => b.score - a.score || a.i - b.i)
       .map((x) => x.e)
-  }, [entries, query, range, onlyWithLocation, onlyStarred, location]) // eslint-disable-line react-hooks/exhaustive-deps -- filters 每次渲染新建对象，按字段依赖更准确
+  }, [entries, query, range, noLocation, onlyStarred, location]) // eslint-disable-line react-hooks/exhaustive-deps -- filters 每次渲染新建对象，按字段依赖更准确
 
   const visible = results.slice(0, visibleCount)
   const trimmedQuery = query.trim()
@@ -372,19 +368,18 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
         {/* 筛选归为**三类**（时间 / 收藏 / 地点），与关键词同样是「与」的关系；
             全部是明文元数据，每一项都只**收窄**结果集 ⇒ 任意组合恒为交集（见 lib/client/search.ts）。
             · 时间：按钮上直接显示当前档位（默认「全部时间」），点开面板选**具体日期**（日历上只有写过日记的日子可点）；
-            · 收藏：布尔开关，点了就切，没有面板可开；
-            · 地点：「只看有位置」与「具体地点」是同一类里的两档，因此都收在地点面板内，
+            · 收藏：布尔开关，点了就切，没有面板可开；文字恒定，只有颜色变（选中＝主题色）；
+            · 地点：「无位置」与「具体地点」是同一类里的两档，因此都收在地点面板内，
               不再单独占一个 chip（这就是从 7 个 chip 收敛成 3 个控件的原因）。 */}
         <div className="flex flex-wrap items-center gap-2 pb-3">
           <Chip active={range !== 'all'} caret onClick={() => openFilterPanel('time')}>
             {timeRangeLabel(range)}
           </Chip>
-          <Chip active={onlyStarred} onClick={toggleStarred}>
-            {onlyStarred ? '仅收藏' : '收藏'}
+          <Chip active={location !== null || noLocation} caret onClick={() => openFilterPanel('location')}>
+            {location ?? (noLocation ? '无位置' : '地点')}
           </Chip>
-          <Chip active={location !== null || onlyWithLocation} caret onClick={() => openFilterPanel('location')}>
-            {location ?? (onlyWithLocation ? '有位置' : '地点')}
-          </Chip>
+          {/* 收藏：文字**恒定**为「收藏」，选中与否只用颜色表达（2026-10-02 用户要求） */}
+          <Chip active={onlyStarred} onClick={toggleStarred}>收藏</Chip>
           {filtersActive && (
             <button
               onClick={resetFilters}
@@ -414,14 +409,14 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
             )}
           </Panel>
         )}
-        {/* 地点面板：不限 / 只看有位置 / 具体地点 三档互斥。
+        {/* 地点面板：只有两档——「无位置」与「具体地点」（2026-10-02 用户要求，从三档收成两档）。
             清单来自**实际数据**（每个地点后面带篇数），不是让用户凭记忆敲字——
-            敲字既容易打错（「昆明市」写成「昆明」就零结果）也搜不出自己有哪些地点可选。 */}
+            敲字既容易打错（「昆明市」写成「昆明」就零结果）也搜不出自己有哪些地点可选。
+            「不限」不再单列一行：点已选中的那一项即可取消（见 pickLocation / toggleNoLocation）。 */}
         {openPanel === 'location' && (
           <Panel>
             <ul className={PANEL_UL}>
-              <PanelRow label="全部地点" selected={location === null && !onlyWithLocation} onClick={pickAllPlaces} />
-              <PanelRow label="只看有位置" selected={onlyWithLocation} onClick={pickWithLocation} />
+              <PanelRow label="无位置" selected={noLocation} onClick={toggleNoLocation} />
             </ul>
             <PanelGroupLabel>具体地点</PanelGroupLabel>
             <ul className={PANEL_UL}>

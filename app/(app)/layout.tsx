@@ -51,16 +51,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* 离线指示：断网时顶部悬浮的琥珀色 wifi-off 圆标（在线时不渲染）。
           位置按页面自适应空位（见 OfflineBadge），悬浮不占内容空间 */}
       <OfflineBadge />
-      {/* 页面淡入**只挂在这里**，不要挂到各页面自己的根节点上（2026-09-30 修复）。
-          原因：TabBar 的三个目的地是三个不同的 page 组件，切换时会**卸载/重新挂载**；
-          动画类挂在页面根节点上时每次切换都会重放一遍 0.3s 的 opacity 0 → 1，
-          用户看到的就是「每切一次都白屏闪一下」。而本 layout 在同一路由组内**不会重新挂载**
-          （(app) 下所有页面共享它），所以挂在这里等于「整个应用就绪时淡入一次」，
-          之后切 tab 是瞬时的。
-          加在 children 包裹层而不是 TabBar：底部导航栏不该跟着淡入。
-          顺带：这也让首屏淡入与「解锁完成」对齐（state !== 'ready' 时渲染的是空占位，
-          内容真正出现就是在这一支开始渲染的那一刻）。 */}
-      <div className="animate-fade-in flex min-h-0 flex-1 flex-col">{children}</div>
+      {/* 顶部安全区**必须是不滚动的独立一层**（2026-10-02 修「顶部轻微虚化」）。
+          根因：iOS 对半透明状态栏做**系统级模糊**，模糊的是它下面那一层内容。
+          此前 safe-pt 挂在各页面自己的滚动容器上（SettingsView / EntryView / BackupRestoreView
+          都是 overflow-y-auto + safe-pt），于是内容一滚就滑进状态栏底下 ⇒ 顶端出现一条轻微虚化；
+          而全屏覆盖层（SearchDialog）与固定页头是「不滚动的块」，所以那两处没有——
+          这正是用户看到的「两个地方表现不一致」。放到这里之后，状态栏底下永远是这块空白，
+          任何页面（含滚动到底/到顶）都不会再把内容送进状态栏。 */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="shrink-0 safe-pt" aria-hidden />
+        {/* 页面淡入**只挂在这里**，不要挂到各页面自己的根节点上（2026-09-30 修复）。
+            原因：TabBar 的三个目的地是三个不同的 page 组件，切换时会**卸载/重新挂载**；
+            动画类挂在页面根节点上时每次切换都会重放一遍 0.3s 的 opacity 0 → 1，
+            用户看到的就是「每切一次都白屏闪一下」。而本 layout 在同一路由组内**不会重新挂载**
+            （(app) 下所有页面共享它），所以挂在这里等于「整个应用就绪时淡入一次」，
+            之后切 tab 是瞬时的。
+            加在 children 包裹层而不是 TabBar：底部导航栏不该跟着淡入；
+            也不含上面那层安全区占位（那是空白的，没有淡入的必要）。
+            顺带：这也让首屏淡入与「解锁完成」对齐（state !== 'ready' 时渲染的是空占位，
+            内容真正出现就是在这一支开始渲染的那一刻）。 */}
+        <div className="animate-fade-in flex min-h-0 flex-1 flex-col">{children}</div>
+      </div>
       <TabBar />
     </>
   )

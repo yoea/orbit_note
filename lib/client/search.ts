@@ -47,7 +47,11 @@ function parseDayRange(range: TimeRange): Date | null {
 export interface SearchFilters {
   query: string
   range: TimeRange
-  onlyWithLocation: boolean
+  /** 只看**没有位置**的条目（用来找出「当时没记位置」的那些）。
+   *  ★ 2026-10-02 用户要求把地点这一类收成两档：「无位置」与「具体地点」。
+   *    原来的「不限 / 只看有位置 / 具体地点」里，「只看有位置」被删掉、
+   *    「不限」不再单列一行（点已选中的那一项即可取消）。 */
+  noLocation: boolean
   /** 只看收藏（false = 不限；筛选是「收窄」语义，不需要「只看未收藏」这一半） */
   onlyStarred: boolean
   /** 地名筛选：取 displayLocationName 的**原值**（null = 不限）。存展示串而非 id，是因为
@@ -58,14 +62,14 @@ export interface SearchFilters {
 export const DEFAULT_FILTERS: SearchFilters = {
   query: '',
   range: 'all',
-  onlyWithLocation: false,
+  noLocation: false,
   onlyStarred: false,
   location: null,
 }
 
 /** 全默认时不做任何过滤——界面据此显示引导文案而不是「全部日记」 */
 export function isDefaultFilters(f: SearchFilters): boolean {
-  return f.query.trim() === '' && f.range === 'all' && !f.onlyWithLocation && !f.onlyStarred && f.location === null
+  return f.query.trim() === '' && f.range === 'all' && !f.noLocation && !f.onlyStarred && f.location === null
 }
 
 /** 时间档的展示串（chip 上的文字与面板里那一行**共用**它，避免两处走样） */
@@ -135,7 +139,7 @@ export function matches(
   if (start != null && at < start) return false
   const end = rangeEnd(f.range)
   if (end != null && at >= end) return false
-  if (f.onlyWithLocation && entry.latitude == null) return false
+  if (f.noLocation && entry.latitude != null) return false
   if (f.onlyStarred && !entry.starred) return false
   // 地名筛选：按**展示串**精确相等（用户选的是列表里看到的那一行，不该匹配到别的地点）
   if (f.location !== null && displayLocationName(entry) !== f.location) return false
