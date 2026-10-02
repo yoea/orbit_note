@@ -3,15 +3,14 @@
 // GitHub 风格写作频率热力图：列=周、行=周一至周日；当天篇数越多紫色越深（0-4 档）
 // byDay: { 'yyyy-mm-dd': { count, words } }（服务端按笔记时区归日）
 //
-// onOpenPicker（可选）：传入时在下方给一个「按日期查找」入口，指向列表页的月历弹层。
-//   ★ 刻意**不做逐格点击**：格子只有 10×10px，远小于可点区域标准（44px），
-//     相邻格间距仅 2px —— 点错的概率比点对还高，而「点错一天」的代价是跳到一个
-//     完全无关的日期。精确选日期交给触区正常的月历（见 components/DatePickerDialog.tsx）。
-//   另外本图只覆盖最近 26 周，半年以前的日记在图上根本不存在，它做不了唯一入口。
-export default function ContributionHeatmap({ byDay, onOpenPicker }: {
-  byDay: Record<string, { count: number; words: number }>
-  onOpenPicker?: () => void
-}) {
+// 本组件是**纯展示**，没有点击交互，而且刻意如此：
+//   · 格子只有 10×10px、相邻间距 2px，远小于可点区域标准（44px）——点错的概率比点对还高，
+//     而「点错一天」的代价是跳到一个完全无关的日期；
+//   · 它只覆盖最近 26 周，半年以前的日记在图上根本不存在，做不了日期入口。
+// 日期跳转的唯一入口是列表页标题栏里的日期胶囊（components/DatePickerDialog.tsx 提供月历）。
+// 2026-10-02 曾在这里挂过一个「按日期查找」链接，与页头胶囊功能重复，已删除（收敛为单一入口；
+// 而且本图受偏好 qo-show-heatmap 控制，关掉它入口就没了，不能作为唯一入口）。
+export default function ContributionHeatmap({ byDay }: { byDay: Record<string, { count: number; words: number }> }) {
 
   // 篇数 → 色阶档位（0=无记录）：1-16 篇每篇一档（16 级渐变，明显变色）；
   // 17-19篇→第5档（最深紫）；≥20篇→第6档（近乎黑）
@@ -100,18 +99,6 @@ export default function ContributionHeatmap({ byDay, onOpenPicker }: {
           })}
         </div>
       </div>
-      {/* 精确选日期入口（见文件头注释：不做逐格点击）。右对齐、与图的下边距共用一行，
-          不额外占纵向空间 */}
-      {onOpenPicker && (
-        <div className="flex justify-end">
-          <button
-            onClick={onOpenPicker}
-            className="text-[11px] text-neutral-500 active:opacity-60 dark:text-neutral-400"
-          >
-            按日期查找 ›
-          </button>
-        </div>
-      )}
     </div>
   )
 }
