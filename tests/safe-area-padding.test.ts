@@ -152,7 +152,7 @@ describe('顶部安全区（不滚动）', () => {
   // iOS 26 / Safari 26 的 Liquid Glass 顶栏是半透明玻璃，会实时合成它下面那层像素；
   // 底色按「该边缘上 fixed/sticky 元素的 background-color」推导 ⇒ 透明占位块等于没做，
   // 采样落空后回退到系统默认玻璃，下层内容直接透出来（= 用户看到的虚化）。
-  it('G9 顶部安全区占位块是实色 + sticky（透明块会让玻璃顶栏透出下层内容）', () => {
+  it('G9 顶部安全区占位块是流内实色块，且**不得**是 sticky（2026-10-02 第三轮定论）', () => {
     // 注意：同一文件里还有一个 `flex-1 … safe-pt` 的加载态占位 <main>（那不是顶部安全区），
     // 所以这里按「同时有 shrink-0」把真正的占位块挑出来，否则会断言到错的元素上。
     const strip = projectClassAttrs()
@@ -162,10 +162,12 @@ describe('顶部安全区（不滚动）', () => {
       })
     expect(strip, '找不到顶部安全区占位块（G7 已断言它存在，这里按元素取更精确的断言）').toBeTruthy()
     const t = classTokens(strip!.text)
-    expect(t, '必须是 sticky：Safari 的顶栏底色只从 fixed/sticky 元素采样').toContain('sticky')
-    expect(t, '必须有实色底（浅色端）').toContain('bg-white')
+    expect(t, '必须有实色底（浅色端）：那一层必须是一整块纯色，玻璃合成它才不会显形').toContain('bg-white')
     expect(t, '必须有实色底（深色端）').toContain('dark:bg-neutral-950')
     expect(t, '占位块不能是透明的').not.toContain('bg-transparent')
+    // ★ 反向钉死：顶边缘的 fixed/sticky 元素会被系统顶栏读取并合成（Safari 26 已知行为）。
+    //   第二轮曾给它加过 sticky，结果「滚动后虚化重现」——别再加回来。
+    expect(t, '顶部占位块不得是 sticky：会把自己卷进顶栏的采样/合成链路').not.toContain('sticky')
   })
 
   it('G10 globals.css 里 html 显式声明背景色 + 文档层不橡皮筋', () => {
@@ -174,5 +176,22 @@ describe('顶部安全区（不滚动）', () => {
     expect(css, 'html 未显式声明背景色').toMatch(/html\s*\{[^}]*background-color:\s*var\(--background\)/)
     // 文档层橡皮筋会把整页拖出背景带，那条带子正好落在系统栏底下
     expect(css, 'body 未禁止 overscroll').toMatch(/body\s*\{[^}]*overscroll-behavior:\s*none/)
+  })
+
+  it('G11 ★ .safe-pt 在触屏上有下限，浏览器模式再让出一条 Safari 顶栏', () => {
+    // 根因：`env(safe-area-inset-top)` 在某些环境下算成 0，留白为 0 ⇒ 内容直接落在玻璃顶栏底下。
+    // 而顶栏在「文档滚动过」之后会合成那一层的真实像素 ⇒ 用户看到的「滑动后虚化重现」。
+    const css = readFileSync(join(projectRoot, 'app/globals.css'), 'utf8')
+    expect(css, '缺少触屏下限：env 为 0 时状态栏那一条没有任何东西盖住').toMatch(
+      /@media \(pointer: coarse\)\s*\{\s*\.safe-pt\s*\{\s*padding-top:\s*max\(env\(safe-area-inset-top\),\s*2\.75rem\)/,
+    )
+    expect(css, '浏览器（非独立窗口）里 Safari 顶栏还压在状态栏下面那一条上，必须再多让一条').toMatch(
+      /@media \(display-mode: browser\) and \(pointer: coarse\)/,
+    )
+    expect(css, '浏览器模式的下限值缺失').toMatch(/padding-top:\s*max\(env\(safe-area-inset-top\),\s*6rem\)/)
+    // 桌面不能被牵连：没有系统顶栏需要让开，必须保留无下限的默认值
+    expect(css, '基础 .safe-pt 必须保留 env() 原值（桌面端不加任何留白）').toMatch(
+      /\.safe-pt\s*\{\s*padding-top:\s*env\(safe-area-inset-top\);?\s*\}/,
+    )
   })
 })
