@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { classTokens, projectClassAttrs, projectRoot } from './class-attrs'
+import { classTokens, projectClassAttrs, projectRoot, stripComments } from './class-attrs'
 
 // ============================================================================
 // 底部留白 / 安全区守卫
@@ -178,20 +178,25 @@ describe('顶部安全区（不滚动）', () => {
     expect(css, 'body 未禁止 overscroll').toMatch(/body\s*\{[^}]*overscroll-behavior:\s*none/)
   })
 
-  it('G11 ★ .safe-pt 在触屏上有下限，浏览器模式再让出一条 Safari 顶栏', () => {
+  it('G11 ★ .safe-pt 在触屏上有下限，但**不得**按「浏览器顶部有地址栏」加留白', () => {
     // 根因：`env(safe-area-inset-top)` 在某些环境下算成 0，留白为 0 ⇒ 内容直接落在玻璃顶栏底下。
     // 而顶栏在「文档滚动过」之后会合成那一层的真实像素 ⇒ 用户看到的「滑动后虚化重现」。
-    const css = readFileSync(join(projectRoot, 'app/globals.css'), 'utf8')
+    // ★ 必须剥注释再断言：globals.css 里那段「反面教训」注释本身就写着 `display-mode: browser`，
+    //   不剥会让下面那条反向断言自己把自己判红。
+    const css = stripComments(readFileSync(join(projectRoot, 'app/globals.css'), 'utf8'))
     expect(css, '缺少触屏下限：env 为 0 时状态栏那一条没有任何东西盖住').toMatch(
       /@media \(pointer: coarse\)\s*\{\s*\.safe-pt\s*\{\s*padding-top:\s*max\(env\(safe-area-inset-top\),\s*2\.75rem\)/,
     )
-    expect(css, '浏览器（非独立窗口）里 Safari 顶栏还压在状态栏下面那一条上，必须再多让一条').toMatch(
-      /@media \(display-mode: browser\) and \(pointer: coarse\)/,
-    )
-    expect(css, '浏览器模式的下限值缺失').toMatch(/padding-top:\s*max\(env\(safe-area-inset-top\),\s*6rem\)/)
-    // 桌面不能被牵连：没有系统顶栏需要让开，必须保留无下限的默认值
-    expect(css, '基础 .safe-pt 必须保留 env() 原值（桌面端不加任何留白）').toMatch(
+    // 基础规则必须保留 env() 原值：桌面端不加任何留白
+    expect(css, '基础 .safe-pt 必须保留 env() 原值（桌面端不加留白）').toMatch(
       /\.safe-pt\s*\{\s*padding-top:\s*env\(safe-area-inset-top\);?\s*\}/,
+    )
+    // ★ 反向钉死（2026-10-02 当天加过又撤回）：按 display-mode: browser 加 `max(env, 6rem)`，
+    //   理由是「Safari 顶栏压在状态栏下面那一条上」。但 iOS 26 Safari 默认是 Compact 布局
+    //   （地址栏在**底部**），顶部只有状态栏 ⇒ 用户直接看到顶部一大块空白。
+    //   地址栏位置是用户设置项，CSS 无从得知，所以这种「替浏览器预留」的写法不许再出现。
+    expect(css, '不得按浏览器顶栏高度预留留白（地址栏默认在底部，会留出一大块空白）').not.toMatch(
+      /display-mode:\s*browser/,
     )
   })
 })

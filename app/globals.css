@@ -52,17 +52,18 @@ body {
    ⇒ 修法有两条，缺一不可：
      ① 那一条必须**永远是不透明实色**（由 (app)/layout 的占位块提供底色）；
      ② 那一条的**高度必须真的盖住系统顶栏**。
-   ② 是之前一直没做到的：`env(safe-area-inset-top)` 在某些环境下会算成 0
+   ② 的关键是别让留白变成 0：`env(safe-area-inset-top)` 在某些环境下会算成 0
    （此时内容直接落在玻璃状态栏底下，占位块高度也是 0 ⇒ 等于没留白）。
-   ⇒ 触屏设备给一个下限；浏览器里（非独立窗口）再让出一条 Safari 顶栏的高度——
-     Safari 的玻璃顶栏压在状态栏下面那一条上，内容必须从它之下开始。
-   桌面（指针精确）保持原样：没有系统顶栏需要让开。 */
+   ⇒ 触屏设备给一个下限就够；桌面（指针精确）保持原样，不加任何留白。
+
+   ★ 反面教训（2026-10-02 当天就撤回）：曾在这里按「Safari 顶栏压在状态栏下面」加过一条
+     `@media (display-mode: browser) { max(env, 6rem) }`，结果用户直接看到顶部一大块空白。
+     原因是 iOS 26 Safari 的默认布局是 **Compact —— 地址栏在底部**，顶部只有状态栏，
+     多让出来的那 40 多 px 完全没有对应物。**不要按「浏览器一定有顶部地址栏」来加留白**：
+     地址栏位置由用户在 Safari 设置里选（Compact/Bottom/Top），CSS 端无从得知。 */
 .safe-pt { padding-top: env(safe-area-inset-top); }
 @media (pointer: coarse) {
   .safe-pt { padding-top: max(env(safe-area-inset-top), 2.75rem); }
-}
-@media (display-mode: browser) and (pointer: coarse) {
-  .safe-pt { padding-top: max(env(safe-area-inset-top), 6rem); }
 }
 /* 已废弃，勿在新代码使用：只有 env()，**没有 1rem 下限**。
    在没有 home indicator 的环境（桌面浏览器、旧 iPhone）算出来是 0，
