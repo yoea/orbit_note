@@ -7,7 +7,6 @@ import { getDek } from '@/lib/client/session'
 import { decryptEntries, fetchAllEntries } from '@/lib/client/entries'
 import { weatherEmoji } from '@/lib/client/weather'
 import {
-  TIME_PRESETS,
   buildSnippet,
   dayRangeKey,
   firstLine,
@@ -16,7 +15,6 @@ import {
   isDayRange,
   locationFacets,
   matches,
-  monthFacets,
   relevanceScore,
   timeRangeLabel,
   type TimeRange,
@@ -326,7 +324,6 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
   // 客户端取不到别的来源）。清单里不会出现空地名，所以不会给出选了却零结果的可选项。
   const facets = useMemo(() => locationFacets((entries ?? []).map((e) => e.entry)), [entries])
   // 月份清单同理：只列真的有日记的月份（新的在前），不会给出空档
-  const months = useMemo(() => monthFacets((entries ?? []).map((e) => e.entry)), [entries])
   // 有日记的日期集合（日历据此把没写过的日子置灰）——同样从已解密条目现取
   const dayKeys = useMemo(() => new Set((entries ?? []).map((e) => dayKeyOf(new Date(e.entry.createdAt)))), [entries])
 
@@ -374,7 +371,7 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
         </div>
         {/* 筛选归为**三类**（时间 / 收藏 / 地点），与关键词同样是「与」的关系；
             全部是明文元数据，每一项都只**收窄**结果集 ⇒ 任意组合恒为交集（见 lib/client/search.ts）。
-            · 时间：按钮上直接显示当前档位（默认「全部时间」），点开面板选预设档、**具体日期**或具体月份；
+            · 时间：按钮上直接显示当前档位（默认「全部时间」），点开面板选**具体日期**（日历上只有写过日记的日子可点）；
             · 收藏：布尔开关，点了就切，没有面板可开；
             · 地点：「只看有位置」与「具体地点」是同一类里的两档，因此都收在地点面板内，
               不再单独占一个 chip（这就是从 7 个 chip 收敛成 3 个控件的原因）。 */}
@@ -397,17 +394,15 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
             </button>
           )}
         </div>
-        {/* 时间面板：预设档 + 具体日期日历 + 数据里实际存在的月份清单。
-            列月份/列日期而不是让用户自己敲，理由与地点清单相同——只给出**真的有日记**的档位，
-            不会出现「选了却零结果」的组合。
-            「具体日期」放在预设档之后、月份清单之前：找某一天是最具体的诉求，
-            不该让人先划过一整张月份清单才能点到（2026-10-02 从列表页搬来）。 */}
+        {/* 时间面板：只有「全部时间」+ 一张日历。
+            ★ 2026-10-02 用户要求删掉「近 7 天 / 近 30 天 / 具体月份」三档——时间筛选只留「按具体日期」
+              （理由见 lib/client/search.ts 顶部注释）。面板里给「全部时间」这一行是为了能**取消**筛选：
+              chip 上的 ✕ 只清关键词，筛选的取消入口必须有地方放。
+            日历本身列的是**真的有日记的日子**（与地点清单同一条约定），不给「点了却零结果」的档位。 */}
         {openPanel === 'time' && (
           <Panel>
             <ul className={PANEL_UL}>
-              {TIME_PRESETS.map((r) => (
-                <PanelRow key={r} label={timeRangeLabel(r)} selected={range === r} onClick={() => pickRange(r)} />
-              ))}
+              <PanelRow label="全部时间" selected={range === 'all'} onClick={() => pickRange('all')} />
             </ul>
             <PanelGroupLabel>具体日期</PanelGroupLabel>
             {entries === null || entries.length === 0 ? (
@@ -417,21 +412,6 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
             ) : (
               <DayPicker dayKeys={dayKeys} selected={isDayRange(range) ? range : 'all'} onPick={pickRange} />
             )}
-            <PanelGroupLabel>按月份</PanelGroupLabel>
-            <ul className={PANEL_UL}>
-              {months.length === 0 && (
-                <li><PanelHint error={error} loaded={entries !== null} empty="还没有日记" /></li>
-              )}
-              {months.map((m) => (
-                <PanelRow
-                  key={m.key}
-                  label={m.label}
-                  meta={`${m.count} 篇`}
-                  selected={range === `m:${m.key}`}
-                  onClick={() => pickRange(`m:${m.key}`)}
-                />
-              ))}
-            </ul>
           </Panel>
         )}
         {/* 地点面板：不限 / 只看有位置 / 具体地点 三档互斥。

@@ -152,13 +152,40 @@ describe('L · 按日期筛选改在搜索面板里', () => {
     expect(src, '选中判定必须走 dayRangeKey（编码只有一处）').toMatch(/const isSelected = selected === dayRangeKey\(day\)/)
   })
 
-  it('L15 时间档类型支持 d: 编码，且起止边界与 label 都有分支', () => {
+  it('L15 时间档只剩 all 与 d:，且起止边界与 label 都有分支', () => {
     const src = code(SEARCH_LIB)
-    expect(src, 'TimeRange 缺 d: 档').toContain("| `d:${string}`")
+    expect(src, 'TimeRange 应只剩 all 与 d: 两档').toContain("export type TimeRange = 'all' | `d:${string}`")
+    // 反向：三档快捷筛选（近7天/近30天/具体月份）已按用户要求删除，不得回来
+    expect(src, '不得再有 TIME_PRESETS').not.toContain('TIME_PRESETS')
+    expect(src, '不得再有月份清单').not.toContain('monthFacets')
+    expect(src, '不得再有 7d/30d 档').not.toContain(`'7d'`)
+    expect(src, '不得再有 m: 月份档').not.toContain('m:${string}')
     expect(src, '缺少日期解析').toMatch(/function parseDayRange\(/)
-    expect(src, 'rangeStart 缺日期分支').toMatch(/const day = parseDayRange\(range\)[\s\S]{0,80}return day\.getTime\(\)/)
+    expect(src, 'rangeStart 缺日期分支').toMatch(/const day = parseDayRange\(range\)[\s\S]{0,60}day\.getTime\(\)/)
     expect(src, 'rangeEnd 缺日期分支（次日 0 点，不含）').toMatch(/next\.setDate\(next\.getDate\(\) \+ 1\)/)
     expect(src, '缺少 isDayRange').toContain('export function isDayRange')
     expect(src, '缺少 dayRangeKey').toContain('export function dayRangeKey')
+  })
+})
+
+describe('L · 从详情返回时恢复滚动位置（2026-10-02 修）', () => {
+  it('L16 保存的是「滚动时记下的位置」，不在卸载那一刻读节点', () => {
+    const src = code(LIST)
+    // 卸载时容器已被 React 摘除，此时 el.scrollTop 读回来是 0 ⇒ 永远存成「顶部」
+    expect(src, '缺少滚动位置的 ref').toContain('lastScrollTopRef')
+    expect(src, 'scroll 事件里应记录位置').toMatch(/lastScrollTopRef\.current = el\.scrollTop/)
+    const saveAt = pos(src, 'const save = () => persist(lastScrollTopRef.current)')
+    expect(saveAt).toBeGreaterThan(-1)
+    expect(src, '卸载兜底保存不得再读节点').not.toMatch(/persist\(el\.scrollTop\)/)
+  })
+
+  it('L17 恢复带按帧重试、且有上限；用户一动就让开', () => {
+    const src = code(LIST)
+    expect(src, '缺少重试上限').toMatch(/let left = 30/)
+    expect(src, '重试必须按帧进行').toMatch(/requestAnimationFrame\(tick\)/)
+    expect(src, '赋值后要回读确认是否到位（否则被钳到 0 也算成功）').toMatch(/Math\.abs\(el\.scrollTop - target\) <= 2/)
+    expect(src, '用户触摸时放弃重试（不能跟人抢滚动）').toContain("addEventListener('touchstart', cancel")
+    expect(src, '用户滚轮时同理').toContain("addEventListener('wheel', cancel")
+    expect(src, '位置优先取内存快照（硬刷新后才是 sessionStorage）').toMatch(/snapshot\?\.scrollTop \?\? readScrollState\(\)\?\.y/)
   })
 })

@@ -94,7 +94,12 @@ interface Stats {
 //   · 刷新与冷启动自然清空，不会留下跨会话的过期数据；列表内容是**解密后的明文**，
 //     落盘就违背了本项目的立场；
 //   · 也就不需要任何失效逻辑——每次挂载都会重取一遍。
-let snapshot: { items: DecryptedItem[]; stats: Stats | null; cursor: Cursor | null; hasMore: boolean } | null = null
+//
+// scrollTop：当前滚动位置，随滚动一路更新（见 rememberScroll）。
+// 为什么不只靠 sessionStorage（2026-10-02 修「从详情返回回到顶部」）：卸载时 React 已经把滚动
+// 容器从文档里摘掉，那时读 el.scrollTop 会得到 0（无布局盒），于是存下去的永远是「顶部」。
+// 内存快照里的这份是滚动过程中实时记下的，不依赖「卸载那一刻还能不能读到节点」。
+let snapshot: { items: DecryptedItem[]; stats: Stats | null; cursor: Cursor | null; hasMore: boolean; scrollTop: number } | null = null
 
 // 组头：今天/昨天人性化显示，其余显示 日期 + 星期
 function dayLabel(key: string): string {
@@ -153,6 +158,9 @@ export default function DiaryListView() {
   const cursorRef = useRef<Cursor | null>(cursor)
   const hasMoreRef = useRef(hasMore)
   const fetchingRef = useRef(false)
+  // 最近一次「节点还挂在文档里」时读到的滚动位置。卸载时用它，而不是再读一次节点
+  // （那时容器已摘除，scrollTop 会读成 0 —— 见 snapshot 的注释）。
+  const lastScrollTopRef = useRef(0)
 
   // 同步给 ref：这些 ref 只被异步回调（滚动保存、observer 回调）读取，因此在 effect 里赋值。
   // 不要写回渲染期赋值——渲染期写 ref 会在并发渲染下读到尚未提交的值（react-hooks/refs 也禁止）。
@@ -161,9 +169,15 @@ export default function DiaryListView() {
   useEffect(() => { hasMoreRef.current = hasMore }, [hasMore])
 
   // 快照回写：状态一变就覆盖（组件随后被卸载也无妨——模块级变量本就该继续持有最后的内容）。
+  // scrollTop 保留上一次的值：它由滚动回调实时更新（rememberScroll），不能被这里的覆盖清零。
   useEffect(() => {
-    snapshot = { items, stats, cursor, hasMore }
+    snapshot = { items, stats, cursor, hasMore, scrollTop: snapshot?.scrollTop ?? 0 }
   }, [items, stats, cursor, hasMore])
+
+  // 记下当前滚动位置（滚动回调里实时调用；同时写入内存快照与 sessionStorage）
+  function rememberScroll(y: number) {
+    if (snapshot) snapshot.scrollTop = y
+  }
 
   // Toast 自动消失（与 SettingsView 的离线提示同一套做法：外层控制移除）
   useEffect(() => {
@@ -185,18 +199,23 @@ export default function DiaryListView() {
     return null
   }
 
-  // 保存滚动位置：滚动防抖写入 sessionStorage；页面隐藏/卸载时兜底保存
+  // 保存滚动位置：滚动防抖写入 sessionStorage；页面隐藏/卸载时兜底保存。
   // 监听对象是滚动容器元素而非 window——本页是容器滚动。
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
     let t: ReturnType<typeof setTimeout> | null = null
-    const save = () => {
+    const persist = (y: number) => {
+      rememberScroll(y)
       try {
-        sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ y: el.scrollTop, count: itemsRef.current.length }))
+        sessionStorage.setItem(SCROLL_KEY, JSON.stringify({ y, count: itemsRef.current.length }))
       } catch { /* 忽略 */ }
     }
+    const save = () => persist(lastScrollTopRef.current)
     const onScroll = () => {
+      // ★ 位置在**滚动事件里**读（此刻节点一定还挂在文档里），存进 ref；
+      //   卸载时只写 ref 里的值，不再读节点 —— 详见 snapshot 与 lastScrollTopRef 的注释。
+      lastScrollTopRef.current = el.scrollTop
       if (t) clearTimeout(t)
       t = setTimeout(save, 150)
     }
@@ -210,17 +229,34 @@ export default function DiaryListView() {
     }
   }, [])
 
-  // 内容加载完成后恢复滚动位置（仅首次；数据异步解密完成后再滚动，否则高度未定）
+  // 恢复滚动位置（每次挂载只做一次）。
+  // ★ 为什么不能只赋一次值（2026-10-02 修「从详情返回回到列表顶部」）：赋值那一刻若内容高度
+  //   还没算出来（数据在异步解密、或 React 还没提交完列表），scrollTop 会被**钳到 0 或最大值**。
+  //   所以按帧重试到「赋值后回读的值真的到位」为止，最多 30 帧；用户一旦自己触摸/滚动就立刻放弃
+  //   （不能跟人抢滚动条）。
   useEffect(() => {
     if (restoredScrollRef.current) return
     if (items.length === 0 && (stats == null || (stats && stats.count === 0))) return
     restoredScrollRef.current = true
-    try {
-      const state = readScrollState()
-      if (state && state.y > 0) {
-        requestAnimationFrame(() => { if (scrollRef.current) scrollRef.current.scrollTop = state.y })
-      }
-    } catch { /* 忽略 */ }
+    // 位置来源优先级：**内存快照**（滚动过程中实时更新，最可靠）> sessionStorage（硬刷新后才有）
+    const target = snapshot?.scrollTop ?? readScrollState()?.y ?? 0
+    lastScrollTopRef.current = target
+    if (target <= 0) return
+    let left = 30
+    let cancelled = false
+    const cancel = () => { cancelled = true }
+    window.addEventListener('touchstart', cancel, { once: true, passive: true })
+    window.addEventListener('wheel', cancel, { once: true, passive: true })
+    const tick = () => {
+      if (cancelled) return
+      const el = scrollRef.current
+      if (!el) return
+      el.scrollTop = target
+      // 赋值后立刻回读：值到位 ⇒ 内容高度已经够，收工；否则下一帧再试
+      if (Math.abs(el.scrollTop - target) <= 2 || left-- <= 0) return
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
   }, [items, stats])
 
   // 取一页（游标：null = 从最新开始，否则从该游标取更旧的一页）并解密。

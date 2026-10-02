@@ -84,17 +84,20 @@ describe('搜索筛选栏：三类筛选（时间 / 收藏 / 地点）', () => {
     expect(CODE.slice(start, end)).toContain('ensureLoaded()')
   })
 
-  it('F3 时间面板：预设档来自 TIME_PRESETS，且刻意没有「今年」这一档', () => {
-    expect(CODE).toContain('TIME_PRESETS.map')
-    // 旧实现有 'year' 档；再出现即说明有人把它加回来了（用户明确只要 全部/7天/30天/月份）
+  it('F3 时间面板只剩「全部时间 + 具体日期日历」，快捷档不得回流', () => {
+    // 用户 2026-10-02 明确要求删掉「近 7 天 / 近 30 天 / 具体月份」，时间筛选只留按具体日期。
+    // 面板里保留「全部时间」这一行是为了能**取消**筛选（chip 的 ✕ 只清关键词）。
+    expect(CODE).toContain("label=\"全部时间\"")
+    expect(CODE).toContain('DayPicker')
+    // 反向：三档快捷筛选与月份清单都不得回来
+    expect(CODE).not.toContain('TIME_PRESETS')
+    expect(CODE).not.toContain('monthFacets')
+    expect(CODE).not.toContain('按月份')
+    expect(CODE).not.toContain('近 7 天')
+    expect(CODE).not.toContain('近 30 天')
+    // 更早删过一次的「今年」也不得回来
     expect(CODE).not.toContain("'year'")
     expect(CODE).not.toContain('今年')
-  })
-
-  it('F4 时间面板含月份清单（从数据现取，不是让用户自己选年月）', () => {
-    expect(CODE).toContain('monthFacets')
-    expect(CODE).toContain('months.map')
-    expect(CODE).toContain('按月份')
   })
 
   it('F5 地点面板：不限 / 只看有位置 / 具体地点 三档都在', () => {

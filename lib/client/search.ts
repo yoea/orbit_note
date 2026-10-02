@@ -15,37 +15,20 @@
 //   因此在地点面板里与「全部地点」并列，而不是单独占一个 chip。
 import { displayLocationName, type LocationedEntry } from './location'
 
-// ── 时间：五档 ──────────────────────────────────────────────────────────────
+// ── 时间：只剩两档 ──────────────────────────────────────────────────────────
 //
-// 全部时间 / 近 7 天 / 近 30 天 / **具体月份** / **具体日期**。
-// 刻意**不做**「今年」这类粗粒度区间（用户 2026-09-30 明确只要这几档）：
-// 它与月份清单信息量重叠，而月份清单还能精确跳到某年的某个月；
-// 也不做「近 90 天」之类的中间档——跨度越大越接近「全部时间」，没有额外信息。
+// 全部时间 / **具体日期**。
+// ★ 2026-10-02（用户要求）：删掉了「近 7 天」「近 30 天」与「具体月份」三个快捷档。
+//   理由：这几档要么与「具体日期」信息量重叠（月份只是粗一层的日期），要么几乎不用
+//   （近 7 天/近 30 天在只有几十篇的个人日记里，效果接近「全部时间」）。档位少了以后
+//   时间面板只剩「全部时间 + 一张日历」，用户不必先在一串档位里找。
+//   历史（别加回来）：曾有过 '7d' / '30d' / 'm:YYYY-MM'，也被删过一次「今年」档。
 //
-// 具体月份 / 具体日期编码成 'm:YYYY-MM' / 'd:YYYY-MM-DD' 而不是新增字段：时间维度在数据层
-// 始终是**一个**可选值，`matches` 里就仍然只有一处时间判定，不需要「各档互斥」的额外规则。
-//
-// ★ 2026-10-02：具体日期这一档是从列表页搬过来的。原先列表页做了「日期胶囊 + 月历 + 锚定窗口 +
-//   双向游标」，真机上滚动补偿不稳（上滑卡顿跳动），且它本质上属于「我要找某天」= 检索行为。
-//   收敛到这里更合理：搜索面板**本来就**把全部条目解密到内存再本地筛，按天筛是精确且完整的，
-//   而列表页那边只能给一个"从那天的窗口往外翻"的近似视图。
-export type TimeRange = 'all' | '7d' | '30d' | `m:${string}` | `d:${string}`
+// 具体日期编码成 'd:YYYY-MM-DD' 而不是新增字段：时间维度在数据层始终是**一个**可选值，
+// `matches` 里就仍然只有一处时间判定。'
+export type TimeRange = 'all' | `d:${string}`
 
-/** 预设档（下拉里排在月份清单之前）。'all' 是默认值 = 不做时间过滤。 */
-export const TIME_PRESETS: TimeRange[] = ['all', '7d', '30d']
-
-const MONTH_RANGE_RE = /^m:(\d{4})-(\d{2})$/
 const DAY_RANGE_RE = /^d:(\d{4})-(\d{2})-(\d{2})$/
-
-/** 'm:YYYY-MM' → { year, month }；非月份档或月份非法（00/13）返回 null */
-function parseMonthRange(range: TimeRange): { year: number; month: number } | null {
-  const m = MONTH_RANGE_RE.exec(range)
-  if (!m) return null
-  const year = Number(m[1])
-  const month = Number(m[2])
-  if (month < 1 || month > 12) return null
-  return { year, month }
-}
 
 /**
  * 'd:YYYY-MM-DD' → 本地零点的 Date；非日期档或日期非法返回 null。
@@ -87,17 +70,11 @@ export function isDefaultFilters(f: SearchFilters): boolean {
 
 /** 时间档的展示串（chip 上的文字与面板里那一行**共用**它，避免两处走样） */
 export function timeRangeLabel(range: TimeRange): string {
-  if (range === '7d') return '近 7 天'
-  if (range === '30d') return '近 30 天'
-  const month = parseMonthRange(range)
-  if (month) return `${month.year}年${month.month}月`
   const day = parseDayRange(range)
-  if (day) {
-    const md = `${day.getMonth() + 1}月${day.getDate()}日`
-    // 跨年才带年份，否则「2026年9月2日」在 chip 上太长
-    return day.getFullYear() === new Date().getFullYear() ? md : `${day.getFullYear()}年${md}`
-  }
-  return '全部时间'
+  if (!day) return '全部时间'
+  const md = `${day.getMonth() + 1}月${day.getDate()}日`
+  // 跨年才带年份，否则 chip 上太长
+  return day.getFullYear() === new Date().getFullYear() ? md : `${day.getFullYear()}年${md}`
 }
 
 /** 该时间档是否属于「具体某一天」（面板里据此高亮日历上的那一格） */
@@ -108,66 +85,28 @@ export function isDayRange(range: TimeRange): boolean {
 /**
  * 'YYYY-MM-DD' → 'd:YYYY-MM-DD'。
  * 存在的意义是**把日期档的编码格式收在一处**：日历点击、选中判定、测试都走它，
- * 哪天编码要改（比如换成 'date:2026-09-02'）只改这里。'
+ * 哪天编码要改只改这里。
  */
 export function dayRangeKey(day: string): TimeRange {
   return `d:${day}`
 }
 
-/** 时间范围下界（本地时区当天/当月 0 点）；'all' 返回 null */
-export function rangeStart(range: TimeRange, now: Date = new Date()): number | null {
-  const d = new Date(now)
-  d.setHours(0, 0, 0, 0)
-  if (range === '7d') { d.setDate(d.getDate() - 6); return d.getTime() }
-  if (range === '30d') { d.setDate(d.getDate() - 29); return d.getTime() }
-  const month = parseMonthRange(range)
-  if (month) return new Date(month.year, month.month - 1, 1).getTime()
+/** 时间范围下界（具体日期 = 本地当天 0 点）；'all' 返回 null */
+export function rangeStart(range: TimeRange): number | null {
   const day = parseDayRange(range)
-  if (day) return day.getTime()
-  return null
+  return day ? day.getTime() : null
 }
 
 /**
- * 时间范围上界（**不含**）：具体月份取次月 1 日 0 点、具体日期取次日 0 点；其余返回 null。
- * 预设档（近 7 天 / 近 30 天）只有下界、上界是「现在」——刻意不给它们算上界：
- * 上界写成「明天 0 点」会把今天晚些时候创建的条目挡在外面（时钟与本地时区都可能偏）。
+ * 时间范围上界（**不含**，具体日期取次日 0 点）；'all' 返回 null。
+ * 用「次日 0 点、不含」而不是「当天 23:59:59.999」：临界那一毫秒的条目不会被漏掉。
  */
 export function rangeEnd(range: TimeRange): number | null {
-  const month = parseMonthRange(range)
-  if (month) return new Date(month.year, month.month, 1).getTime()
   const day = parseDayRange(range)
-  if (day) {
-    const next = new Date(day)
-    next.setDate(next.getDate() + 1)
-    return next.getTime()
-  }
-  return null
-}
-
-export interface MonthFacet {
-  /** 'YYYY-MM'（本地时区） */
-  key: string
-  /** 展示串（'2026年9月'）——与 chip 上的文字同一口径 */
-  label: string
-  count: number
-}
-
-/**
- * 数据里**实际存在**的月份清单（新的在前）。
- * 与地名清单同理：只列真的有日记的月份，不给出「选了却零结果」的空档；
- * 正文端到端加密、服务端无法参与筛选，所以清单只能在客户端从已解密条目里现取。
- */
-export function monthFacets(entries: { createdAt: string }[]): MonthFacet[] {
-  const map = new Map<string, number>()
-  for (const e of entries) {
-    const d = new Date(e.createdAt)
-    if (Number.isNaN(d.getTime())) continue
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    map.set(key, (map.get(key) ?? 0) + 1)
-  }
-  return [...map.entries()]
-    .map(([key, count]) => ({ key, label: timeRangeLabel(`m:${key}`), count }))
-    .sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0))
+  if (!day) return null
+  const next = new Date(day)
+  next.setDate(next.getDate() + 1)
+  return next.getTime()
 }
 
 export interface FilterableEntry extends LocationedEntry {
@@ -190,10 +129,9 @@ export function matches(
   entry: FilterableEntry,
   plain: string,
   f: SearchFilters,
-  now: Date = new Date(),
 ): boolean {
   const at = new Date(entry.createdAt).getTime()
-  const start = rangeStart(f.range, now)
+  const start = rangeStart(f.range)
   if (start != null && at < start) return false
   const end = rangeEnd(f.range)
   if (end != null && at >= end) return false
