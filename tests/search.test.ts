@@ -6,6 +6,7 @@ import {
   firstLine,
   highlightSegments,
   isDefaultFilters,
+  isDayRange,
   locationFacets,
   matches,
   monthFacets,
@@ -53,6 +54,50 @@ describe('isDefaultFilters', () => {
 })
 
 describe('时间档：rangeStart / rangeEnd', () => {
+  it('具体日期档：下界=当天 0 点、上界=次日 0 点（不含）', () => {
+    // 2026-10-02 新增：按日期筛选从列表页搬到搜索面板（时间档的「具体日期」日历）
+    const start = new Date(rangeStart('d:2026-09-02', NOW)!)
+    expect([start.getFullYear(), start.getMonth() + 1, start.getDate(), start.getHours()]).toEqual([2026, 9, 2, 0])
+    const end = new Date(rangeEnd('d:2026-09-02')!)
+    expect([end.getFullYear(), end.getMonth() + 1, end.getDate(), end.getHours()]).toEqual([2026, 9, 3, 0])
+    // 跨月边界：9月30日 的上界落在 10月1日
+    const end2 = new Date(rangeEnd('d:2026-09-30')!)
+    expect([end2.getMonth() + 1, end2.getDate()]).toEqual([10, 1])
+  })
+
+  it('非法日期档一律 null（2月30日这种「看起来合法」的也要挡住）', () => {
+    expect(rangeStart('d:2026-02-30', NOW)).toBeNull()
+    expect(rangeEnd('d:2026-02-30')).toBeNull()
+    expect(rangeStart('d:2026-13-01', NOW)).toBeNull()
+    expect(rangeStart('d:2026-1-1', NOW)).toBeNull() // 未补零
+  })
+})
+
+describe('timeRangeLabel（chip 与面板共用同一份文字）', () => {
+  it('预设档与月份档各有其展示串', () => {
+    expect(timeRangeLabel('all')).toBe('全部时间')
+    expect(timeRangeLabel('7d')).toBe('近 7 天')
+    expect(timeRangeLabel('30d')).toBe('近 30 天')
+    expect(timeRangeLabel('m:2026-09')).toBe('2026年9月')
+    expect(timeRangeLabel('m:2026-12')).toBe('2026年12月')
+  })
+
+  it('日期档：同年只显示月日，跨年才带年份（否则 chip 太长）', () => {
+    const thisYear = new Date().getFullYear()
+    expect(timeRangeLabel(`d:${thisYear}-09-02`)).toBe('9月2日')
+    expect(timeRangeLabel(`d:${thisYear - 1}-09-02`)).toBe(`${thisYear - 1}年9月2日`)
+    // 非法日期档回落到「全部时间」，不显示成别的档位（避免「选了却看起来没选」）
+    expect(timeRangeLabel('d:2026-02-30')).toBe('全部时间')
+  })
+
+  it('isDayRange 只认合法日期档', () => {
+    expect(isDayRange('d:2026-09-02')).toBe(true)
+    expect(isDayRange('d:2026-02-30')).toBe(false)
+    expect(isDayRange('m:2026-09')).toBe(false)
+    expect(isDayRange('all')).toBe(false)
+  })
+})
+describe('时间档：rangeStart / rangeEnd', () => {
   it("'all' 两侧都是 null（不限时间）", () => {
     expect(rangeStart('all', NOW)).toBeNull()
     expect(rangeEnd('all')).toBeNull()
@@ -84,16 +129,6 @@ describe('时间档：rangeStart / rangeEnd', () => {
     expect(rangeEnd('m:2026-13')).toBeNull()
     expect(rangeStart('m:2026-00', NOW)).toBeNull()
     expect(rangeEnd('m:2026-00')).toBeNull()
-  })
-})
-
-describe('timeRangeLabel（chip 与面板共用同一份文字）', () => {
-  it('预设档与月份档各有其展示串', () => {
-    expect(timeRangeLabel('all')).toBe('全部时间')
-    expect(timeRangeLabel('7d')).toBe('近 7 天')
-    expect(timeRangeLabel('30d')).toBe('近 30 天')
-    expect(timeRangeLabel('m:2026-09')).toBe('2026年9月')
-    expect(timeRangeLabel('m:2026-12')).toBe('2026年12月')
   })
 })
 

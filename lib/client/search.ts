@@ -15,21 +15,27 @@
 //   因此在地点面板里与「全部地点」并列，而不是单独占一个 chip。
 import { displayLocationName, type LocationedEntry } from './location'
 
-// ── 时间：四档 ──────────────────────────────────────────────────────────────
+// ── 时间：五档 ──────────────────────────────────────────────────────────────
 //
-// 全部时间 / 近 7 天 / 近 30 天 / **具体月份**。
-// 刻意**不做**「今年」这类粗粒度区间（用户 2026-09-30 明确只要这四档）：
+// 全部时间 / 近 7 天 / 近 30 天 / **具体月份** / **具体日期**。
+// 刻意**不做**「今年」这类粗粒度区间（用户 2026-09-30 明确只要这几档）：
 // 它与月份清单信息量重叠，而月份清单还能精确跳到某年的某个月；
 // 也不做「近 90 天」之类的中间档——跨度越大越接近「全部时间」，没有额外信息。
 //
-// 具体月份编码成 'm:YYYY-MM' 而不是新增一个字段：时间维度在数据层始终是**一个**
-// 可选值，`matches` 里就仍然只有一处时间判定，不需要「预设与月份互斥」的额外规则。
-export type TimeRange = 'all' | '7d' | '30d' | `m:${string}`
+// 具体月份 / 具体日期编码成 'm:YYYY-MM' / 'd:YYYY-MM-DD' 而不是新增字段：时间维度在数据层
+// 始终是**一个**可选值，`matches` 里就仍然只有一处时间判定，不需要「各档互斥」的额外规则。
+//
+// ★ 2026-10-02：具体日期这一档是从列表页搬过来的。原先列表页做了「日期胶囊 + 月历 + 锚定窗口 +
+//   双向游标」，真机上滚动补偿不稳（上滑卡顿跳动），且它本质上属于「我要找某天」= 检索行为。
+//   收敛到这里更合理：搜索面板**本来就**把全部条目解密到内存再本地筛，按天筛是精确且完整的，
+//   而列表页那边只能给一个"从那天的窗口往外翻"的近似视图。
+export type TimeRange = 'all' | '7d' | '30d' | `m:${string}` | `d:${string}`
 
 /** 预设档（下拉里排在月份清单之前）。'all' 是默认值 = 不做时间过滤。 */
 export const TIME_PRESETS: TimeRange[] = ['all', '7d', '30d']
 
 const MONTH_RANGE_RE = /^m:(\d{4})-(\d{2})$/
+const DAY_RANGE_RE = /^d:(\d{4})-(\d{2})-(\d{2})$/
 
 /** 'm:YYYY-MM' → { year, month }；非月份档或月份非法（00/13）返回 null */
 function parseMonthRange(range: TimeRange): { year: number; month: number } | null {
@@ -39,6 +45,20 @@ function parseMonthRange(range: TimeRange): { year: number; month: number } | nu
   const month = Number(m[2])
   if (month < 1 || month > 12) return null
   return { year, month }
+}
+
+/**
+ * 'd:YYYY-MM-DD' → 本地零点的 Date；非日期档或日期非法返回 null。
+ * 回验一次组件是必要的：`new Date(2026, 1, 30)`（2月30日）不报错，会静默滚到 3月2日。
+ */
+function parseDayRange(range: TimeRange): Date | null {
+  const m = DAY_RANGE_RE.exec(range)
+  if (!m) return null
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  if (mo < 1 || mo > 12) return null
+  const date = new Date(y, mo - 1, d)
+  if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) return null
+  return date
 }
 
 export interface SearchFilters {
@@ -71,7 +91,27 @@ export function timeRangeLabel(range: TimeRange): string {
   if (range === '30d') return '近 30 天'
   const month = parseMonthRange(range)
   if (month) return `${month.year}年${month.month}月`
+  const day = parseDayRange(range)
+  if (day) {
+    const md = `${day.getMonth() + 1}月${day.getDate()}日`
+    // 跨年才带年份，否则「2026年9月2日」在 chip 上太长
+    return day.getFullYear() === new Date().getFullYear() ? md : `${day.getFullYear()}年${md}`
+  }
   return '全部时间'
+}
+
+/** 该时间档是否属于「具体某一天」（面板里据此高亮日历上的那一格） */
+export function isDayRange(range: TimeRange): boolean {
+  return parseDayRange(range) !== null
+}
+
+/**
+ * 'YYYY-MM-DD' → 'd:YYYY-MM-DD'。
+ * 存在的意义是**把日期档的编码格式收在一处**：日历点击、选中判定、测试都走它，
+ * 哪天编码要改（比如换成 'date:2026-09-02'）只改这里。'
+ */
+export function dayRangeKey(day: string): TimeRange {
+  return `d:${day}`
 }
 
 /** 时间范围下界（本地时区当天/当月 0 点）；'all' 返回 null */
@@ -82,18 +122,26 @@ export function rangeStart(range: TimeRange, now: Date = new Date()): number | n
   if (range === '30d') { d.setDate(d.getDate() - 29); return d.getTime() }
   const month = parseMonthRange(range)
   if (month) return new Date(month.year, month.month - 1, 1).getTime()
+  const day = parseDayRange(range)
+  if (day) return day.getTime()
   return null
 }
 
 /**
- * 时间范围上界（**不含**，取次月 1 日 0 点）；只有具体月份有上界。
+ * 时间范围上界（**不含**）：具体月份取次月 1 日 0 点、具体日期取次日 0 点；其余返回 null。
  * 预设档（近 7 天 / 近 30 天）只有下界、上界是「现在」——刻意不给它们算上界：
  * 上界写成「明天 0 点」会把今天晚些时候创建的条目挡在外面（时钟与本地时区都可能偏）。
  */
 export function rangeEnd(range: TimeRange): number | null {
   const month = parseMonthRange(range)
-  if (!month) return null
-  return new Date(month.year, month.month, 1).getTime()
+  if (month) return new Date(month.year, month.month, 1).getTime()
+  const day = parseDayRange(range)
+  if (day) {
+    const next = new Date(day)
+    next.setDate(next.getDate() + 1)
+    return next.getTime()
+  }
+  return null
 }
 
 export interface MonthFacet {

@@ -81,12 +81,9 @@ describe('T · 列表页首帧不再从空白重来', () => {
     const m = src.match(/snapshot = \{([^}]*)\}/)
     expect(m, '没有把最新状态写回快照').not.toBeNull()
     const fields = m![1]
-    // hasOlder 于 2026-10-02 由 hasMore 改名（分页改双向游标后，hasMore 的语义不再唯一）
-    for (const k of ['items', 'stats', 'hasOlder']) {
+    for (const k of ['items', 'stats', 'hasMore']) {
       expect(fields, `快照漏了 ${k}`).toContain(k)
     }
-    // anchor（日期跳转后的锚定日期）属于视图状态：漏了它，切个 tab 回来会莫名其妙回到「最新」
-    expect(fields, '快照漏了 anchor：锚定视图切 tab 回来会丢失').toContain('anchor')
   })
 
   it('T5 「还没有日记」由 !loading 守着（加载中不能说成没有日记）', () => {

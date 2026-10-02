@@ -9,9 +9,11 @@ import { weatherEmoji } from '@/lib/client/weather'
 import {
   TIME_PRESETS,
   buildSnippet,
+  dayRangeKey,
   firstLine,
   highlightSegments,
   isDefaultFilters,
+  isDayRange,
   locationFacets,
   matches,
   monthFacets,
@@ -22,6 +24,7 @@ import {
 import type { DecryptedEntry } from '@/lib/client/entries'
 import { displayLocationName } from '@/lib/client/location'
 import { toPlainText } from '@/lib/client/markdown'
+import { dayKeyOf, monthGrid, monthTitle, shiftMonth } from '@/lib/client/date-jump'
 
 // 每次渲染的批量——结果多时先给一批，「加载更多」再递增。
 // 上限的意义是避免上千条时一次性建 DOM，而不是「只显示这么多」。
@@ -114,6 +117,84 @@ function Panel({ children }: { children: React.ReactNode }) {
   return (
     <div className="mb-3 max-h-[45dvh] overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-800">
       {children}
+    </div>
+  )
+}
+
+/**
+ * 时间面板里的「具体日期」日历（2026-10-02 从列表页搬过来）。
+ *
+ * 为什么是**面板内的内联日历**而不是再弹一层月历：
+ *   搜索面板本身已经是全屏浮层，再叠一层会有两层遮罩、返回路径也说不清；
+ *   内联进时间面板后，「看 9月2日」与「看 9 月」在同一个面板里并列，语义连续。
+ *
+ * 只有**有日记的日子**可点（清单来自已解密条目，与月份清单、地点清单同一条约定：
+ * 不给「选了却零结果」的档位），未来日期不可点。
+ *
+ * 组件随面板卸载而卸载 ⇒ 每次打开都从「当前选中的那天（或今天）」重新定位，不残留上次翻到的月份。
+ */
+function DayPicker({ dayKeys, selected, onPick }: {
+  dayKeys: Set<string>
+  selected: TimeRange
+  onPick: (range: TimeRange) => void
+}) {
+  const today = dayKeyOf(new Date())
+  const [view, setView] = useState(() => {
+    const sel = /^d:(\d{4})-(\d{2})-\d{2}$/.exec(selected)
+    const base = sel ? new Date(Number(sel[1]), Number(sel[2]) - 1, 1) : new Date()
+    return { year: base.getFullYear(), month: base.getMonth() + 1 }
+  })
+  const grid = monthGrid(view.year, view.month)
+  const monthPrefix = `${view.year}-${String(view.month).padStart(2, '0')}`
+  const monthHasRecord = [...dayKeys].some((k) => k.startsWith(monthPrefix))
+  const atCurrentMonth = view.year === Number(today.slice(0, 4)) && view.month === Number(today.slice(5, 7))
+  const canGoNext = !atCurrentMonth
+  const go = (delta: number) => setView((v) => shiftMonth(v.year, v.month, delta))
+
+  return (
+    <div className="px-3 pb-2 pt-1">
+      <div className="flex items-center justify-between pb-1">
+        <button onClick={() => go(-12)} aria-label="上一年" className="px-2 py-1 text-sm text-neutral-500 active:opacity-60 dark:text-neutral-400">«</button>
+        <button onClick={() => go(-1)} aria-label="上个月" className="px-2 py-1 text-sm text-neutral-500 active:opacity-60 dark:text-neutral-400">‹</button>
+        <span className="text-xs font-medium tabular-nums">{monthTitle(view.year, view.month)}</span>
+        <button onClick={() => go(1)} disabled={!canGoNext} aria-label="下个月" className="px-2 py-1 text-sm text-neutral-500 active:opacity-60 disabled:opacity-30 dark:text-neutral-400">›</button>
+        <button onClick={() => go(12)} disabled={!canGoNext} aria-label="下一年" className="px-2 py-1 text-sm text-neutral-500 active:opacity-60 disabled:opacity-30 dark:text-neutral-400">»</button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-neutral-500 dark:text-neutral-400">
+        {['一', '二', '三', '四', '五', '六', '日'].map((w) => <span key={w}>{w}</span>)}
+      </div>
+      <div className="grid grid-cols-7 gap-1 pt-1">
+        {grid.flat().map((day, i) => {
+          if (day === null) return <span key={`e${i}`} />
+          const hasRecord = dayKeys.has(day)
+          const isFuture = day > today
+          const disabled = !hasRecord || isFuture
+          const isSelected = selected === dayRangeKey(day)
+          return (
+            <button
+              key={day}
+              onClick={() => onPick(dayRangeKey(day))}
+              disabled={disabled}
+              aria-label={hasRecord ? `${day} · 有日记` : day}
+              aria-current={day === today ? 'date' : undefined}
+              className={`aspect-square rounded-md text-xs tabular-nums ${
+                isSelected
+                  ? 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 font-medium text-white'
+                  /* 不可点：标准次级文字（WCAG AA 下限配对）。刻意不做成「灰到看不见」——
+                     低对比度既过不了 footnote-contrast 守卫，也不是表达「不可点」的好办法。 */
+                  : disabled
+                    ? 'text-neutral-500 dark:text-neutral-400'
+                    : 'bg-violet-50 font-medium text-neutral-800 active:bg-violet-100 dark:bg-violet-500/10 dark:text-neutral-200 dark:active:bg-violet-500/20'
+              }`}
+            >
+              {Number(day.slice(8, 10))}
+            </button>
+          )
+        })}
+      </div>
+      {!monthHasRecord && (
+        <p className="pt-1 text-center text-[11px] text-neutral-500 dark:text-neutral-400">这个月没有记录</p>
+      )}
     </div>
   )
 }
@@ -246,6 +327,8 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
   const facets = useMemo(() => locationFacets((entries ?? []).map((e) => e.entry)), [entries])
   // 月份清单同理：只列真的有日记的月份（新的在前），不会给出空档
   const months = useMemo(() => monthFacets((entries ?? []).map((e) => e.entry)), [entries])
+  // 有日记的日期集合（日历据此把没写过的日子置灰）——同样从已解密条目现取
+  const dayKeys = useMemo(() => new Set((entries ?? []).map((e) => dayKeyOf(new Date(e.entry.createdAt)))), [entries])
 
   const results = useMemo(() => {
     if (!entries) return []
@@ -291,7 +374,7 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
         </div>
         {/* 筛选归为**三类**（时间 / 收藏 / 地点），与关键词同样是「与」的关系；
             全部是明文元数据，每一项都只**收窄**结果集 ⇒ 任意组合恒为交集（见 lib/client/search.ts）。
-            · 时间：按钮上直接显示当前档位（默认「全部时间」），点开面板选预设档或具体月份；
+            · 时间：按钮上直接显示当前档位（默认「全部时间」），点开面板选预设档、**具体日期**或具体月份；
             · 收藏：布尔开关，点了就切，没有面板可开；
             · 地点：「只看有位置」与「具体地点」是同一类里的两档，因此都收在地点面板内，
               不再单独占一个 chip（这就是从 7 个 chip 收敛成 3 个控件的原因）。 */}
@@ -314,9 +397,11 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
             </button>
           )}
         </div>
-        {/* 时间面板：预设档 + 数据里实际存在的月份清单。
-            列月份而不是让用户自己选年/月，理由与地点清单相同——只给出**真的有日记**的档位，
-            不会出现「选了却零结果」的组合。 */}
+        {/* 时间面板：预设档 + 具体日期日历 + 数据里实际存在的月份清单。
+            列月份/列日期而不是让用户自己敲，理由与地点清单相同——只给出**真的有日记**的档位，
+            不会出现「选了却零结果」的组合。
+            「具体日期」放在预设档之后、月份清单之前：找某一天是最具体的诉求，
+            不该让人先划过一整张月份清单才能点到（2026-10-02 从列表页搬来）。 */}
         {openPanel === 'time' && (
           <Panel>
             <ul className={PANEL_UL}>
@@ -324,6 +409,14 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
                 <PanelRow key={r} label={timeRangeLabel(r)} selected={range === r} onClick={() => pickRange(r)} />
               ))}
             </ul>
+            <PanelGroupLabel>具体日期</PanelGroupLabel>
+            {entries === null || entries.length === 0 ? (
+              <ul className={PANEL_UL}>
+                <li><PanelHint error={error} loaded={entries !== null} empty="还没有日记" /></li>
+              </ul>
+            ) : (
+              <DayPicker dayKeys={dayKeys} selected={isDayRange(range) ? range : 'all'} onPick={pickRange} />
+            )}
             <PanelGroupLabel>按月份</PanelGroupLabel>
             <ul className={PANEL_UL}>
               {months.length === 0 && (

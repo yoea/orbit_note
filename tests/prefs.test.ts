@@ -144,7 +144,9 @@ describe('B1 打开次数显示开关', () => {
 describe('B3 热力图显示开关', () => {
   it('B3-1 热力图渲染条件包含偏好判断', () => {
     const src = code('components/DiaryListView.tsx')
-    expect(src).toContain('showHeatmap && stats.count > 0')
+    // 2026-10-02 起热力图属于固定区：stats 未就绪时也渲染空图占位（避免数据到达时列表被推下去），
+    // 所以条件多了那一支；但「偏好关掉就不渲染」这条不变。
+    expect(src).toMatch(/showHeatmap && \(stats === null \|\| stats\.count > 0\)/)
   })
 })
 

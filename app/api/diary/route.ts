@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { diaryEntries } from '@/lib/server/db/schema'
-import { and, asc, desc, eq, gt, lt, or } from 'drizzle-orm'
+import { and, desc, eq, lt, or } from 'drizzle-orm'
 import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { diaryCreateSchema } from '@/lib/server/validation'
 import { rateLimit } from '@/lib/server/ratelimit'
@@ -15,33 +15,29 @@ export async function GET(req: Request) {
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 100) || 100, 1), 200)
   // 分页：offset（客户端"加载更多"）
   const offset = Math.max(Number(url.searchParams.get('offset') ?? 0) || 0, 0)
-  // ── 双向游标（`before`/`beforeId` 与 `after`/`afterId`）────────────────────
-  // 与 offset 并存，但用途不同：**游标同时服务「无限滚动」「日期跳转」「向上回看」**。
-  //   · 向下（older）：与「日期跳转」共用——`before` 取比它更旧的条目，created_at desc
-  //   · 向上（newer） ：`after` 取比它更新的条目，**内部按 asc 取紧邻的 limit 条再反转**，
-  //     返回顺序统一为 desc（客户端列表渲染与分组都假定 desc）
-  // 为什么必须补上游标（offset 的真实缺陷）：offset 是「位置」而不是「内容」，
+  // ── 游标分页（`before` / `beforeId`）───────────────────────────────────────
+  // 与 offset 并存，但用途不同：**客户端无限滚动只走游标**。
+  //   · `before` + `beforeId`：取比该条更旧的一页（元组比较，见下）
+  //   · 只给 `before`（不给 id）：按时间边界取「比它更旧的」，用于「按某天取一页」这类查询
+  // 为什么必须补上它（offset 的真实缺陷）：offset 是「位置」而不是「内容」，
   // 翻页期间只要有人新增一篇（本应用写完就进列表），后面所有页整体位移 ⇒
   // 静默重复或漏条目。漏条目还会连带把本地缓存里那条判成「已删除」而清掉
   // （见 lib/client/offline.ts 的 staleCachedIds）。改成游标后位置由内容决定。
+  //
+  // ★ 2026-10-02：曾在这里加过反方向的 `after`/`afterId`（列表页锚定后向上回看）。
+  //   那条链路整体删除了——列表页不再做「按日期定位」，按日期筛选搬到搜索面板里
+  //   （见 components/SearchDialog.tsx 的 DayPicker 与 lib/client/search.ts 的 'd:' 时间档）。
+  //   没有调用方就不留接口：留着的反方向参数会被误当成「已支持的能力」。
   const beforeRaw = url.searchParams.get('before')
   // 空串按「没给」处理：调用方可能用 `&beforeId=` 这种占位写法，别把它当成非法 uuid
   const beforeIdRaw = url.searchParams.get('beforeId') || null
-  const afterRaw = url.searchParams.get('after')
-  const afterIdRaw = url.searchParams.get('afterId') || null
-  if (beforeRaw && afterRaw) {
-    // 两个方向互斥：同时给等于自相矛盾的窗口，直接拒绝而不是猜一个
-    return NextResponse.json({ error: 'bad_request' }, { status: 400 })
-  }
-  let cursor: { at: Date; id: string | null; dir: 'older' | 'newer' } | null = null
-  if (beforeRaw || afterRaw) {
-    const raw = beforeRaw ?? afterRaw ?? ''
-    const at = new Date(raw)
+  let cursor: { at: Date; id: string | null } | null = null
+  if (beforeRaw) {
+    const at = new Date(beforeRaw)
     if (Number.isNaN(at.getTime())) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
-    const id = beforeRaw ? beforeIdRaw : afterIdRaw
-    if (id !== null && !UUID_RE.test(id)) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
-    cursor = { at, id, dir: beforeRaw ? 'older' : 'newer' }
-  } else if (beforeIdRaw || afterIdRaw) {
+    if (beforeIdRaw !== null && !UUID_RE.test(beforeIdRaw)) return NextResponse.json({ error: 'bad_request' }, { status: 400 })
+    cursor = { at, id: beforeIdRaw }
+  } else if (beforeIdRaw) {
     // 只给 id 不给时间没有意义（无法定位），视为坏请求而不是静默忽略
     return NextResponse.json({ error: 'bad_request' }, { status: 400 })
   }
@@ -50,30 +46,20 @@ export async function GET(req: Request) {
   // 同一行可能在两次查询里落到不同页（被跳过或重复），客户端「加载更多」就会漏条目。
   // 补一个 id 次级键（uuid 可比较）即得到确定的全序，分页从此稳定；
   // 游标分支的 WHERE 也用同一组键，保证「排序」与「边界」口径完全一致。
-  // created_at 相同时用元组比较 (created_at, id) </>  (游标 at, id)，
+  // created_at 相同时用元组比较 (created_at, id) < (游标 at, id)，
   // 否则同秒的多条会被整批跳过。
-  const order = cursor?.dir === 'newer' ? asc : desc
-  const rows = await db.select().from(diaryEntries)
+  const entries = await db.select().from(diaryEntries)
     .where(cursor
-      ? (cursor.dir === 'older'
-        ? (cursor.id
-          ? or(
-            lt(diaryEntries.createdAt, cursor.at),
-            and(eq(diaryEntries.createdAt, cursor.at), lt(diaryEntries.id, cursor.id)),
-          )
-          : lt(diaryEntries.createdAt, cursor.at))
-        : (cursor.id
-          ? or(
-            gt(diaryEntries.createdAt, cursor.at),
-            and(eq(diaryEntries.createdAt, cursor.at), gt(diaryEntries.id, cursor.id)),
-          )
-          : gt(diaryEntries.createdAt, cursor.at)))
+      ? (cursor.id
+        ? or(
+          lt(diaryEntries.createdAt, cursor.at),
+          and(eq(diaryEntries.createdAt, cursor.at), lt(diaryEntries.id, cursor.id)),
+        )
+        : lt(diaryEntries.createdAt, cursor.at))
       : undefined)
-    .orderBy(order(diaryEntries.createdAt), order(diaryEntries.id))
+    .orderBy(desc(diaryEntries.createdAt), desc(diaryEntries.id))
     // 游标已定位到内容，offset 必须归零（两者语义不能叠加）
     .limit(limit).offset(cursor ? 0 : offset)
-  // 向上取的一页在 SQL 里是升序（要「紧邻上方的 N 条」），此处翻回 desc 再交给客户端
-  const entries = cursor?.dir === 'newer' ? [...rows].reverse() : rows
   return NextResponse.json({ entries })
 }
 
