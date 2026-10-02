@@ -193,6 +193,29 @@ describe('顶部安全区（不滚动）', () => {
     expect(defs[0], '`.safe-pt` 必须就是 env() 原值').toMatch(/padding-top:\s*env\(safe-area-inset-top\)\s*;/)
 
     expect(css, '不得再按 pointer 加下限（会凭空垫出一块空白）').not.toMatch(/pointer:\s*coarse/)
-    expect(css, '不得再按 display-mode 预留浏览器 chrome').not.toMatch(/display-mode/)
+    expect(css, '不得再按 display-mode: browser 预留浏览器 chrome').not.toMatch(/display-mode:\s*browser/)
+  })
+
+  it('G12 ★ App 根元素必须是「fixed + 实色」的盒子 —— iOS 26 顶部渐隐的唯一开关', () => {
+    // 那条「顶部渐隐」是系统画的（soft 版滚动边缘效果 = 微弱模糊 + 一层渐变纱），
+    // WebKit 只在满足**全部**条件时才关掉它（判据见 WebKit 源码 LocalFrameView::fixedContainerEdges）：
+    //   页面里存在 fixed/sticky 盒子 → 在「视口顶部往下 4px、水平中点」命中 → 向上找第一个
+    //   fixed/sticky 祖先 → 要求 ≥90% 视口宽、≤105% 视口高、**≥10px 高** → 取它的 background-color。
+    // ★ 最后那条 ≥10px 是踩过两次的坑：独立窗口里 env(safe-area-inset-top) 是 0，
+    //   按它做的顶部占位条算出来 0px 高，永远命中不了。
+    const root = projectClassAttrs().find((a) => classTokens(a.text).includes('qo-app-root'))
+    expect(root, '找不到 App 根元素（app/layout.tsx 里的 .qo-app-root）').toBeTruthy()
+    const t = classTokens(root!.text)
+    expect(t, '根元素必须有实色底：WebKit 取的就是它的 background-color').toContain('bg-white')
+    expect(t, '深色端同样要有实色底').toContain('dark:bg-neutral-950')
+
+    const css = stripComments(readFileSync(join(projectRoot, 'app/globals.css'), 'utf8'))
+    expect(css, '缺少「独立窗口下把根元素做成 fixed 满屏」的规则').toMatch(
+      /@media \(display-mode: standalone\)[\s\S]{0,200}\.qo-app-root\s*\{\s*position:\s*fixed;\s*inset:\s*0;/,
+    )
+    // 必须限定在 standalone：浏览器的视口高度语义不同（dvh vs 布局视口），全局 fixed 会顶掉贴底元素
+    expect(css, 'fixed 规则必须包在 display-mode: standalone 里').toMatch(
+      /@media \(display-mode: standalone\)[\s\S]{0,200}\.qo-app-root/,
+    )
   })
 })
