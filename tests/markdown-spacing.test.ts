@@ -14,9 +14,14 @@ import { classTokens, projectRoot } from './class-attrs'
 //   · 单换行（remark-breaks 的 <br>）**根本没有额外间距** ⇒ 「一行一段」写法的日记里
 //     每一行的间隔完全等于行距，段落无从分辨。
 //
+// ★ 两轮定稿（同一天，用户第二次反馈直接给了目标倍数）：
+//   第一版 mb-5（20px，1.77×）—— 用户：「段间距太大了，1.15 倍即可。」
+//   定稿 mb-1（4px）⇒ 段间空隙 = 26 + 4 = 30px = 行距的 **1.15 倍**。
+//   别自己放大：1.15 是「能看出分段、又不把正文拆散」的那一档。
+//
 // 现在的规则（两处必须一起成立，缺一条用户就还会看到「分不清段落」）：
-//   A. 块级元素下边距 20px（mb-5）⇒ 段间空隙 = 26 + 20 = 46px = 行距的 1.77 倍；
-//   B. 一个硬换行也补 20px ⇒ 「一个回车 == 一个段落」，与 A 的视觉重量一致。
+//   A. 块级元素下边距 4px（mb-1）；
+//   B. 一个硬换行也补 4px ⇒ 「一个回车 == 一个段落」，与 A 的视觉重量一致。
 //
 // ★ B 为什么要多渲染一个元素而不是给 <br> 写样式：<br> 在 Blink/WebKit 里是专用的换行
 //   布局对象，display / height / margin / line-height 全部被忽略（四种写法实测段落高度
@@ -59,12 +64,14 @@ describe('P · 段间距', () => {
     }
   })
 
-  it('P1 五个块级元素的下边距统一为 mb-5（12px → 20px），不留 mb-3 的孤例', () => {
+  it('P1 五个块级元素的下边距统一为 mb-1（4px，段间 = 1.15× 行距），不留旧值孤例', () => {
     for (const [name, re] of BLOCKS) {
       const cls = src.match(re)![1] as string
       const tokens = classTokens(cls)
-      expect(tokens, `${name} 缺少 mb-5 —— 段间空隙只有 1.46 倍行距，用户区分不出段落`).toContain('mb-5')
-      expect(tokens, `${name} 又出现了 mb-3（旧值），块间距会不一致`).not.toContain('mb-3')
+      expect(tokens, `${name} 缺少 mb-1 —— 用户已把段间距定为 1.15 倍行距（4px）`).toContain('mb-1')
+      for (const old of ['mb-3', 'mb-5']) {
+        expect(tokens, `${name} 又出现了旧值 ${old}（段间距会与其它块不一致）`).not.toContain(old)
+      }
     }
   })
 
@@ -79,7 +86,7 @@ describe('P · 段间距', () => {
     expect(out.match(/<p/g)?.length, '换行把段落拆开了，段间距语义会翻倍').toBe(1)
   })
 
-  it('P3 间距块由 CSS 给高度，且高度与块级下边距（mb-5 = 1.25rem）严格相等', () => {
+  it('P3 间距块由 CSS 给高度，且高度与块级下边距（mb-1 = 0.25rem）严格相等', () => {
     const css = code(CSS)
     const rule = css.match(/\.qo-markdown\s+\.qo-br-gap\s*\{([^}]*)\}/)
     expect(rule, 'globals.css 里找不到 .qo-markdown .qo-br-gap 规则').toBeTruthy()
@@ -87,8 +94,8 @@ describe('P · 段间距', () => {
     expect(body, '间距块必须自成一行（block），否则加不出垂直间距').toMatch(/display:\s*block/)
     expect(
       body,
-      '间距块高度必须与 mb-5（1.25rem）一致：一个回车与一个空行读起来要是同一种分隔',
-    ).toMatch(/height:\s*1\.25rem/)
+      '间距块高度必须与 mb-1（0.25rem）一致：一个回车与一个空行读起来要是同一种分隔',
+    ).toMatch(/height:\s*0\.25rem/)
   })
 
   it('P4 不得把 <br> 后那个 "\\n" 变成第二个行盒（whitespace-pre 会，2026-09-30 事故）', () => {

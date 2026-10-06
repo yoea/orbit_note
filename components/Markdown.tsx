@@ -25,10 +25,14 @@ import type { Root } from 'mdast'
 // ── 段间距（2026-10-06，用户反馈「行间距与段间距视觉上几乎一致，段落难以区分」）────
 //
 // 正文 16px / leading-relaxed（行盒 26px）。原来段落是 `mb-3`(12px)，段间空隙只有行距的
-// 1.46 倍 —— 加上中文本身笔画密，两段贴在一起看就是「一片字」。现在两块一起拉开：
-//   · 块级元素（p / ul / ol / blockquote / pre）下边距 12px → **20px**（mb-5），
-//     段间空隙 = 26 + 20 = 46px = 行距的 **1.77 倍**；
-//   · 单换行（remark-breaks 产生的 <br>）**也补同样的 20px** —— 见下面 br 组件的注释。
+// 1.46 倍 —— 加上中文本身笔画密，两段贴在一起看就是「一片字」。现在两块一起收紧到 1.15：
+//   · 块级元素（p / ul / ol / blockquote / pre）下边距 12px → **4px**（mb-1），
+//     段间空隙 = 26 + 4 = 30px = 行距的 **1.15 倍**；
+//   · 单换行（remark-breaks 产生的 <br>）**也补同样的 4px** —— 见下面 br 组件的注释。
+//
+// ★ 值是用户两轮定的，别再自己放大（2026-10-06 当天先试了 20px/1.77×，用户反馈「段间距太大，
+//   1.15 倍即可」）。1.15 已经是「能看出分段、又不把正文拆散」的那一档 —— 正文段落之间的
+//   留白只比行距多 4px，靠的是「不缩进 + 上下都不贴」形成的节奏，而不是大片空白。
 //
 // ★ 为什么 <br> 要用「额外渲染一个自己的空块」这种写法：**<br> 本身加不了间距**。
 //   实测（Temp/qo-spacing-probe，Edge + 四种 CSS 写法）：`display:block` + `height`、
@@ -38,8 +42,8 @@ import type { Root } from 'mdast'
 //
 // ★ 这与 2026-09-30 那次「一个回车变成两个空行」的事故**不是一回事**，别混淆：
 //   那次是段落带上了 `whitespace-pre*`，把 mdast 补在 <br> 后面的 "\n" 文本节点渲染成了
-//   第二个**完整行盒**（26px）；这里是**我们自己**放的一个 20px 块，高度就是 20px，
-//   既不产生额外行盒，也与「回车 = 一个新段落」的语义一致（查看页一个回车 ↔ 20px 间距）。
+//   第二个**完整行盒**（26px）；这里是**我们自己**放的一个 4px 块，高度就是 4px，
+//   既不产生额外行盒，也与「回车 = 一个新段落」的语义一致（查看页一个回车 ↔ 4px 间距）。
 //   tests/markdown-render.test.ts 与 tests/markdown-spacing.test.ts 分别守着这两件事。
 
 const INLINE_CODE_CLASS =
@@ -146,13 +150,13 @@ export default function Markdown({ source, className = '' }: { source: string; c
           //   用户敲一个回车，查看页变成两个空行，且编辑页只有一个 ⇒ 既不紧凑也不所见即所得。
           //   换行语义本来就由 remark-breaks 全权承担（\n → <br>），CSS 侧不需要也不该再保留空白。
           //   tests/markdown-render.test.ts 的「每个换行恰好一行」守着这条。
-          p: ({ children, ...rest }) => <p className="mb-5 last:mb-0" {...dataAttrs(rest)}>{children}</p>,
+          p: ({ children, ...rest }) => <p className="mb-1 last:mb-0" {...dataAttrs(rest)}>{children}</p>,
           // 单换行：<br> 负责「换行」，紧跟着的空块负责「间距」。
           // 为什么要这么绕、以及为什么不能给 <br> 直接写样式（Blink/WebKit 的换行布局对象
           // 忽略一切盒模型属性，实测四种写法全无效），见文件头「段间距」一节。
           // ★ <br> 必须保留：tests/markdown-render.test.ts 断言产物里有 <br>，
           //   而「一行一段」的老笔记正是靠它才没有被挤成一整段。
-          // ★ 间距值与段落下边距（mb-5 = 1.25rem）刻意相等：一个回车 == 一个段落，
+          // ★ 间距值与段落下边距（mb-1 = 0.25rem）刻意相等：一个回车 == 一个段落，
           //   查看页上「回车」和「空行」读起来才是同一种分隔。globals.css 里的
           //   `.qo-br-gap` 高度与这里必须同步（tests/markdown-spacing.test.ts 钉住）。
           br: () => (
@@ -174,18 +178,20 @@ export default function Markdown({ source, className = '' }: { source: string; c
           // leading-snug：容器是 leading-relaxed（1.625），对大字号标题太松——
           // 24px × 1.625 = 39px 行高会把标题和它下面的内容推开，削弱"标题属于下方内容"的视觉归属。
           //
-          // mt 逐级递减（28/24/20）、mb 也递减（10/8/6）且**都小于段落的 mb-3(12px)**：
+          // mt 逐级递减（28/24/20）、mb 也递减（10/8/6）且**都远大于段落的 mb-1(4px)**：
           // 标题与上方内容留得多、与自己下方的内容贴得近，这是标题的常规排版逻辑。
           // mb 在 2026-09-30 从 12/10/8 收到 10/8/6：实测标题下方留白偏松，且三级都收紧
           // 相同的 2px，保持原有阶梯比例不变（不是只改某一级）。
+          // ★ 段落 mb 收到 4px 之后（2026-10-06 用户定 1.15×），标题的 mb 相对更"重"了——
+          //   这不是漂移，是刻意的层级：标题的间距本来就该比段落之间大。
           h1: ({ children, ...rest }) => <h1 className="mb-2.5 mt-7 text-2xl font-semibold leading-snug first:mt-0" {...dataAttrs(rest)}>{children}</h1>,
           h2: ({ children, ...rest }) => <h2 className="mb-2 mt-6 text-xl font-semibold leading-snug first:mt-0" {...dataAttrs(rest)}>{children}</h2>,
           h3: ({ children, ...rest }) => <h3 className="mb-1.5 mt-5 text-lg font-semibold leading-snug first:mt-0" {...dataAttrs(rest)}>{children}</h3>,
-          ul: ({ children, ...rest }) => <ul className="mb-5 list-disc pl-5 last:mb-0" {...dataAttrs(rest)}>{children}</ul>,
-          ol: ({ children, ...rest }) => <ol className="mb-5 list-decimal pl-5 last:mb-0" {...dataAttrs(rest)}>{children}</ol>,
+          ul: ({ children, ...rest }) => <ul className="mb-1 list-disc pl-5 last:mb-0" {...dataAttrs(rest)}>{children}</ul>,
+          ol: ({ children, ...rest }) => <ol className="mb-1 list-decimal pl-5 last:mb-0" {...dataAttrs(rest)}>{children}</ol>,
           li: ({ children, ...rest }) => <li className="mb-1 last:mb-0" {...dataAttrs(rest)}>{children}</li>,
           blockquote: ({ children, ...rest }) => (
-            <blockquote className="mb-5 border-l-2 border-neutral-200 pl-3 text-neutral-500 last:mb-0 dark:border-neutral-700 dark:text-neutral-400" {...dataAttrs(rest)}>
+            <blockquote className="mb-1 border-l-2 border-neutral-200 pl-3 text-neutral-500 last:mb-0 dark:border-neutral-700 dark:text-neutral-400" {...dataAttrs(rest)}>
               {children}
             </blockquote>
           ),
@@ -195,7 +201,7 @@ export default function Markdown({ source, className = '' }: { source: string; c
           // break-normal：把容器上继承下来的 overflow-wrap 重置回 normal。
           // 代码块要保留源码原样换行 + 自己的横向滚动（overflow-x-auto），不能被强制断行。
           pre: ({ children, ...rest }) => (
-            <pre className="mb-5 overflow-x-auto rounded-xl bg-neutral-50 p-3 text-sm last:mb-0 break-normal dark:bg-neutral-900" {...dataAttrs(rest)}>
+            <pre className="mb-1 overflow-x-auto rounded-xl bg-neutral-50 p-3 text-sm last:mb-0 break-normal dark:bg-neutral-900" {...dataAttrs(rest)}>
               {children}
             </pre>
           ),

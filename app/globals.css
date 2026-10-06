@@ -139,14 +139,14 @@ body {
    ★ 为什么需要这个元素：<br> 自己加不了垂直间距（Blink/WebKit 的换行布局对象忽略
      display / height / margin / line-height，四种写法实测段落高度完全一致）。
      所以由 Markdown.tsx 的 br 组件在 <br> 之后多渲染一个本元素来承担间距。
-   ★ 高度必须与块级元素的下边距一致（Tailwind 的 mb-5 = 1.25rem）：
+   ★ 高度必须与块级元素的下边距一致（Tailwind 的 mb-1 = 0.25rem）：
      查看页上「回车」和「空行」读起来才都是「新段落」。
      tests/markdown-spacing.test.ts 会把这两个值钉在一起。
    ★ 不要改成 `<br>` 的样式、也不要加 whitespace-pre —— 后者会把 mdast 补在 <br> 后的
      "\n" 渲染成第二个完整行盒（2026-09-30「一个回车变两个空行」的真实事故）。 */
 .qo-markdown .qo-br-gap {
   display: block;
-  height: 1.25rem;
+  height: 0.25rem;
 }
 
 /* 保存成功的庆祝粒子（游戏获奖感）：向上飘散 + 旋转 + 淡出 */

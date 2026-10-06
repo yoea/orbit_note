@@ -14,7 +14,7 @@ import { cacheEntriesPage, getCachedEntryById, getQueuedEntryById, removeCachedE
 import { weatherEmoji } from '@/lib/client/weather'
 import { bumpEntryViewCount } from '@/lib/client/views'
 import { playSaveSoundIfEnabled } from '@/lib/client/sound'
-import { BRAND_GRADIENT_CLASS, EDITOR_TEXTAREA_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
+import { BRAND_GRADIENT_CLASS, EDITOR_TEXTAREA_CLASS, EDITOR_TOOLBAR_GAP_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import Toast from './Toast'
 import Markdown from './Markdown'
 import MarkdownBoundary from './MarkdownBoundary'
@@ -718,16 +718,20 @@ export default function EntryView({ id }: { id: string }) {
       ) : null}
       {editing ? (
         <>
-          {/* Markdown 工具条：放在**编辑区顶部**（输入框/预览区之上）。
+          {/* Markdown 工具条：放在**编辑区顶部**（输入框/预览区之上），与下方输入框隔开 16px
+              （EDITOR_TOOLBAR_GAP_CLASS，与写页共用；这里必须用 pt-* —— main 是可滚动的
+              flex 容器，子元素间的 mt-* 会与工具条的 mb-2 塌陷成最大值，两页间距就不一致了）。
               原先在输入框下方——手机输入时键盘从底部弹出会把整条盖住，工具条等于不可用
               （2026-09-30 用户反馈）。与写页共用同一份组件，两页位置一致。
               预览态隐藏动作按钮但保留这一行，按钮位置不跳动。 */}
-          <MarkdownToolbar
-            preview={preview}
-            disabled={busy}
-            onAction={applyToolbar}
-            onTogglePreview={togglePreview}
-          />
+          <div className={EDITOR_TOOLBAR_GAP_CLASS}>
+            <MarkdownToolbar
+              preview={preview}
+              disabled={busy}
+              onAction={applyToolbar}
+              onTogglePreview={togglePreview}
+            />
+          </div>
           {/* 编辑区：flex-1 弹性填充剩余空间（min-h-0 允许收缩）——编辑区完整填满视口。
               预览态换成渲染结果（只读，不改 plain）——与写页「预览」同一套交互。
               输入框字号/行高来自 EDITOR_TEXTAREA_CLASS，与写页 AutoTextarea 同源
@@ -795,7 +799,7 @@ export default function EntryView({ id }: { id: string }) {
                 两种情况下它与分割线之间都只有这一段留白。
               ★ 容器**恒渲染**、只有内容是条件渲染：这段留白原先挂在「内容尾行」上，若跟着
                 「编辑于」一起变成条件渲染，**没编辑过的条目**正文末行又会贴住分割线
-                （Markdown.tsx 的段落是 `mb-3 last:mb-0`，末段没有下边距 ⇒ 间隙 0px）。
+                （Markdown.tsx 的段落是 `mb-1 last:mb-0`，末段没有下边距 ⇒ 间隙 0px）。
               ★ 字号再降一档到 11px：它是三级信息，不该与正文同级。 */}
           <div className="mt-auto pt-8 pb-3">
             {isEdited && (

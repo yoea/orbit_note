@@ -26,13 +26,13 @@ export default function ConfirmDialog({ title, message, confirmText = '好', can
         <div className="flex border-t border-neutral-200 dark:border-neutral-700">
           <button
             onClick={onCancel}
-            className="flex-1 border-r border-neutral-200 py-3.5 text-base text-neutral-700 active:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:active:bg-neutral-700"
+            className="w-1/2 border-r border-neutral-200 py-3.5 text-base text-neutral-700 active:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:active:bg-neutral-700"
           >
             {cancelText}
           </button>
           <button
             onClick={onConfirm}
-            className={`flex-1 py-3.5 text-base font-semibold active:bg-neutral-100 dark:active:bg-neutral-700 ${destructive ? 'text-red-500' : 'text-blue-500'}`}
+            className={`w-1/2 py-3.5 text-base font-semibold active:bg-neutral-100 dark:active:bg-neutral-700 ${destructive ? 'text-red-500' : 'text-blue-500'}`}
           >
             {confirmText}
           </button>

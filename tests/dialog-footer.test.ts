@@ -42,6 +42,9 @@ const SOLO_FOOTER_DIALOGS = [
   'components/RecoveryRegenerateDialog.tsx',
 ]
 
+// 底部是「取消 / 确认」两个按钮的弹窗（必须两侧等宽，见对应用例的注释）
+const PAIR_DIALOGS = ['components/ConfirmDialog.tsx', 'components/InputConfirmDialog.tsx']
+
 // className 里现在写的是 {DIALOG_FOOTER_BUTTON_CLASS}。展开常量这一步在 tests/class-attrs.ts
 // 的 classAttrsIn 里统一做了（那里有详细说明：不展开的话「按 token 找 border-t / py-3.5」
 // 在共享常量的弹窗上永远找不到，断言会静默空转）。
@@ -90,13 +93,43 @@ describe('弹窗底部按钮：贴边整行 + 整宽', () => {
     for (const b of buttons) {
       const t = classTokens(b.text)
       expect(
-        t.includes('w-full') || t.includes('flex-1'),
+        t.includes('w-full') || t.includes('flex-1') || t.includes('w-1/2'),
         `${file}:${b.line} 底部按钮既没有 w-full 也没有 flex-1 —— 块级卡片里 <button> 默认是
         inline-block，宽度会收缩成内容宽度（"完成"两个字的小块贴在左边），而 border-t 分隔线
         还是通长的，看起来就是「按钮样式错乱」。` +
         `\n  ★ 补 w-full 不是可选项：PrefsDialog 看起来正常只是因为它的卡片恰好是 flex-col。`,
       ).toBe(true)
     }
+  })
+
+  // ★ 双按钮弹窗必须**两侧等宽**（2026-10-06 用户反馈「主按钮太大太显眼」时顺带定的：
+  //   连确认弹窗里「不保存 / 继续编辑」这种文案长度差一倍的按钮也跟着文字宽度变形，
+  //   长文案那侧被挤窄、短文案那侧撑得宽，看着像两种尺寸的控件）。
+  //   等宽只看「两个按钮的宽度 token 是否一致」：两侧都写 flex-1（均分）或都写 w-1/2 都行——
+  //   所以**不要**写「不许出现 flex-1」这种反向断言：两侧都写 flex-1 也是合法的等宽写法，
+  //   那样写会误报（非空转验证时踩到过）。
+  it.each(PAIR_DIALOGS)('%s 底部两按钮宽度写法一致（等宽）', (file) => {
+    const attrs = attrsOf(file)
+    const buttons = attrs.filter((a) => {
+      const t = classTokens(a.text)
+      return t.includes('py-3.5') && t.includes('text-base')
+    })
+    expect(buttons.length, `${file} 解析不到双按钮，这条断言会空转`).toBe(2)
+    const widthOf = (attr: string) => {
+      const t = classTokens(attr)
+      if (t.includes('w-1/2')) return 'w-1/2'
+      if (t.includes('w-full')) return 'w-full'
+      if (t.includes('flex-1')) return 'flex-1'
+      return 'none'
+    }
+    const widths = buttons.map((b) => widthOf(b.text))
+    expect(widths[0], `${file}:${buttons[0].line} 左侧按钮没有宽度定义`).not.toBe('none')
+    expect(widths[1], `${file}:${buttons[1].line} 右侧按钮没有宽度定义`).not.toBe('none')
+    expect(
+      widths[0],
+      `${file} 两侧宽度写法不一致（左 ${widths[0]} / 右 ${widths[1]}）—— 两个按钮会不等宽，
+      文案长的那侧被挤窄，看起来像两种尺寸的控件`,
+    ).toBe(widths[1])
   })
 
   it.each(SOLO_FOOTER_DIALOGS)('%s 的单按钮底栏共用 DIALOG_FOOTER_BUTTON_CLASS', (file) => {

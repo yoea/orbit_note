@@ -21,7 +21,7 @@ import { PROMPTS, nextPromptIndex, reportPromptShown } from '@/lib/client/prompt
 import { computeStreak } from '@/lib/client/streak'
 import { clearLocalDraft, fetchServerDraft, loadLocalDraft, pickNewer, pushServerDraft, saveLocalDraft } from '@/lib/client/draft-sync'
 import { useVisibleViewportHeight } from '@/lib/client/use-viewport-height'
-import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
+import { BRAND_GRADIENT_CLASS, EDITOR_TOOLBAR_GAP_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import { cacheOnThisDay, cacheStats, enqueueOfflineEntry, flushOfflineQueue, getCachedOnThisDay, getCachedStats } from '@/lib/client/offline'
 
 export default function DiaryEditor() {
@@ -448,15 +448,18 @@ export default function DiaryEditor() {
           <span>{PROMPTS[promptIdx]}</span>
         </button>
       )}
-      {/* Markdown 工具条：放在**编辑区顶部**（输入框之上）。
+      {/* Markdown 工具条：放在**编辑区顶部**（输入框之上），与下方输入框之间隔开 16px
+          （EDITOR_TOOLBAR_GAP_CLASS，两页共用；别用 mt-* —— 见该常量的说明）。
           原先在输入框下方——手机输入时键盘从底部弹出会把整条盖住，工具条等于不可用
           （2026-09-30 用户反馈）。横条本身与详情页编辑态共用 components/MarkdownToolbar.tsx。 */}
-      <MarkdownToolbar
-        preview={preview}
-        disabled={status === 'saving'}
-        onAction={applyToolbar}
-        onTogglePreview={togglePreview}
-      />
+      <div className={EDITOR_TOOLBAR_GAP_CLASS}>
+        <MarkdownToolbar
+          preview={preview}
+          disabled={status === 'saving'}
+          onAction={applyToolbar}
+          onTogglePreview={togglePreview}
+        />
+      </div>
       {preview ? (
         <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto pb-2">
           {text.trim()
