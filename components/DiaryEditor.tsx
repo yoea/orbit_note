@@ -20,8 +20,7 @@ import { playSaveSoundIfEnabled } from '@/lib/client/sound'
 import { PROMPTS, nextPromptIndex, reportPromptShown } from '@/lib/client/prompts'
 import { computeStreak } from '@/lib/client/streak'
 import { clearLocalDraft, fetchServerDraft, loadLocalDraft, pickNewer, pushServerDraft, saveLocalDraft } from '@/lib/client/draft-sync'
-import { useVisibleViewportHeight } from '@/lib/client/use-viewport-height'
-import { BRAND_GRADIENT_CLASS, EDITOR_TOOLBAR_GAP_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
+import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import { cacheOnThisDay, cacheStats, enqueueOfflineEntry, flushOfflineQueue, getCachedOnThisDay, getCachedStats } from '@/lib/client/offline'
 
 export default function DiaryEditor() {
@@ -82,13 +81,10 @@ export default function DiaryEditor() {
     } catch { /* 草稿保存失败不阻塞输入 */ }
   }, [])
 
-  // 键盘弹出时把整个编辑区压到「可见区」之内：否则 iOS 会把可视视口向上滚，
-  // 把页头与 Markdown 工具条顶出屏幕（写得越长越看不到 —— 用户 2026-10-06 反馈）。
-  // 高度来源与三个保守判据见 lib/client/use-viewport-height.ts。
-  const visibleHeight = useVisibleViewportHeight()
-
-  // 键盘遮挡与高度适配走上面的 hook（早期 AutoTextarea 里的 visualViewport/fitHeight
-  // 实现已于 2026-08-26 删除，本次以「只改高度、不手工算像素」的方式补回）。
+  // 键盘弹出时**不再**压整页高度：正文编辑区自己是滚动容器，光标在它内部被算成可见，
+  // iOS 就不会去滚可视视口。这段能力（use-viewport-height.ts）2026-10-06 曾用于压整页，
+  // 但它正是「保存按钮下方一大片空白」的成因（详见 render 里 header 之后的注释块）。
+  // hook 本身保留给详情页编辑态使用（那边的结构不同）。
 
   // 卸载/pagehide 冲刷未决草稿（避免丢末段输入，iOS Safari pagehide 更可靠）；online 恢复时补推
   useEffect(() => {
@@ -364,17 +360,16 @@ export default function DiaryEditor() {
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
 
   return (
-    // 弹性高度（body flex 布局中自动分配视口减页脚后的空间）+ 禁止滚动：
-    // header/输入区/footer 全部在可视区内，输入区 flex 弹性分配剩余空间；页脚在流内不遮挡
-    // 页面淡入不在这里（原先有 animate-fade-in）：切 tab 时本组件会重新挂载，
-    // 动画随之重放 ⇒ 每次切换都白屏闪一下。已移到 (app)/layout 的 children 包裹层。
-    <div
-      className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5"
-      /* 键盘弹出时由 flex-1 改为固定高度（= 可见区高度）：见 useVisibleViewportHeight 的注释。
-         内联样式覆盖 class 上的 flex-1 是刻意的 —— 键盘收起时（visibleHeight = null）
-         立刻退回原来的弹性布局，两种状态不会互相残留。 */
-      style={visibleHeight ? { flex: `0 0 ${visibleHeight}px` } : undefined}
-    >
+    // ── 布局（2026-10-06 第二次改，用户反馈「键盘弹出后往下滑，保存按钮下方出现大片空白」）──
+    //
+    // 改造前/后：
+    //   旧：根容器 `overflow-hidden` + 键盘时 `flex: 0 0 <可见高>`，**整页**（含页头、工具条、
+    //       底部按钮）一起被压进可见区。后果见下面 header 处的说明。
+    //   新：根容器**不滚动也不压高度**（就吃 flex-1 的剩余空间）；页头、工具条、底部按钮
+    //       全部固定；**只有正文编辑区滚动**。
+    //
+    // 为什么不再用 useVisibleViewportHeight 压高度：见 header 后的注释块。
+    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col px-5">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="py-4">
         {/* 页头不再放「全部日记」「设置」图标——这两个目的地已由底部 TabBar 承担，
@@ -391,6 +386,22 @@ export default function DiaryEditor() {
           </span>
         </div>
       </header>
+      {/* ★ 键盘适配（2026-10-06，本轮改法）：
+          正文编辑区与底部按钮**不再**跟着键盘上移。这里曾经用 `useVisibleViewportHeight()`
+          把整页压到可见区高度，那正是「保存按钮下方一大片空白」的成因：
+            · iOS 的键盘不改变布局视口，只让 **visualViewport** 变小；
+            · 被压矮的那一列下面，**布局视口那一整段仍然存在**（可滚动、且被 `.qo-app-root`
+              的整页底色填充）；
+            · 用户在键盘弹起时往下滑 = 内层滚动/橡皮筋把**可视视口**在布局视口里往上滚 ⇒
+              底部露出「无人绘制的那段空白」，再往下才是布局在文档底部的 TabBar。
+          ⇒ 现在的做法是：**页头 / 工具条 / 底部按钮不滚不动，只有正文编辑区滚动**
+             （textarea 是自身可滚动的元素）。键盘弹起时，光标在可滚动的 textarea 内部被算成
+             「可见」，iOS 就不会再去滚可视视口 —— 这正是用户要的「整个页面不能整体下滑，
+             只有文字输入区域可以滚动」。所以本页**不再需要 visibleHeight**。
+          ⇒ 底部按钮「位置不变」也是明确要求（退路方案），现在直接就是固定不动的。
+          唯一的取舍：可见区变矮后，底部按钮会落进键盘**下面**（看不见）。与其把它举上去、
+          换来一片能滑出来的空白，不如让它老实待在底部 —— 需要保存时收起键盘即可，
+          而「键盘弹起时到底该不该让保存按钮可见」在下面的 footer 处另有说明。 */}
       {/* 去年的今天：往年同月日的随机一篇，点击查看详情；右侧 ✕ 隐藏（今天不再显示） */}
       {isOnThisDayEnabled() && !otdHidden && onThisDay && (
         <div className="mb-3 flex items-start gap-2 rounded-xl border border-neutral-100 bg-neutral-50/60 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/40">
@@ -448,34 +459,44 @@ export default function DiaryEditor() {
           <span>{PROMPTS[promptIdx]}</span>
         </button>
       )}
-      {/* Markdown 工具条：放在**编辑区顶部**（输入框之上），与下方输入框之间隔开 16px
-          （EDITOR_TOOLBAR_GAP_CLASS，两页共用；别用 mt-* —— 见该常量的说明）。
+      {/* Markdown 工具条：放在**编辑区顶部**（输入框之上）。
           原先在输入框下方——手机输入时键盘从底部弹出会把整条盖住，工具条等于不可用
-          （2026-09-30 用户反馈）。横条本身与详情页编辑态共用 components/MarkdownToolbar.tsx。 */}
-      <div className={EDITOR_TOOLBAR_GAP_CLASS}>
-        <MarkdownToolbar
-          preview={preview}
-          disabled={status === 'saving'}
-          onAction={applyToolbar}
-          onTogglePreview={togglePreview}
-        />
+          （2026-09-30 用户反馈）。横条本身与详情页编辑态共用 components/MarkdownToolbar.tsx。
+          与下方输入框之间隔开 16px：由**下面这个滚动容器的 pt-4** 承担。
+          工具条**不设自己的 padding-top**：它必须和页头、底部按钮一样是「固定不动」的一条，
+          自己长高会挤掉正文的空间；间距改由滚动区的上内边距提供，正文滚动时也就不会贴住它。 */}
+      <MarkdownToolbar
+        preview={preview}
+        disabled={status === 'saving'}
+        onAction={applyToolbar}
+        onTogglePreview={togglePreview}
+      />
+      {/* ★ 正文区 = **本页唯一的滚动容器**（用户要求：「只有文字输入区域可以滚动」）。
+          外层滚动容器而不是只让 textarea 自己滚，是为了三件事：
+            · 编辑器预览（preview）那一支本来就靠这个容器滚；
+            · 「去年的今天」「草稿横幅」「每日提示」这些卡片在编辑区**上方**，内容多时也要能滚到；
+            · 工具条是固定的一条，正文滚到它下面不会贴住（由 pt-4 隔开）。
+          `pt-4` 提供与工具条的 16px 间距（原先由已删除的 EDITOR_TOOLBAR_GAP_CLASS 承担）；
+          `pb-2` 与改造前预览区一致。
+          min-h-0 必须有：flex 子项的默认 min-height 是 auto，不加就压不下去、滚动条不会出现。 */}
+      <div className="min-h-0 flex-1 overflow-y-auto pt-4 pb-2">
+        {preview ? (
+          <div ref={previewRef}>
+            {text.trim()
+              ? <Markdown source={text} />
+              : <p className="text-sm text-neutral-500 dark:text-neutral-400">还没有内容</p>}
+          </div>
+        ) : (
+          <AutoTextarea
+            textareaRef={editorRef}
+            value={text}
+            onChange={(v) => { setText(v); textRef.current = v; onDraftChange(v) }}
+            placeholder={entryCount === 0 ? '写下第一篇日记吧' : '在此处输入内容...'}
+            autoFocus
+            disabled={status === 'saving'}
+          />
+        )}
       </div>
-      {preview ? (
-        <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto pb-2">
-          {text.trim()
-            ? <Markdown source={text} />
-            : <p className="text-sm text-neutral-500 dark:text-neutral-400">还没有内容</p>}
-        </div>
-      ) : (
-        <AutoTextarea
-          textareaRef={editorRef}
-          value={text}
-          onChange={(v) => { setText(v); textRef.current = v; onDraftChange(v) }}
-          placeholder={entryCount === 0 ? '写下第一篇日记吧' : '在此处输入内容...'}
-          autoFocus
-          disabled={status === 'saving'}
-        />
-      )}
       {/* 空状态引导：首次（无任何日记）时显示柔和渐变引导 */}
       {entryCount === 0 && (
         <div className="flex flex-col items-center gap-2 py-5">
@@ -485,15 +506,18 @@ export default function DiaryEditor() {
           </p>
         </div>
       )}
-      {/* 左右不再单独留白：原先这里是 px-2，而输入框（AutoTextarea）没有左右内边距，
-          于是「保存」按钮比它上方的输入框窄了 8px，也不比详情页编辑态的「保存修改」
-          （底部区无 px，直接吃 main 的 px-5）。去掉后两页主按钮左右边界一致。
-          上 8px / 下 16px：下边距与详情页编辑态底部区、查看态操作栏对齐（TabBar 就在紧下方）。
+      {/* 底部区：整体贴底（状态行 + 保存按钮），正文滚动区弹性占中间。
+          ★ 键盘弹起时它**不上移**（用户要求「整个页面不能整体下滑」「退而求其次位置保持不变」）：
+          代价是被键盘遮住，需要保存时收起键盘。宁可如此，也不要上一版那种"举上去然后在下面
+          露出一片能滑出来的空白"。
+          必须有下内边距：main 自身没有 pb，而 TabBar 就紧贴在它下方（(app)/layout 里
+          两者是相邻的兄弟节点，中间没有任何间隔）——少了这段留白，渐变实心按钮的下边缘
+          会正好压在 TabBar 的 1px 上边框上，视觉上就是「按钮与 TabBar 重叠」。
           底部安全区不再由这里承担——(app)/layout 的 TabBar 已经自带 pb-safe，
           此处若再加 env(safe-area-inset-bottom) 会叠出一段空白。
           也不能用 safe-pb + pb-4 组合——.safe-pb 是 unlayered 自定义类，会覆盖 Tailwind 的 pb-4
           relative：给 ConfettiBurst 当定位上下文（它按 footer 顶边锚定，不再用 fixed + 像素偏移） */}
-      <footer className="relative mt-auto pb-4 pt-2">
+      <footer className="relative shrink-0 pb-4 pt-2">
         {showConfetti && <ConfettiBurst />}
         <p className="mb-3 text-center text-xs text-neutral-500 dark:text-neutral-400">
           {status === 'saving' && '正在保存…'}

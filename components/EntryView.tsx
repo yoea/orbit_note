@@ -14,7 +14,7 @@ import { cacheEntriesPage, getCachedEntryById, getQueuedEntryById, removeCachedE
 import { weatherEmoji } from '@/lib/client/weather'
 import { bumpEntryViewCount } from '@/lib/client/views'
 import { playSaveSoundIfEnabled } from '@/lib/client/sound'
-import { BRAND_GRADIENT_CLASS, EDITOR_TEXTAREA_CLASS, EDITOR_TOOLBAR_GAP_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
+import { BRAND_GRADIENT_CLASS, EDITOR_TEXTAREA_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import Toast from './Toast'
 import Markdown from './Markdown'
 import MarkdownBoundary from './MarkdownBoundary'
@@ -22,7 +22,6 @@ import MarkdownToolbar from './MarkdownToolbar'
 import StarIcon from './StarIcon'
 import { countWords } from '@/lib/client/markdown'
 import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
-import { useVisibleViewportHeight } from '@/lib/client/use-viewport-height'
 
 // 行结构 = 服务端整行（含密文）；与 EncryptedEntry 同构（wordCount 为明文计数字段，
 // 详情页虽不用，但列表缓存/离线兜底按整行存取）
@@ -54,9 +53,9 @@ const VIEW_COUNT_DELAY_MS = 1_000
 // 日记详情视图（原生路由页 /entry/[id] 渲染；DEK 会话级持久化，导航/重载自动恢复）
 export default function EntryView({ id }: { id: string }) {
   const router = useRouter()
-  // 编辑态下键盘弹起时把整页压进可见区：否则 iOS 把可视视口向上滚，
-  // Markdown 工具条与页头被顶出屏幕（与写页同一根因，见 use-viewport-height.ts）。
-  const visibleHeight = useVisibleViewportHeight()
+  // 键盘适配（2026-10-06 改法）：编辑态不再压整页高度 —— 正文自己就是滚动容器，
+  // 光标在它内部被算成可见，iOS 就不会去滚可视视口（写页 DiaryEditor 有完整说明）。
+  // 早前用 useVisibleViewportHeight 压整页是「保存按钮下方一大片空白」的成因。
   const [entry, setEntry] = useState<Entry | null>(null)
   const [plain, setPlain] = useState('') // 解密后的正文，现在承载的是 Markdown 源码
   const [editing, setEditing] = useState(false)
@@ -563,14 +562,19 @@ export default function EntryView({ id }: { id: string }) {
   const placeName = displayLocationName(entry)
   const locationBusy = locating || savingLocation
   return (
-    <main
-      className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-y-auto px-5"
-      /* 只有编辑态才压高度：查看态本来就需要正常滚动。
-         键盘收起（visibleHeight = null）时立刻退回 flex-1，见 use-viewport-height.ts。 */
-      style={editing && visibleHeight ? { flex: `0 0 ${visibleHeight}px` } : undefined}
-    >
+    // ── 布局（2026-10-06 改，与写页同一套）────────────────────────────────────────
+    // main **不再滚动**：页头、元信息行、底部操作栏都在流内固定；滚动只发生在正文那一块。
+    //
+    // ★ 一个刻意的技巧：header / 元信息行 / 定位块在 JSX 里写在**正文之前**（源码顺序就是阅读
+    //   顺序，可读性最好），但视觉上它们必须**在正文下方**（日期、字数、定位、编辑于都是正文的
+    //   落款）。这里用 flex 的 `order` 做纯视觉重排：正文 order-1（负值最大、永远排第一），
+    //   其余全部 order-10 —— 于是**源码顺序不变，视觉顺序变成「正文 → 页头 → 元信息 → …」**。
+    //   注意：main 的第一行子元素仍是 header，与改造前一致（不受 order 影响）。
+    //   为什么必须这么绕 —— header 若是滚动容器的子元素，它就会跟着正文一起滚走；
+    //   而本项目要求「整个页面不能整体下滑」，页头必须固定。详见下半部分滚动容器的注释。
+    <main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col px-5">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
-      <header className="page-header relative flex items-center justify-between py-3">
+      <header className="page-header relative order-10 flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中。
             字号：‹ 为半角字符视觉偏小（text-3xl），＋ 为全角字符视觉偏大（text-xl）——视觉平衡 */}
         <Link href="/diary" aria-label="返回" scroll={false} className="-ml-1 px-1 text-3xl leading-none text-neutral-500 dark:text-neutral-400">
@@ -601,7 +605,7 @@ export default function EntryView({ id }: { id: string }) {
           </Link>
         )}
       </header>
-      <p className="flex flex-wrap items-center gap-2 text-sm tabular-nums text-neutral-500 dark:text-neutral-400">
+      <p className="order-10 flex flex-wrap items-center gap-2 text-sm tabular-nums text-neutral-500 dark:text-neutral-400">
         {fmtDate(created)}
         {/* 字数在解密时计算（与编辑器底部"共 x 字"一致：trim 后长度） */}
         {!decryptFailed && <> · {countWords(plain)} 字</>}
@@ -619,7 +623,7 @@ export default function EntryView({ id }: { id: string }) {
       {/* 定位信息：查看与编辑共用同一位置与样式（字数行下方）——优先地点名，点击复制精确坐标。
           编辑态且原笔记无坐标时，改为展示「添加定位」入口 */}
       {hasCoords ? (
-        <div className="mt-1">
+        <div className="order-10 mt-1">
           {/* 定位信息（左）+ 实时天气（右，同行两端对齐） */}
           <div className="flex items-center justify-between gap-2">
             {/* 定位（点击复制坐标）+ 编辑态紧随其后的移除小按钮，合成一组、保持左对齐 */}
@@ -660,7 +664,7 @@ export default function EntryView({ id }: { id: string }) {
           </div>
         </div>
       ) : editing && !pendingSync ? (
-        <div className="mt-1">
+        <div className="order-10 mt-1">
           {!addLocationOpen ? (
             <button onClick={() => setAddLocationOpen(true)} className="text-xs text-neutral-500 dark:text-neutral-400 underline">
               ＋ 添加定位
@@ -718,48 +722,46 @@ export default function EntryView({ id }: { id: string }) {
       ) : null}
       {editing ? (
         <>
-          {/* Markdown 工具条：放在**编辑区顶部**（输入框/预览区之上），与下方输入框隔开 16px
-              （EDITOR_TOOLBAR_GAP_CLASS，与写页共用；这里必须用 pt-* —— main 是可滚动的
-              flex 容器，子元素间的 mt-* 会与工具条的 mb-2 塌陷成最大值，两页间距就不一致了）。
-              原先在输入框下方——手机输入时键盘从底部弹出会把整条盖住，工具条等于不可用
-              （2026-09-30 用户反馈）。与写页共用同一份组件，两页位置一致。
-              预览态隐藏动作按钮但保留这一行，按钮位置不跳动。 */}
-          <div className={EDITOR_TOOLBAR_GAP_CLASS}>
-            <MarkdownToolbar
-              preview={preview}
-              disabled={busy}
-              onAction={applyToolbar}
-              onTogglePreview={togglePreview}
-            />
+          {/* ★ 键盘适配（2026-10-06）：编辑态**不再**用 useVisibleViewportHeight 压整页高度。
+              原因与写页完全相同（那里有完整说明）：被压矮的那一列下方会露出布局视口里
+              「无人绘制」的一段，用户往下滑就是一片空白。改成
+              「页头/元信息/工具条/底部按钮固定，只有正文可滚」——见下面滚动容器的注释。 */}
+          {/* 工具条**不滚动**（固定一条）。它与上方「元信息行」之间的间距由 order-10 容器的
+              mt-3 组合出来；与下方输入框的 16px 由下面滚动容器的 pt-4 承担
+              （工具条自己不设 padding —— 它必须固定，不能自己长高挤掉正文空间）。 */}
+          <MarkdownToolbar
+            preview={preview}
+            disabled={busy}
+            onAction={applyToolbar}
+            onTogglePreview={togglePreview}
+          />
+          {/* ★ 编辑态正文 = **唯一滚动容器**（用户要求「只有文字输入区域可以滚动」）。
+              与写页同一套做法：外层滚动容器 + 内部 textarea 自身也可滚。预览态本就靠它滚动。
+              `pt-4` 提供与工具条的间距；`pb-2` 与改造前预览区一致。
+              min-h-0 必须有（flex 子项默认 min-height:auto，不加压不下去、滚动条不出现）。 */}
+          <div className="min-h-0 flex-1 overflow-y-auto pt-4 pb-2">
+            {preview ? (
+              <div ref={previewRef}>
+                {plain.trim()
+                  ? <MarkdownBoundary source={plain}><Markdown source={plain} /></MarkdownBoundary>
+                  : <p className="text-sm text-neutral-500 dark:text-neutral-400">还没有内容</p>}
+              </div>
+            ) : (
+              <textarea
+                ref={editorRef}
+                value={plain}
+                onChange={(e) => setPlain(e.target.value)}
+                disabled={busy}
+                className={EDITOR_TEXTAREA_CLASS}
+              />
+            )}
           </div>
-          {/* 编辑区：flex-1 弹性填充剩余空间（min-h-0 允许收缩）——编辑区完整填满视口。
-              预览态换成渲染结果（只读，不改 plain）——与写页「预览」同一套交互。
-              输入框字号/行高来自 EDITOR_TEXTAREA_CLASS，与写页 AutoTextarea 同源
-              （text-base = 查看页 qo-markdown 容器）——编辑与查看必须逐行对齐。
-              上下不再写 mt-3：上间距由工具条的 mb-2 承担，下间距由底部区承担。 */}
-          {preview ? (
-            <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto">
-              {plain.trim()
-                ? <MarkdownBoundary source={plain}><Markdown source={plain} /></MarkdownBoundary>
-                : <p className="text-sm text-neutral-500 dark:text-neutral-400">还没有内容</p>}
-            </div>
-          ) : (
-            <textarea
-              ref={editorRef}
-              value={plain}
-              onChange={(e) => setPlain(e.target.value)}
-              disabled={busy}
-              className={EDITOR_TEXTAREA_CLASS}
-            />
-          )}
-          {/* 底部区：整体贴底（上次编辑 + 保存按钮），输入框弹性占中间。
-              必须有下内边距：main 自身没有 pb，而 TabBar 就紧贴在它下方（(app)/layout 里
-              两者是相邻的兄弟节点，中间没有任何间隔）——少了这段留白，渐变实心按钮的下边缘
-              会正好压在 TabBar 的 1px 上边框上，视觉上就是「按钮与 TabBar 重叠」。
-              查看态没这问题，只因那条操作栏自带 py-4。
-              取 16px（pb-4）与查看态操作栏的下内边距一致；底部安全区仍由 TabBar 的
-              pb-safe 承担，这里不能写 safe-pb（否则叠出双份留白）。 */}
-          <div className="mt-auto flex flex-col gap-2 pb-4 pt-2">
+          {/* 底部区：整体贴底（上次编辑 + 保存按钮），**不随键盘上移**（用户要求：
+              整个页面不能整体下滑，退一步则保存按钮位置保持不变）。
+              必须有下内边距：main 自身没有 pb，TabBar 紧贴在其下方（(app)/layout 里两者相邻），
+              少了这段留白，渐变按钮的下边缘会压在 TabBar 的 1px 上边框上。
+              取 16px（pb-4）与查看态操作栏的下内边距一致；底部安全区由 TabBar 的 pb-safe 承担。 */}
+          <div className="order-10 mt-auto flex flex-col gap-2 pb-4 pt-2">
             {isEdited && (
               /* 与查看态的「编辑于」同一档字号（11px）：两处指的是同一个时间戳，
                  不该一个 12px 一个 11px（用户要求日期再小一档）。 */
@@ -782,16 +784,24 @@ export default function EntryView({ id }: { id: string }) {
               改造前是 plain.split('\n').map → 每行一个 <p>；现在换行由 remark-breaks
               处理成 <br>，段间距只出现在真正的空行分隔处。
               外面包一层 MarkdownBoundary：渲染器异常时退化成「原文可读」，
-              绝不让一篇笔记因为格式解析失败而变成「打不开」（见该组件注释）。 */}
-          <MarkdownBoundary source={plain}>
-            <Markdown source={plain} className="mt-4" />
-          </MarkdownBoundary>
+              绝不让一篇笔记因为格式解析失败而变成「打不开」（见该组件注释）。
+              ★ `order-1`（负值最小 ⇒ 永远排在所有 order 默认 0 / 明确的 10 之前）：
+                日期、字数、定位、页头在 JSX 里写在它之前，视觉上却必须落在它**之后**。
+                用 order 做纯视觉重排，源码顺序与阅读顺序都不用迁就布局。
+              ★ `min-h-0` + `overflow-y-auto` 一起给：这里是**整页唯一的滚动容器**
+                （配合 main 的 flex-col 与 flex-1）——正文长了它滚、它自己不高出去，
+                页头与底部操作栏因此永远钉在原位，键盘弹起时整页也不会被推动。 */}
+          <div className="order-1 mt-4 min-h-0 flex-1 overflow-y-auto">
+            <MarkdownBoundary source={plain}>
+              <Markdown source={plain} />
+            </MarkdownBoundary>
+          </div>
         </>
       )}
       {decryptFailed && (
-        <p className="mt-3 text-sm text-red-500">原内容无法解密，无法编辑，否则将覆盖原数据</p>
+        <p className="order-10 mt-3 text-sm text-red-500">原内容无法解密，无法编辑，否则将覆盖原数据</p>
       )}
-      {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+      {error && <p className="order-10 mt-3 text-sm text-red-500">{error}</p>}
       {!editing && (
         <>
           {/* 底部行：「编辑于」钉在分割线**正上方**（用户要求），不再跟着正文一起往上浮。
@@ -801,7 +811,7 @@ export default function EntryView({ id }: { id: string }) {
                 「编辑于」一起变成条件渲染，**没编辑过的条目**正文末行又会贴住分割线
                 （Markdown.tsx 的段落是 `mb-1 last:mb-0`，末段没有下边距 ⇒ 间隙 0px）。
               ★ 字号再降一档到 11px：它是三级信息，不该与正文同级。 */}
-          <div className="mt-auto pt-8 pb-3">
+          <div className="order-10 mt-auto pt-8 pb-3">
             {isEdited && (
               <p className="text-[11px] tabular-nums text-neutral-500 dark:text-neutral-400">
                 编辑于 {fmtDate(editedAt)}
@@ -820,7 +830,7 @@ export default function EntryView({ id }: { id: string }) {
               · 左组 `-ml-2` / 右组 `-mr-2`：各自抵消子项的 p-2，让首尾图标与正文左右边缘对齐。
               · 收藏 / 编辑 / 删除在「断网且条目来自云端缓存」时禁用（请求发不出去）；
                 打开次数不是操作，永远只读。未同步笔记走本地写队列，不受此限。 */}
-          <div className="flex items-center justify-between border-t border-neutral-100 py-4 dark:border-neutral-800">
+          <div className="order-10 flex items-center justify-between border-t border-neutral-100 py-4 dark:border-neutral-800">
             <div className="-ml-2 flex items-center gap-1">
               {/* 打开次数：受偏好 qo-show-views 控制（默认开）。
                   ★ 只隐藏「显示」，计数本身照常——bumpEntryViewCount 照常上报，

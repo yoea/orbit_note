@@ -17,19 +17,6 @@ export const PRIMARY_BUTTON_CLASS =
 // 品牌渐变底色：与 TabBar 选中态、偏好开关 ON、头像同一套 token。
 export const BRAND_GRADIENT_CLASS = 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500'
 
-// 编辑区与 Markdown 工具条之间的留白（写页 DiaryEditor 与详情页编辑态 EntryView 共用）。
-//
-// 为什么收敛成常量：工具条是共用件，但两页的父容器不同——
-//   写页 DiaryEditor 是 `flex flex-col` ⇒ **块级**的 `<div>` 子元素之间不会塌陷外边距，
-//   工具条自带的 `mb-2` 就是实际间距（工具条那 8px 是给「下方就是输入框」这个默认关系留的）；
-//   详情页 EntryView 编辑态是 `<main className="flex flex-col overflow-y-auto">` ⇒
-//   在**允许滚动**的 flex 容器里，子元素之间的外边距会照常塌陷，`mb-2` 与这里的 `mt-2`
-//   取最大值 ⇒ 必须改用 padding 分开，否则两页间距一个 8px 一个 16px。
-//
-// ★ 用 `pt-*` 而不是 `mt-*`：滚动容器的子元素用 padding 撑间距不会塌陷，两页一致；
-//   同时工具条的 `mb-2` 在下面这段 padding 之外仍保留（不删共用件的样式，避免影响两页以外的观感）。
-export const EDITOR_TOOLBAR_GAP_CLASS = 'w-full shrink-0 pt-4'
-
 // 正文编辑区 `<textarea>` 的共用核心样式（写页 AutoTextarea 与详情页编辑态 EntryView）。
 //
 // 为什么收敛成常量：两处都是「编辑一篇 Markdown 正文」，字号必须与查看页一致，
