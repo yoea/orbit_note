@@ -22,6 +22,7 @@ import MarkdownToolbar from './MarkdownToolbar'
 import StarIcon from './StarIcon'
 import { countWords } from '@/lib/client/markdown'
 import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
+import { useVisibleViewportHeight } from '@/lib/client/use-viewport-height'
 
 // 行结构 = 服务端整行（含密文）；与 EncryptedEntry 同构（wordCount 为明文计数字段，
 // 详情页虽不用，但列表缓存/离线兜底按整行存取）
@@ -53,6 +54,9 @@ const VIEW_COUNT_DELAY_MS = 1_000
 // 日记详情视图（原生路由页 /entry/[id] 渲染；DEK 会话级持久化，导航/重载自动恢复）
 export default function EntryView({ id }: { id: string }) {
   const router = useRouter()
+  // 编辑态下键盘弹起时把整页压进可见区：否则 iOS 把可视视口向上滚，
+  // Markdown 工具条与页头被顶出屏幕（与写页同一根因，见 use-viewport-height.ts）。
+  const visibleHeight = useVisibleViewportHeight()
   const [entry, setEntry] = useState<Entry | null>(null)
   const [plain, setPlain] = useState('') // 解密后的正文，现在承载的是 Markdown 源码
   const [editing, setEditing] = useState(false)
@@ -559,7 +563,12 @@ export default function EntryView({ id }: { id: string }) {
   const placeName = displayLocationName(entry)
   const locationBusy = locating || savingLocation
   return (
-    <main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-y-auto px-5">
+    <main
+      className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-y-auto px-5"
+      /* 只有编辑态才压高度：查看态本来就需要正常滚动。
+         键盘收起（visibleHeight = null）时立刻退回 flex-1，见 use-viewport-height.ts。 */
+      style={editing && visibleHeight ? { flex: `0 0 ${visibleHeight}px` } : undefined}
+    >
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="page-header relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中。

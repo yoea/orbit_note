@@ -20,6 +20,7 @@ import { playSaveSoundIfEnabled } from '@/lib/client/sound'
 import { PROMPTS, nextPromptIndex, reportPromptShown } from '@/lib/client/prompts'
 import { computeStreak } from '@/lib/client/streak'
 import { clearLocalDraft, fetchServerDraft, loadLocalDraft, pickNewer, pushServerDraft, saveLocalDraft } from '@/lib/client/draft-sync'
+import { useVisibleViewportHeight } from '@/lib/client/use-viewport-height'
 import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import { cacheOnThisDay, cacheStats, enqueueOfflineEntry, flushOfflineQueue, getCachedOnThisDay, getCachedStats } from '@/lib/client/offline'
 
@@ -81,7 +82,13 @@ export default function DiaryEditor() {
     } catch { /* 草稿保存失败不阻塞输入 */ }
   }, [])
 
-  // 键盘遮挡与高度适配已由 AutoTextarea 统一处理（visualViewport resize → fitHeight）
+  // 键盘弹出时把整个编辑区压到「可见区」之内：否则 iOS 会把可视视口向上滚，
+  // 把页头与 Markdown 工具条顶出屏幕（写得越长越看不到 —— 用户 2026-10-06 反馈）。
+  // 高度来源与三个保守判据见 lib/client/use-viewport-height.ts。
+  const visibleHeight = useVisibleViewportHeight()
+
+  // 键盘遮挡与高度适配走上面的 hook（早期 AutoTextarea 里的 visualViewport/fitHeight
+  // 实现已于 2026-08-26 删除，本次以「只改高度、不手工算像素」的方式补回）。
 
   // 卸载/pagehide 冲刷未决草稿（避免丢末段输入，iOS Safari pagehide 更可靠）；online 恢复时补推
   useEffect(() => {
@@ -361,7 +368,13 @@ export default function DiaryEditor() {
     // header/输入区/footer 全部在可视区内，输入区 flex 弹性分配剩余空间；页脚在流内不遮挡
     // 页面淡入不在这里（原先有 animate-fade-in）：切 tab 时本组件会重新挂载，
     // 动画随之重放 ⇒ 每次切换都白屏闪一下。已移到 (app)/layout 的 children 包裹层。
-    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5">
+    <div
+      className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5"
+      /* 键盘弹出时由 flex-1 改为固定高度（= 可见区高度）：见 useVisibleViewportHeight 的注释。
+         内联样式覆盖 class 上的 flex-1 是刻意的 —— 键盘收起时（visibleHeight = null）
+         立刻退回原来的弹性布局，两种状态不会互相残留。 */
+      style={visibleHeight ? { flex: `0 0 ${visibleHeight}px` } : undefined}
+    >
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="py-4">
         {/* 页头不再放「全部日记」「设置」图标——这两个目的地已由底部 TabBar 承担，
