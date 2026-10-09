@@ -19,15 +19,34 @@ const FILE = 'components/EntryView.tsx'
 const src = stripComments(readFileSync(join(projectRoot, FILE), 'utf8'))
 const attrs = classAttrsIn(FILE, src)
 
-/** 「编辑于」所在底部行的 class（恒渲染的留白容器） */
-const DATE_ROW = 'mt-auto pt-8 pb-3'
+/** 曾钉在底部的「编辑于」留白行 —— 2026-10-09 已废除，**不得再出现** */
+const LEGACY_DATE_ROW = 'mt-auto pt-8 pb-3'
 /** 操作栏的 class（分割线 + 上下内边距，唯一） */
 const BAR = 'border-t border-neutral-100 py-4'
+/** 查看态正文滚动容器的 class（唯一） */
+const BODY = 'mt-4 min-h-0 flex-1 overflow-y-auto'
 
 function indexOrFail(needle: string): number {
   const i = src.indexOf(needle)
   expect(i, `${FILE} 里找不到「${needle}」，后面的比较会空转`).toBeGreaterThanOrEqual(0)
   return i
+}
+
+/** 求一段 `<div …>` 的配对闭合区间（`<div` / `</div>` 配平）。
+ *  为什么需要它：判断某个元素是滚动区的**子节点**还是**兄弟节点**，看源码下标是看不出来的
+ *  （两种情况下标都可能“在后面”），必须真的配平才能定归属。 */
+function divRange(source: string, start: number): [number, number] | null {
+  const re = /<div\b|<\/div>/g
+  re.lastIndex = start
+  let depth = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(source))) {
+    if (m[0] === '</div>') {
+      depth--
+      if (depth <= 0) return [start, m.index + m[0].length]
+    } else depth++
+  }
+  return null
 }
 
 /** 操作栏那一段源码（从分割线起到 </main> 止） */
@@ -50,37 +69,31 @@ function windowFrom(hay: string, needle: string, len: number): string {
 describe('F · 查看页底部（编辑于行 + 4 图标操作栏）', () => {
   it('F0 解析自检：锚点齐全（防断言空转）', () => {
     expect(src.length).toBeGreaterThan(2000)
-    for (const needle of ['MarkdownBoundary', '编辑于', '打开过', DATE_ROW, BAR, '-mr-2', 'fmtDate', 'showViews && (']) {
+    for (const needle of ['MarkdownBoundary', '编辑于', '打开过', BODY, BAR, '-mr-2', 'fmtDate', 'showViews && (']) {
       expect(src, `找不到锚点「${needle}」`).toContain(needle)
     }
+    // 被废除的留白行必须**已经不在**（正文本行内容 + 注释里提到它，注释已被剥掉）
+    expect(src, `已废除的留白行 ${LEGACY_DATE_ROW} 仍在源码里`).not.toContain(LEGACY_DATE_ROW)
     expect(attrs.length, '没能解析出任何 class 属性').toBeGreaterThan(10)
   })
 
-  it('F1 「编辑于」在分割线**上方**（它被钉在分割线正上方，不属于操作栏）', () => {
+  it('F1 「编辑于」在**顶部信息行**里（与「日期 · 字数」同一行），且不在正文/底部', () => {
+    // 2026-10-09 用户要求把「编辑于」并进顶部信息行。
+    // 原因：它原先钉在底部分割线正上方，在正文与操作栏之间占掉 61px，使正文滚到底也
+    // 够不到分割线（用户反馈「内容最下方多出一块空白、内容区没把中间这部分用满」）。
+    const created = indexOrFail('fmtDate(created)')
     const edited = indexOrFail('编辑于')
-    const divider = indexOrFail(BAR)
-    expect(edited, '「编辑于」跑到分割线下面去了 —— 它就变成操作栏的一部分了').toBeLessThan(divider)
+    const bodyAt = indexOrFail(BODY)
+    expect(edited, '「编辑于」跑到创建时间前面去了').toBeGreaterThan(created)
+    expect(edited, '「编辑于」不在顶部信息行 —— 它跑到正文或底部去了').toBeLessThan(bodyAt)
   })
 
-  it('F2 底部行用 mt-auto 钉住、自带留白，且容器**恒渲染**（只有内容才是条件渲染）', () => {
-    const body = indexOrFail('MarkdownBoundary')
-    const row = indexOrFail(DATE_ROW)
-    const divider = indexOrFail(BAR)
-    expect(body, '底部行跑到正文前面去了').toBeLessThan(row)
-    expect(row, '底部行跑到分割线下面去了').toBeLessThan(divider)
-
-    const rowAttrs = attrs.filter((a) => a.text.includes(DATE_ROW))
-    expect(rowAttrs.length, '找不到底部行的 class 属性').toBe(1)
-    const tokens = classTokens(rowAttrs[0].text)
-    // mt-auto = 正文短时也不往上浮（用户要求「固定在贴近分割线」）
-    expect(tokens, '没有 mt-auto —— 正文短时「编辑于」会浮到正文下面去').toContain('mt-auto')
-    // pt-8 = 正文与「编辑于」之间的呼吸空间。★ 没有它，未编辑过的条目正文末行会贴住分割线
-    //（Markdown 的末段是 last:mb-0，间隙本来是 0px —— 这正是当初加「内容尾行」的原因）
-    expect(tokens, '少了上留白 —— 未编辑过的条目正文末行会贴住分割线').toContain('pt-8')
-    // 留白必须挂在**容器**上，不能挂在条件渲染的子元素上（见 F5 的反向断言）
-    expect(rowAttrs[0].text, '留白类被放到了条件渲染的子元素上').not.toContain('isEdited')
-    // 分割线只属于操作栏：底部行自己不能画线，否则会出现两条分割线
-    expect(tokens.filter((t) => t.startsWith('border-')), '底部行不该有边框').toEqual([])
+  it('F2 底部不得再有任何留白行（正文滚动区与操作栏必须紧邻）', () => {
+    // ★ `mt-auto` 在有 `flex-1` 兄弟（正文）时是**空操作** —— flex-grow 先把剩余空间吃光了，
+    //   所以 `mt-auto pt-8 pb-3` 那 61px 恒定存在、正文永远够不到它。
+    //   这就是用户看到的「内容最下方多出一块空白」，也让他觉得「滚到底了还滑不动」。
+    expect(src, '底部的「编辑于」留白行又回来了 —— 正文会被它挡住 61px').not.toContain(LEGACY_DATE_ROW)
+    expect(src, '底部又出现了 pt-8 这种大留白').not.toContain('pt-8')
   })
 
   it('F3 操作栏两端对齐，且**打开次数排在收藏之前**（用户要求「排在最前」）', () => {
@@ -135,5 +148,26 @@ describe('F · 查看页底部（编辑于行 + 4 图标操作栏）', () => {
     // 三个内联 SVG（眼睛 / 编辑 / 删除）都用 strokeWidth 2；星是填充图形，线宽在 StarIcon 内部
     const strokes = bar.match(/strokeWidth="2"/g) ?? []
     expect(strokes.length, '内联图标的线宽不统一').toBe(3)
+  })
+
+  it('F8 正文滚动区与操作栏之间不得夹任何元素（滚动区下边缘 = 操作栏上边缘）', () => {
+    // 2026-10-09 用户要求（原文）：「我希望内容区域最下部分能和 [操作栏] 的上边缘重合。」
+    // 判据：正文滚动区的 `<div>` 闭合之后、操作栏的分割线之前，不得再出现任何 `<div>` ——
+    // 一旦夹进去东西（哪怕只有一个「编辑于」留白行），正文滚到底就会停在那东西上方，
+    // 中间重新出现一块够不着的死区。
+    // 证据：Temp/qo-keyboard-probe/view-bottom.mjs（旧 gap=61px / 新 gap=0px）。
+    const bodyAt = indexOrFail(BODY)
+    const range = divRange(src, bodyAt)
+    expect(range, '正文滚动区的 <div> 没配平 —— 解析失败，后面的断言会空转').not.toBeNull()
+    const divider = indexOrFail(BAR)
+    expect(divider, '操作栏跑到正文滚动区前面去了').toBeGreaterThan(range![1])
+    // ⚠️ 切片必须切到操作栏**自己的 `<div` 起始标签之前**：BAR 锚点落在它的 className 里，
+    //    直接用 divider 当右界会把操作栏的开标签也圈进来（踩过，F8 因此假红）。
+    const barTagAt = src.lastIndexOf('<div', divider)
+    expect(barTagAt, '找不到操作栏的 <div> 起始标签').toBeGreaterThan(range![1])
+    expect(
+      src.slice(range![1], barTagAt),
+      '正文滚动区与操作栏之间又夹了元素 ⇒ 正文滚到底也够不到分割线，中间会空出一块',
+    ).not.toMatch(/<\/?div/)
   })
 })

@@ -611,6 +611,13 @@ export default function EntryView({ id }: { id: string }) {
         {fmtDate(created)}
         {/* 字数在解密时计算（与编辑器底部"共 x 字"一致：trim 后长度） */}
         {!decryptFailed && <> · {countWords(plain)} 字</>}
+        {/* ★「编辑于」在这个信息行里（2026-10-09 用户要求）。
+            它原先钉在底部分割线正上方，要在正文与操作栏之间占掉 61px（32px 上留白 + 一行 + 12px
+            下留白），使正文滚到底也够不到分割线、中间永远空着一块（用户反馈「内容区没把中间
+            这部分用满」）。并进这里之后，底部整块让给正文。
+            字号跟随本行（text-sm）：它现在是「这一篇的时间信息」的一部分，与创建时间同类，
+            不再需要单独降档。 */}
+        {isEdited && <> · 编辑于 {fmtDate(editedAt)}</>}
         {/* 未同步徽标：离线新增、尚未上传服务器的笔记（同步后自动消失） */}
         {pendingSync && (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
@@ -773,8 +780,9 @@ export default function EntryView({ id }: { id: string }) {
               取 16px（pb-4）与查看态操作栏的下内边距一致；底部安全区由 TabBar 的 pb-safe 承担。 */}
           <div className="mt-auto flex flex-col gap-2 pb-4 pt-2">
             {isEdited && (
-              /* 与查看态的「编辑于」同一档字号（11px）：两处指的是同一个时间戳，
-                 不该一个 12px 一个 11px（用户要求日期再小一档）。 */
+              /* 11px：编辑态输入区下方的落款，压得比正文低一档（用户要求日期再小一档）。
+                 查看态的「编辑于」已并入顶部信息行、跟随该行的 text-sm（2026-10-09），
+                 两处字号不同是**刻意的**：前者是输入区外的一条脚注，后者是信息行的一部分。 */
               <p className="text-[11px] tabular-nums text-neutral-500 dark:text-neutral-400">上次编辑 {fmtDate(editedAt)}</p>
             )}
             <button
@@ -799,7 +807,16 @@ export default function EntryView({ id }: { id: string }) {
                 （配合 main 的 flex-col）——正文长了它滚、它自己不高出去，
                 页眉与底部操作栏因此永远钉在原位上，键盘弹起时整页也不会被推动。
               ★ 它在 main 里就排在「页眉/日期字数/定位天气」**之后**、底部栏**之前**：
-                源码顺序即视觉顺序，**不要给它加 order**（见 main 的注释与守卫 K10）。 */}
+                源码顺序即视觉顺序，**不要给它加 order**（见 main 的注释与守卫 K10）。
+              ★ **下边缘与操作栏的上边缘严格重合 —— 两者之间不许再夹任何东西**
+                （2026-10-09 用户要求「内容区域最下部分能和操作栏的上边缘重合」）。
+                此前这里夹了「编辑于」行（`mt-auto pt-8 pb-3`，共占 61px），
+                而 `mt-auto` 在有 `flex-1` 兄弟时是**空操作**（flex-grow 先吃光剩余空间），
+                所以那 61px 恒定存在、正文永远够不到 ⇒ 用户看到「内容最下方多出一块空白、
+                内容区没把中间这部分用满」，并伴随「滚到最底部就滑不动了」的观感。
+                ⇒ 定稿：**「编辑于」并入顶部「日期 · 字数」行**，底部整块让给正文。
+                证据：Temp/qo-keyboard-probe/view-bottom.mjs（旧 gap=61px / 新 gap=0px；
+                两版的滚动能力都正常 ⇒ 病根是这段死区，不是滚动本身）。守卫 F8/F9。 */}
           <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
             <MarkdownBoundary source={plain}>
               <Markdown source={plain} />
@@ -813,21 +830,6 @@ export default function EntryView({ id }: { id: string }) {
       {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
       {!editing && (
         <>
-          {/* 底部行：「编辑于」钉在分割线**正上方**（用户要求），不再跟着正文一起往上浮。
-              ★ `mt-auto` 吃掉剩余空间 —— 正文短时它被压到底部，正文长时它自然接在正文之后，
-                两种情况下它与分割线之间都只有这一段留白。
-              ★ 容器**恒渲染**、只有内容是条件渲染：这段留白原先挂在「内容尾行」上，若跟着
-                「编辑于」一起变成条件渲染，**没编辑过的条目**正文末行又会贴住分割线
-                （Markdown.tsx 的段落是 `mb-1 last:mb-0`，末段没有下边距 ⇒ 间隙 0px）。
-              ★ 字号再降一档到 11px：它是三级信息，不该与正文同级。 */}
-          <div className="mt-auto pt-8 pb-3">
-            {isEdited && (
-              <p className="text-[11px] tabular-nums text-neutral-500 dark:text-neutral-400">
-                编辑于 {fmtDate(editedAt)}
-              </p>
-            )}
-          </div>
-
           {/* 底部操作栏：一行 **4 个图标**（用户指定的布局）——
               左组 = 这一篇的**状态**（打开次数 → 收藏），右组 = 对这个**页面**的操作（编辑 / 删除）。
               · 打开次数从内容尾行搬到这里、排在收藏**前面**（用户要求「排在最前」）；
