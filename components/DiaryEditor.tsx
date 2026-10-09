@@ -471,20 +471,21 @@ export default function DiaryEditor() {
         onAction={applyToolbar}
         onTogglePreview={togglePreview}
       />
-      {/* ★ 正文区 = **本页唯一的滚动容器**（用户要求：「只有文字输入区域可以滚动」）。
-          外层滚动容器而不是只让 textarea 自己滚，是为了三件事：
-            · 编辑器预览（preview）那一支本来就靠这个容器滚；
-            · 「去年的今天」「草稿横幅」「每日提示」这些卡片在编辑区**上方**，内容多时也要能滚到；
-            · 工具条是固定的一条，正文滚到它下面不会贴住（由 pt-4 隔开）。
-          `pt-4` 提供与工具条的 16px 间距（原先由已删除的 EDITOR_TOOLBAR_GAP_CLASS 承担）；
-          `pb-2` 与改造前预览区一致。
-          min-h-0 必须有：flex 子项的默认 min-height 是 auto，不加就压不下去、滚动条不会出现。
-          ★ `flex` + `flex-col` 也必须有（2026-10-09 回归）：本容器是块级 div 时，
-            AutoTextarea 带的 `flex-1` **完全失效**（flex-1 只在 flex 容器里才有意义），
-            输入区塌成 textarea 的固有高度（约 2~3 行）。见守卫 K9。 */}
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-4 pb-2">
+      {/* ★ 正文区：外层**只做布局，不是滚动容器**；滚动由「当前显示的那一支」自己承担：
+            编辑态 = AutoTextarea 自身（flex-1 + overflow-y-auto），预览态 = 下面那个 div。
+           ★ 不要在这层再写 `overflow-y-auto`（2026-10-09 用户反馈「新建笔记文字较多时，
+             收起键盘后输入区域偶发无法上下滑动」）：编辑态里 textarea 是 flex-1，高度正好
+             等于本容器 ⇒ **本容器永远不产生溢出，却仍是一个「可滚动元素」**。于是手指与真正的
+             滚动条之间多隔了一层「能滚但不滚」的容器，iOS 上这类冗余滚动容器会偶发吞掉 pan 手势。
+             内容少时不溢出、看不出问题；内容多时才暴露 —— 与用户描述的「文字内容较多时才出现」吻合。
+             证据：`Temp/qo-keyboard-probe/nested-scroll.mjs`（旧：可滚动祖先 2 层、其中 1 层冗余；
+             新：每个分支恰好 1 层）。守卫 K9/K11。
+           `pt-4` 提供与工具条的 16px 间距；`pb-2` 与改造前预览区一致。
+           min-h-0 + flex + flex-col 三者都必须有：flex 子项默认 min-height:auto，不加压不下去；
+           而 `flex-1` 只在 flex 容器里才有意义（漏了 `flex` ⇒ 输入区塌成 2~3 行，守卫 K9）。 */}
+      <div className="flex min-h-0 flex-1 flex-col pt-4 pb-2">
         {preview ? (
-          <div ref={previewRef}>
+          <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto">
             {text.trim()
               ? <Markdown source={text} />
               : <p className="text-sm text-neutral-500 dark:text-neutral-400">还没有内容</p>}

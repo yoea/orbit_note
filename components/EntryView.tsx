@@ -737,16 +737,19 @@ export default function EntryView({ id }: { id: string }) {
             onAction={applyToolbar}
             onTogglePreview={togglePreview}
           />
-          {/* ★ 编辑态正文 = **唯一滚动容器**（用户要求「只有文字输入区域可以滚动」）。
-              与写页同一套做法：外层滚动容器 + 内部 textarea 自身也可滚。预览态本就靠它滚动。
+          {/* ★ 编辑态正文：外层**只做布局，不是滚动容器**；滚动由「当前显示的那一支」自己承担：
+                编辑态 = textarea 自身（flex-1 + overflow-y-auto），预览态 = 下面那个 div。
+              ★ 不要在这层再写 `overflow-y-auto`（2026-10-09 用户反馈「文字较多时收起键盘后
+                输入区域偶发无法上下滑动」）：编辑态里 textarea 是 flex-1，高度正好等于本容器
+                ⇒ **本容器永远不产生溢出，却仍是一个「可滚动元素」**，等于在手指与真正的滚动条
+                之间多隔了一层「能滚但不滚」的容器 —— iOS 上会偶发吞掉 pan 手势。
+                与写页同一根因、同一修法。守卫 K9/K11。
               `pt-4` 提供与工具条的间距；`pb-2` 与改造前预览区一致。
-              min-h-0 必须有（flex 子项默认 min-height:auto，不加压不下去、滚动条不出现）。
-              ★ `flex` + `flex-col` 也必须有（2026-10-09 回归）：本容器是块级 div 时，
-                textarea 的 `flex-1` 完全失效（flex-1 只在 flex 容器里才有意义），
-                输入区塌成固有高度（约 2~3 行）。见守卫 K9。 */}
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-4 pb-2">
+              min-h-0 + flex + flex-col 三者都必须有：flex 子项默认 min-height:auto，不加压不下去；
+                而 `flex-1` 只在 flex 容器里才有意义（漏了 `flex` ⇒ 输入区塌成 2~3 行，守卫 K9）。 */}
+          <div className="flex min-h-0 flex-1 flex-col pt-4 pb-2">
             {preview ? (
-              <div ref={previewRef}>
+              <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto">
                 {plain.trim()
                   ? <MarkdownBoundary source={plain}><Markdown source={plain} /></MarkdownBoundary>
                   : <p className="text-sm text-neutral-500 dark:text-neutral-400">还没有内容</p>}
@@ -757,7 +760,9 @@ export default function EntryView({ id }: { id: string }) {
                 value={plain}
                 onChange={(e) => setPlain(e.target.value)}
                 disabled={busy}
-                className={EDITOR_TEXTAREA_CLASS}
+                /* overflow-y-auto 与 AutoTextarea 对齐：滚动条由 textarea 自己承担，
+                   不能依赖 UA 默认（默认值一旦被 reset 掉，输入区就彻底滚不动了） */
+                className={`${EDITOR_TEXTAREA_CLASS} overflow-y-auto`}
               />
             )}
           </div>

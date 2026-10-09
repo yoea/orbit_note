@@ -128,25 +128,72 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
     expect(classTokens(code(TOOLBAR)), `${TOOLBAR} 不该把工具条粘住`).not.toContain('sticky')
   })
 
-  it('K9 编辑区滚动容器必须是 flex 列容器（否则 textarea 的 flex-1 失效、输入区塌成 2~3 行）', () => {
+  it('K9 编辑区外层必须是 flex 列容器，且**不得**自己可滚（K11 的反面）', () => {
     // 2026-10-09 回归（用户反馈「编辑页面只有很小一块输入区域了，大概 2~3 行」）：
     // 第二版把正文包进滚动容器时写成了**块级** div，而 EDITOR_TEXTAREA_CLASS 自带 `flex-1` ——
     // `flex-1` 只在 **flex 容器**里才有意义。父级是块级 div 时它是彻底的空操作，
     // textarea 于是退回固有高度（浏览器默认 rows≈2 ⇒ 2~3 行）。
     // 与 K7「不许内联算高度」是一对：高度只能由 flex 分配，那父级就必须是 flex 容器。
-    // 签名 `pt-4 pb-2` 唯一标识这个滚动容器（预览态与编辑态共用同一个元素）。
+    //
+    // ★ 2026-10-09 第二轮（用户反馈「文字较多时收起键盘后输入区偶发滑不动」）：
+    //   这一层**不能**再带 `overflow-y-auto` —— 编辑态 textarea 是 flex-1，高度正好等于本容器，
+    //   本容器永远不溢出却仍是「可滚动元素」，会夹在手指与真正的滚动条之间吞手势。
+    //   滚动改由两个分支各自承担，详见 K11。
+    // 签名 `pt-4 pb-2` 唯一标识这一层（预览态与编辑态共用）。
     for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
       const attrs = classAttrsIn(rel, code(rel)).filter(
         (a) => a.text.includes('pt-4') && a.text.includes('pb-2'),
       )
-      expect(attrs.length, `${name}找不到编辑区滚动容器（签名 pt-4 + pb-2），或签名不再唯一`).toBe(1)
+      expect(attrs.length, `${name}找不到编辑区外层容器（签名 pt-4 + pb-2），或签名不再唯一`).toBe(1)
       const tk = classTokens(attrs[0].text)
-      expect(tk, `${name}编辑区滚动容器不是 flex 容器 ⇒ 内部 textarea 的 flex-1 失效`).toContain('flex')
-      expect(tk, `${name}编辑区滚动容器缺 flex-col ⇒ 子项会被横向排`).toContain('flex-col')
-      expect(tk, `${name}编辑区滚动容器缺 min-h-0 ⇒ 压不下去、滚动条不出现`).toContain('min-h-0')
-      expect(tk, `${name}编辑区滚动容器缺 flex-1 ⇒ 不占满中间区域`).toContain('flex-1')
-      expect(tk, `${name}编辑区外层不再可滚（预览态会滚不动）`).toContain('overflow-y-auto')
+      expect(tk, `${name}编辑区外层不是 flex 容器 ⇒ 内部 textarea 的 flex-1 失效`).toContain('flex')
+      expect(tk, `${name}编辑区外层缺 flex-col ⇒ 子项会被横向排`).toContain('flex-col')
+      expect(tk, `${name}编辑区外层缺 min-h-0 ⇒ 压不下去`).toContain('min-h-0')
+      expect(tk, `${name}编辑区外层缺 flex-1 ⇒ 不占满中间区域`).toContain('flex-1')
+      expect(
+        tk,
+        `${name}编辑区外层又变成滚动容器了 —— 它会夹在手指与 textarea 之间吞掉滚动手势（见 K11）`,
+      ).not.toContain('overflow-y-auto')
     }
+  })
+
+  it('K11 正文区不得嵌套滚动容器：每个分支各自承担滚动（2026-10-09 用户反馈）', () => {
+    // 用户反馈：「新建笔记且文字内容较多的情况下，收起键盘后输入区域偶现无法正常上下滑动。」
+    // 根因：正文外面套了一层 `overflow-y-auto` 的容器，而编辑态 textarea 是 `flex-1`
+    // （高度正好等于该容器）⇒ **该容器永远不产生溢出，却仍是一个可滚动元素**。
+    // 手指与真正的滚动条之间就多隔了一层「能滚但不滚」的容器，iOS 上会偶发吞掉 pan 手势。
+    // 内容少时 textarea 本来就不溢出、看不出问题；内容多时才暴露 —— 与「文字较多时才出现」吻合。
+    // 证据：Temp/qo-keyboard-probe/nested-scroll.mjs（旧：可滚动祖先 2 层含 1 层冗余；新：各 1 层）。
+    //
+    // 定稿：外层**只做布局**（K9 已钉死不许可滚），滚动由「当前显示的那一支」自己承担 ——
+    //   编辑态 = textarea 自身；预览态 = 包着 previewRef 的那个 div。
+    for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
+      const src = code(rel)
+      // 预览分支：`ref={previewRef}` 所在元素自己必须是滚动容器。
+      // 注意 className 里没有 previewRef（那在 ref 属性上），所以不能按 class 文本找 ——
+      // 用「ref 之后的窗口里取 className」这一招，且不依赖属性先后顺序。
+      const at = src.indexOf('ref={previewRef}')
+      expect(at, `${name}找不到预览分支的 ref={previewRef}`).toBeGreaterThan(-1)
+      const m = src.slice(at, at + 140).match(/className="([^"]*)"/)
+      expect(m, `${name}预览分支的元素上没有紧跟 className`).not.toBeNull()
+      const ptk = classTokens(m![1])
+      expect(ptk, `${name}预览分支缺 overflow-y-auto ⇒ 预览内容一多就滚不动`).toContain('overflow-y-auto')
+      expect(ptk, `${name}预览分支的滚动容器缺 min-h-0`).toContain('min-h-0')
+      expect(ptk, `${name}预览分支的滚动容器缺 flex-1`).toContain('flex-1')
+    }
+    // 编辑分支的滚动容器：
+    //  · 详情页是裸 textarea ⇒ 必须在共享常量之外显式带上 overflow-y-auto（别依赖 UA 默认）
+    const entryTa = classAttrsIn(ENTRY, code(ENTRY)).filter((a) => a.text.includes('resize-none'))
+    expect(entryTa.length, '详情页找不到编辑 textarea（签名 resize-none）').toBe(1)
+    expect(
+      classTokens(entryTa[0].text),
+      '详情页编辑 textarea 缺 overflow-y-auto ⇒ 内容一多就滚不动',
+    ).toContain('overflow-y-auto')
+    //  · 写页走 AutoTextarea 组件 ⇒ 断言那个组件确实给了 overflow-y-auto
+    expect(
+      code(AUTO),
+      'AutoTextarea 丢了 overflow-y-auto ⇒ 写页输入区内容一多就滚不动',
+    ).toContain('overflow-y-auto')
   })
 
   it('K10 页眉必须在正文之前，且不得用 flex order 重排（2026-10-09 回归）', () => {
