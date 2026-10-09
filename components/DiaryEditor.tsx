@@ -61,6 +61,10 @@ export default function DiaryEditor() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 草稿写回 epoch：save/discard 成功时递增，作废进行中的冲刷（防止"放弃/保存后草稿复活"的竞态）
   const draftEpochRef = useRef(0)
+  // 本次挂载内用户是否**真的改过正文**（只有 onDraftChange 会置位 —— 那是用户的编辑入口）。
+  // 用途：卸载/pagehide 时决定要不要碰草稿。★ 没有它会有一个反向 bug：
+  // 用户打开写页 → 顶上弹着「有草稿是否恢复」还没决策 → 直接切走 ⇒ 那次卸载会把草稿删掉。
+  const userEditedRef = useRef(false)
 
   // 正文变化 → 同步模块级快照（切 tab 卸载后回来靠它还原，见 editorSnapshot 的注释）。
   // ★ 放在 effect 里而不是各 setText 调用点：保存成功、离线保存、恢复草稿都会改 text，
@@ -82,6 +86,10 @@ export default function DiaryEditor() {
     const epoch = draftEpochRef.current
     try {
       const dek = getDek()
+      // 空文本在这里直接返回是**刻意**的：本函数只负责「写草稿」，绝不写空草稿。
+      // ★ 「正文被清空 ⇒ 把已存的草稿清掉」是 syncDraft 的职责（它把空文本路由到
+      //   clearStoredDraft）。这两件事必须分开 —— 2026-10-09 的 bug 就是把「不写空的」
+      //   当成了「不用管」，于是旧草稿永远留在库里。
       if (!dek || !text.trim()) return
       const { ciphertext, iv } = await encryptText(dek, text)
       if (epoch !== draftEpochRef.current) return // 保存/放弃已发生，不再写回草稿
@@ -97,6 +105,31 @@ export default function DiaryEditor() {
     } catch { /* 草稿保存失败不阻塞输入 */ }
   }, [])
 
+  // 清掉「已存下的草稿」（本地 IndexedDB + 服务器），并作废进行中的冲刷。
+  // 两个调用方，语义是同一条规则的两面：
+  //   · 用户点横幅上的「放弃」；
+  //   · 正文被清空 —— 已经没有可恢复的东西了，旧草稿必须一起消失。
+  // ★ 必须**同时**清本地与服务器：下次挂载时服务器草稿是独立的一条来源
+  //   （`if (server && !best)` 那支会把它当成更新的草稿重新弹出来），只清本地照样复活。
+  const clearStoredDraft = useCallback(async (): Promise<void> => {
+    pendingDraftRef.current = null
+    setShowDraftBanner(false)
+    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }
+    draftEpochRef.current++ // 作废进行中的冲刷，防止刚删掉的草稿被写回来
+    await clearLocalDraft()
+    await fetch('/api/draft', { method: 'DELETE' }).catch(() => {})
+  }, [])
+
+  // 把「当前正文」同步成草稿。★ 空文本是**清草稿**，不是「什么都不做」——
+  // 2026-10-09 修的 bug：输入「你好啊」→ 存成草稿 → 全删 → 切 tab 再回来，
+  // 仍弹「有草稿是否恢复」、恢复出来还是「你好啊」。根因就是当时的三个入口
+  // （flushDraft 内部的 `!text.trim()` 早退、卸载/pagehide 的 `if (current.trim())`）
+  // 在正文为空时**全部直接跳过** ⇒ 库里那条旧草稿永远不会被清掉。
+  const syncDraft = useCallback(async (text: string): Promise<void> => {
+    if (!text.trim()) await clearStoredDraft()
+    else await flushDraft(text)
+  }, [flushDraft, clearStoredDraft])
+
   // 键盘弹出时**不再**压整页高度：正文编辑区自己是滚动容器，光标在它内部被算成可见，
   // iOS 就不会去滚可视视口。这段能力（use-viewport-height.ts）2026-10-06 曾用于压整页，
   // 但它正是「保存按钮下方一大片空白」的成因（详见 render 里 header 之后的注释块）。
@@ -106,14 +139,16 @@ export default function DiaryEditor() {
   useEffect(() => {
     const flushNow = () => {
       if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }
-      const current = textRef.current
-      if (current.trim()) void flushDraft(current) // fire-and-forget，静默失败
+      // ★ 用户这次没动过正文 ⇒ 什么都不做。否则「打开写页、顶上还弹着『有草稿是否恢复』
+      //   没做决策、直接切走」会在这里把草稿删掉 —— 那是另一个方向的 bug。
+      if (!userEditedRef.current) return
+      // ★ 空正文也要走这一趟（走的是 syncDraft 的清理分支）：用户在输入框里全删之后
+      //   直接切 tab，旧草稿不能留在库里，否则切回来又弹恢复、恢复出来还是删掉前的内容。
+      void syncDraft(textRef.current) // fire-and-forget，静默失败
     }
     const onPageHide = () => flushNow()
-    const onOnline = () => {
-      const current = textRef.current
-      if (current.trim()) void flushDraft(current)
-    }
+    // online：把之前推失败的草稿补推（没改过就没有待推的东西）
+    const onOnline = () => { if (userEditedRef.current) void syncDraft(textRef.current) }
     window.addEventListener('pagehide', onPageHide)
     window.addEventListener('online', onOnline)
     return () => {
@@ -122,7 +157,7 @@ export default function DiaryEditor() {
       flushNow() // 卸载前冲刷
       if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
     }
-  }, [flushDraft])
+  }, [syncDraft])
 
   // 页面加载时检查本地/服务器草稿，有未完成草稿则显示恢复横幅
   useEffect(() => {
@@ -234,12 +269,14 @@ export default function DiaryEditor() {
   // 进入写页即尝试冲刷离线写队列（上次离线保存的日记，联网后自动补传）
   useEffect(() => { void flushOfflineQueue() }, [])
 
-  // 防抖保存：输入 1000ms 后冲刷草稿（本地 IndexedDB 优先，服务器同步尽力而为）
+  // 防抖同步草稿：输入 1000ms 后把「当前正文」同步成草稿（本地 IndexedDB 优先，服务器尽力而为）。
+  // ★ 空文本也要进来 —— 那一趟是「清掉草稿」，见 syncDraft 的注释。
   function onDraftChange(text: string) {
+    userEditedRef.current = true // 只有这里置位：这是用户改正文的唯一入口
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       debounceRef.current = null
-      void flushDraft(text)
+      void syncDraft(text)
     }, 1000)
   }
 
@@ -257,14 +294,9 @@ export default function DiaryEditor() {
     }
   }
 
-  // 放弃草稿：清本地 IndexedDB 与服务器，并作废进行中的草稿写回
+  // 放弃草稿（横幅上的按钮）：与「正文被清空」走同一条清理路径（clearStoredDraft）
   async function discardDraft() {
-    pendingDraftRef.current = null
-    setShowDraftBanner(false)
-    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }
-    draftEpochRef.current++ // 放弃后不再写回草稿
-    await clearLocalDraft()
-    await fetch('/api/draft', { method: 'DELETE' }).catch(() => {})
+    await clearStoredDraft()
   }
 
   // 保存后异步补写定位与元数据：绝不阻塞保存反馈。
@@ -341,7 +373,8 @@ export default function DiaryEditor() {
         setStatus('saved')
         playSaveSoundIfEnabled()
         setShowConfetti(true)
-        setText(''); textRef.current = ''
+        // 编辑器回到全新状态：连带把「用户改过」复位，免得切 tab 卸载时又发一次多余的清草稿请求
+        setText(''); textRef.current = ''; userEditedRef.current = false
         if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
         statusTimeoutRef.current = setTimeout(() => { setStatus('idle'); setSavedOffline(false) }, 2600)
         return
@@ -360,7 +393,7 @@ export default function DiaryEditor() {
       setStatus('saved')
       playSaveSoundIfEnabled() // 清脆保存音效（Web Audio 合成）
       setShowConfetti(true) // 游戏获奖式庆祝反馈
-      setText(''); textRef.current = ''
+      setText(''); textRef.current = ''; userEditedRef.current = false
       if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current)
       statusTimeoutRef.current = setTimeout(() => { setStatus('idle'); setShowConfetti(false) }, 2000)
       // 定位与元数据异步补写：此刻保存反馈已经完成，用户可立即继续操作
