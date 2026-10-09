@@ -218,4 +218,26 @@ describe('顶部安全区（不滚动）', () => {
       /@media \(display-mode: standalone\)[\s\S]{0,200}\.qo-app-root/,
     )
   })
+
+  it('G13 ★ 滚动容器必须 `overscroll-behavior: contain`（否则滑到底后手势外传、触控整体失灵）', () => {
+    // 2026-10-09 用户反馈（原文）：「在日记查看页面，把内容滑动到最底部，触控就会不响应，
+    // 包括上下滑动内容不响应，点击 tabbar 切换到其他 tab 也不响应，再次点击几次才有反应。
+    // 电脑端没这个问题。」
+    // 机制：内层滚动容器滚到底后，WebKit 把**手势链式传递**给下一个可滚动祖先；本应用的祖先链
+    //   上没有任何可滚动的盒子（不做 window 滚动 + `.qo-app-root` 独立窗口下是 fixed）⇒ 手势被
+    //   latch 在一个**滚不动**的节点上 ⇒ 内容滚不动、触摸事件被延迟/吞掉，直到手势真正结束
+    //   （= 用户看到的「再点几次才有反应」）。桌面端没有 touch 手势识别器 ⇒ 不复现。
+    // ★ 为什么不能只靠 body 上的 `none`：WebKit 直到 iOS 16.4 才部分实现 overscroll-behavior，
+    //   且**只认 contain**（`none` 被当成 auto）。所以真正生效的必须是滚动容器自己那条
+    //   （在链式传递的源头拦住），body 那条只对桌面/安卓有意义。
+    const css = stripComments(readFileSync(join(projectRoot, 'app/globals.css'), 'utf8'))
+    expect(
+      css,
+      '缺少「滚动容器吞掉边界手势」的规则 —— iOS 上滑到底后整个页面的触控会失灵',
+    ).toMatch(/\.qo-app-root \.overflow-y-auto[\s\S]{0,200}overscroll-behavior:\s*contain/)
+    // 覆盖到横向/通用值的两个工具类，避免有人只写一条
+    expect(css, '规则只覆盖了 overflow-y-auto，漏了 overflow-auto / overflow-scroll').toMatch(
+      /\.qo-app-root \.overflow-auto[\s\S]{0,120}overscroll-behavior:\s*contain/,
+    )
+  })
 })
