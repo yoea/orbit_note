@@ -23,8 +23,19 @@ import { clearLocalDraft, fetchServerDraft, loadLocalDraft, pickNewer, pushServe
 import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import { cacheOnThisDay, cacheStats, enqueueOfflineEntry, flushOfflineQueue, getCachedOnThisDay, getCachedStats } from '@/lib/client/offline'
 
+// 跨 tab 切换保留「正在编辑的正文」（模块级内存快照）。
+//
+// 为什么需要它：底部三个 tab 页在 App Router 里是**互斥挂载**的 —— 切走即卸载组件，
+// 组件内的 `text` 随之丢失。回来时重挂载，挂载 effect 从 IndexedDB/服务器读到刚冲刷的草稿，
+// 于是弹出「有草稿是否恢复」横幅。用户看到的却是「输入框被清空 + 还得手动点恢复」。
+// ★ 草稿机制（IndexedDB + 服务器同步）的定位是**「关页面 / 崩溃 / 换设备」的兜底**，
+//   不该拿来兜一次 tab 切换 —— 那是两件不同的事。
+// 做法与列表页 `DiaryListView` 的 `snapshot` 同款：模块级变量只活在**当前页面会话**里，
+// 刷新/重开即失效 —— 那时仍由草稿横幅兜底，那条路径原样不变。
+let editorSnapshot = ''
+
 export default function DiaryEditor() {
-  const [text, setText] = useState('')
+  const [text, setText] = useState(() => editorSnapshot)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [savedTime, setSavedTime] = useState('')
   // 离线保存标记：saved 态下区分「已落库」与「已入离线队列待同步」的文案
@@ -44,12 +55,17 @@ export default function DiaryEditor() {
   // 每日提示是否显示：只受偏好开关控制（2026-10-01 时机档已删，回归纯开关）。
   // ★ 必须在下面的上报 effect 之前声明（effect 依赖它决定「是否真的显示了」）。
   const isPromptVisible = isPromptEnabled()
-  const textRef = useRef('')
+  const textRef = useRef(editorSnapshot)
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingDraftRef = useRef<{ ciphertext: string; iv: string } | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 草稿写回 epoch：save/discard 成功时递增，作废进行中的冲刷（防止"放弃/保存后草稿复活"的竞态）
   const draftEpochRef = useRef(0)
+
+  // 正文变化 → 同步模块级快照（切 tab 卸载后回来靠它还原，见 editorSnapshot 的注释）。
+  // ★ 放在 effect 里而不是各 setText 调用点：保存成功、离线保存、恢复草稿都会改 text，
+  //   一处覆盖不会漏；卸载时最后一次 effect 也已跑过，快照必然是最新值。
+  useEffect(() => { editorSnapshot = text }, [text])
 
   // Markdown 工具条 + 预览切换的接线（选区还原、预览滚动定位都在 hook 内；
   // 横条本身见 components/MarkdownToolbar.tsx，与详情页编辑态共用同一份）。
