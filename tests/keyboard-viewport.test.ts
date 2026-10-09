@@ -102,10 +102,12 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
     expect(entry, '详情页 main 不该自己滚（页头与底部栏必须固定）').not.toMatch(
       /flex-col overflow-y-auto px-5/,
     )
-    // order 重排：正文 order-1，其余 order-10（详见 EntryView 里 main 的注释）。
-    // 用 order-1 与 overflow-y-auto 同处一个 class 串来定位「查看态正文滚动区」——
-    // 它是 EntryView 里唯一同时带这两者的元素，所以这条不会空转。
-    expect(entry, '详情页查看态正文缺少滚动容器').toMatch(/order-1[^"]*overflow-y-auto/)
+    // 查看态正文滚动容器（签名 mt-4 + overflow-y-auto，EntryView 里唯一）必须存在。
+    // 注意不要在这里断言 order —— 那正是 2026-10-09 的回归来源，见 K10。
+    const viewBody = classAttrsIn(ENTRY, entry).filter(
+      (a) => a.text.includes('mt-4') && a.text.includes('overflow-y-auto'),
+    )
+    expect(viewBody.length, '详情页查看态正文缺少滚动容器（签名 mt-4 + overflow-y-auto）').toBe(1)
   })
 
   it('K7 不得退回到「手工算像素高度」的老路', () => {
@@ -145,5 +147,35 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
       expect(tk, `${name}编辑区滚动容器缺 flex-1 ⇒ 不占满中间区域`).toContain('flex-1')
       expect(tk, `${name}编辑区外层不再可滚（预览态会滚不动）`).toContain('overflow-y-auto')
     }
+  })
+
+  it('K10 页眉必须在正文之前，且不得用 flex order 重排（2026-10-09 回归）', () => {
+    // 回归（用户反馈「查看/编辑文章页，返回按钮、日记按钮、添加按钮，以及定位和天气
+    // 全部错误地显示在了输入框的下方」）：
+    // 上一次改动用 `order-1` 把正文提到视觉最前、把页眉/元信息/定位一律压成 `order-10`，
+    // 理由是「日期、字数、定位、编辑于是正文的落款」—— **这个前提本身是错的**：
+    // 页眉里的返回 / 标题 / ＋ 本来就该在最上面。
+    //
+    // 教训：flex `order` 是**纯视觉重排**，DOM 顺序与画出来的顺序不一致，
+    // 读源码时极易看漏（本项目的守卫也大多按源码顺序读）。这两个页面都不需要重排 ——
+    // 源码顺序本来就是正确的视觉顺序。所以直接禁用 order。
+    for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
+      const src = code(rel)
+      // \b 保证不误伤 border-*（b 与 o 都是单词字符，中间没有词边界）
+      expect(src, `${name}又用 flex order 重排视觉顺序了（页眉会被挤到正文下面）`).not.toMatch(
+        /\border-(?:\d+|first|last|none)\b/,
+      )
+    }
+    // 详情页：页眉必须排在正文滚动容器**之前** —— 源码顺序即视觉顺序。
+    // 锚点必须从 `main` 起算：文件上方还有一个「加载中占位」的早返回 main，它也含
+    // overflow-y-auto（line ≈549），从文件头开始 indexOf 会先命中它（非空转验证抓到的）。
+    const entry = code(ENTRY)
+    const mainAt = entry.indexOf('<main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col px-5">')
+    expect(mainAt, '找不到详情页的 main 渲染容器').toBeGreaterThan(-1)
+    const headerAt = entry.indexOf('page-header', mainAt)
+    const scrollerAt = entry.indexOf('overflow-y-auto', mainAt)
+    expect(headerAt, '找不到详情页页眉（.page-header）').toBeGreaterThan(-1)
+    expect(scrollerAt, '找不到详情页正文滚动容器').toBeGreaterThan(-1)
+    expect(headerAt, '页眉排在正文滚动容器之后 ⇒ 会显示在输入框下方').toBeLessThan(scrollerAt)
   })
 })
