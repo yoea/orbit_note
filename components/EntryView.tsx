@@ -738,8 +738,11 @@ export default function EntryView({ id }: { id: string }) {
           {/* ★ 编辑态正文 = **唯一滚动容器**（用户要求「只有文字输入区域可以滚动」）。
               与写页同一套做法：外层滚动容器 + 内部 textarea 自身也可滚。预览态本就靠它滚动。
               `pt-4` 提供与工具条的间距；`pb-2` 与改造前预览区一致。
-              min-h-0 必须有（flex 子项默认 min-height:auto，不加压不下去、滚动条不出现）。 */}
-          <div className="min-h-0 flex-1 overflow-y-auto pt-4 pb-2">
+              min-h-0 必须有（flex 子项默认 min-height:auto，不加压不下去、滚动条不出现）。
+              ★ `flex` + `flex-col` 也必须有（2026-10-09 回归）：本容器是块级 div 时，
+                textarea 的 `flex-1` 完全失效（flex-1 只在 flex 容器里才有意义），
+                输入区塌成固有高度（约 2~3 行）。见守卫 K9。 */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-4 pb-2">
             {preview ? (
               <div ref={previewRef}>
                 {plain.trim()

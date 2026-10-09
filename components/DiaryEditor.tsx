@@ -478,8 +478,11 @@ export default function DiaryEditor() {
             · 工具条是固定的一条，正文滚到它下面不会贴住（由 pt-4 隔开）。
           `pt-4` 提供与工具条的 16px 间距（原先由已删除的 EDITOR_TOOLBAR_GAP_CLASS 承担）；
           `pb-2` 与改造前预览区一致。
-          min-h-0 必须有：flex 子项的默认 min-height 是 auto，不加就压不下去、滚动条不会出现。 */}
-      <div className="min-h-0 flex-1 overflow-y-auto pt-4 pb-2">
+          min-h-0 必须有：flex 子项的默认 min-height 是 auto，不加就压不下去、滚动条不会出现。
+          ★ `flex` + `flex-col` 也必须有（2026-10-09 回归）：本容器是块级 div 时，
+            AutoTextarea 带的 `flex-1` **完全失效**（flex-1 只在 flex 容器里才有意义），
+            输入区塌成 textarea 的固有高度（约 2~3 行）。见守卫 K9。 */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-4 pb-2">
         {preview ? (
           <div ref={previewRef}>
             {text.trim()

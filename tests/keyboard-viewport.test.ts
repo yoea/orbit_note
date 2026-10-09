@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { classTokens, projectRoot } from './class-attrs'
+import { classAttrsIn, classTokens, projectRoot } from './class-attrs'
 
 // ============================================================================
 // 键盘适配守卫
@@ -87,13 +87,12 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
   })
 
   it('K6 页头/底部按钮必须固定，正文是唯一滚动容器（用户给的目标行为）', () => {
-    // 写页：根容器不再 overflow-hidden（它不该滚），正文外面套一层滚动容器；
-    //        footer 用 shrink-0 明确「不参与压缩」。
+    // 写页：根容器不再 overflow-hidden（它不该滚）；footer 用 shrink-0 明确「不参与压缩」。
+    // （正文滚动容器的**具体形态**由 K9 校验：必须是 flex 列容器，见那条的说明。）
     const editor = code(EDITOR)
     expect(editor, '写页根容器不该再 overflow-hidden（那是它自己可滚的信号）').not.toMatch(
       /flex-col overflow-hidden px-5/,
     )
-    expect(editor, '写页正文缺少滚动容器').toMatch(/min-h-0 flex-1 overflow-y-auto/)
     expect(editor, '写页底部按钮必须 shrink-0（固定不动）').toMatch(
       /<footer className="relative shrink-0/,
     )
@@ -103,9 +102,10 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
     expect(entry, '详情页 main 不该自己滚（页头与底部栏必须固定）').not.toMatch(
       /flex-col overflow-y-auto px-5/,
     )
-    expect(entry, '详情页正文缺少滚动容器').toMatch(/min-h-0 flex-1 overflow-y-auto/)
-    // order 重排：正文 order-1，其余 order-10（详见 EntryView 里 main 的注释）
-    expect(entry, '详情页正文缺少 order-1（会被页头等挤到后面去）').toMatch(/order-1[^"]*overflow-y-auto/)
+    // order 重排：正文 order-1，其余 order-10（详见 EntryView 里 main 的注释）。
+    // 用 order-1 与 overflow-y-auto 同处一个 class 串来定位「查看态正文滚动区」——
+    // 它是 EntryView 里唯一同时带这两者的元素，所以这条不会空转。
+    expect(entry, '详情页查看态正文缺少滚动容器').toMatch(/order-1[^"]*overflow-y-auto/)
   })
 
   it('K7 不得退回到「手工算像素高度」的老路', () => {
@@ -124,5 +124,26 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
     // （2026-10-02「顶部虚化」三轮踩过，见 globals.css 的说明）。
     // 工具条是共用件，只查它一处即可 —— 两个编辑面都从这里渲染。
     expect(classTokens(code(TOOLBAR)), `${TOOLBAR} 不该把工具条粘住`).not.toContain('sticky')
+  })
+
+  it('K9 编辑区滚动容器必须是 flex 列容器（否则 textarea 的 flex-1 失效、输入区塌成 2~3 行）', () => {
+    // 2026-10-09 回归（用户反馈「编辑页面只有很小一块输入区域了，大概 2~3 行」）：
+    // 第二版把正文包进滚动容器时写成了**块级** div，而 EDITOR_TEXTAREA_CLASS 自带 `flex-1` ——
+    // `flex-1` 只在 **flex 容器**里才有意义。父级是块级 div 时它是彻底的空操作，
+    // textarea 于是退回固有高度（浏览器默认 rows≈2 ⇒ 2~3 行）。
+    // 与 K7「不许内联算高度」是一对：高度只能由 flex 分配，那父级就必须是 flex 容器。
+    // 签名 `pt-4 pb-2` 唯一标识这个滚动容器（预览态与编辑态共用同一个元素）。
+    for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
+      const attrs = classAttrsIn(rel, code(rel)).filter(
+        (a) => a.text.includes('pt-4') && a.text.includes('pb-2'),
+      )
+      expect(attrs.length, `${name}找不到编辑区滚动容器（签名 pt-4 + pb-2），或签名不再唯一`).toBe(1)
+      const tk = classTokens(attrs[0].text)
+      expect(tk, `${name}编辑区滚动容器不是 flex 容器 ⇒ 内部 textarea 的 flex-1 失效`).toContain('flex')
+      expect(tk, `${name}编辑区滚动容器缺 flex-col ⇒ 子项会被横向排`).toContain('flex-col')
+      expect(tk, `${name}编辑区滚动容器缺 min-h-0 ⇒ 压不下去、滚动条不出现`).toContain('min-h-0')
+      expect(tk, `${name}编辑区滚动容器缺 flex-1 ⇒ 不占满中间区域`).toContain('flex-1')
+      expect(tk, `${name}编辑区外层不再可滚（预览态会滚不动）`).toContain('overflow-y-auto')
+    }
   })
 })
