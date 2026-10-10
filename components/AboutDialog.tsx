@@ -262,13 +262,14 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
             </p>
           </div>
 
-          {/* 「删除所有数据」：**入口移到本弹窗最底部**（2026-10-10 用户要求再降一级可发现性）。
+          {/* 「删除所有数据」：**入口在本弹窗最底部**，就是一行小小的灰字（2026-10-10 用户两次要求
+              降低可发现性 —— 先挪进这里，再去掉「危险操作」那一级折叠，直接以小字入口呈现）。
               为什么放这里而不是设置页：在设置页里它无论怎么缩小都还是"一条设置项"的观感；
               挪进「关于」之后，它变成"得翻到关于页最底部才看到的一行小字"。
-              ★ 弹窗里嵌套弹窗：WipeDataAction 展开后点删除会再开一层 InputConfirmDialog
-              （同样是 `fixed inset-0 z-50`）。它能正常盖在这张卡片之上 —— 卡片虽然有
-              `overflow-hidden`，但 `position: fixed` 的包含块是**视口**，不会被祖先的 overflow
-              裁掉；本项目全站零 transform / filter，祖先也不会退化成包含块。
+              ★ 弹窗里嵌套弹窗：点这行小字会再开一层 InputConfirmDialog（同样是 `fixed inset-0 z-50`）。
+              它能正常盖在这张卡片之上 —— 卡片虽然有 `overflow-hidden`，但 `position: fixed` 的
+              包含块是**视口**，不会被祖先的 overflow 裁掉；本项目全站零 transform / filter，
+              祖先也不会退化成包含块。
               逐帧实测见 Temp/qo-keyboard-probe/about-nested-dialog.mjs。守卫 P15。 */}
           <div className="mt-2.5 border-t border-neutral-100 px-6 pb-2 pt-2.5 dark:border-neutral-800">
             <WipeDataAction disabled={wipeDisabled} onBlocked={onWipeBlocked} />

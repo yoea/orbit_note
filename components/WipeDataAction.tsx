@@ -18,35 +18,35 @@ const WIPE_CONFIRM_TEXT = '永久删除'
 // 而那个页面的语义是"导出"。一个不可逆销毁全部数据的操作，放在语义正好相反的页面上，
 // 用户很容易把它理解成导出流程的一环（"导出后清理本地数据"）。这是位置错位，不是样式问题。
 //
-// ★ 为什么默认**收起**（2026-09-30）：
-//   这个功能的使用频率极低（一辈子可能一次），但它此前是设置页最后一行、红字、带副标题，
-//   在一个"平时只会翻一遍"的设置页里权重过高：既占一行带说明的页高，又正好停在拇指滑到底
-//   的位置上。展开式（disclosure）让默认视图里**没有红色项**，真要删时才多一次点击。
-//   折叠触发器刻意用**中性色**（不是红色）——危险由展开后的红字与两道确认承担，
-//   不在默认视图里提前喊。守卫 tests/settings-structure.test.ts P9/P10。
+// ★ 演进：三次「降低可发现性」，别再往回加东西 ——
+//   ① 2026-09-30「默认收起」：原先它是设置页最后一行、红字带副标题，在一个"平时只会翻一遍"的
+//      设置页里权重过高，且正好停在拇指滑到底的位置。改成 disclosure（`危险操作 ›`），
+//      让默认视图里**没有红色项**，真要删时才多一次点击。
+//   ② 2026-10-10 上午「移出设置页」：入口挪进「关于 Orbit」弹窗最底部 —— 在设置页里它无论怎么
+//      缩小都还是"一条设置项"的观感。
+//   ③ 2026-10-10（本次）「**去掉折叠那一级**」：用户原话「关于页面不用再多加一级『危险操作』了，
+//      直接显示一个小小的文字删除所有数据作为入口即可」。
+//      ⇒ 直接渲染一行小字入口，点它即进确认流程；`危险操作 ›` 触发器、`aria-expanded` 与
+//        open 状态**一并删除**（留着就是死代码）。
 //
-// ★ 再降一级（2026-10-10 用户要求：「几乎没有使用场景，进一步降低可发现性」）：
-//   两条同时做，缺一不可 ——
-//     1) **位置**：设置页不再把它放进「数据」分组卡片，改为页面最底部、独立的无卡片 <ul>
-//        （见 SettingsView 里的说明）。它因此从"一条正常设置项"变成"页面角落的一行小字"；
-//     2) **视觉**：触发器从"整行、左对齐、与其它设置项同构"改为**居中、text-xs、中性灰**，
-//        且不再带整行的行高与分隔线语境。
-//   三道门槛不变（用户明确要求"考虑防止误触"）：折叠（默认收起）→ 输入「永久删除」→
-//   通行密钥验证。任何一次误触最多只是展开，删不掉东西。守卫 P13/P14。
+// 剩余的一道可见门槛 + 一道交互门槛：入口本身（小字、中性色、沉在弹窗最底部）
+//   → 输入「永久删除」→ 通行密钥验证。**误触成本依然极低**：点一下只会弹出需要输字的确认框，
+//   不输那几个字就走不到下一步。
 //
-// 两道确认不变：先输入「永久删除」，再走通行密钥验证（与导出同一套认证链路）。
+// 视觉：居中 + `text-xs` + 中性灰（用户要"小小的文字"）。
+//   ★ `w-fit` 必需：块级 flex 元素默认占满整行，只写 mx-auto 是**空操作**，不会居中。
+//   ★ 刻意**不染红**：红色留给点击后的确认弹窗（destructive）——入口不喊，危险由那一步承担。
 //
 // disabled / onBlocked 与设置页其余入口一致：离线时视觉置灰，但点击仍触发（弹「离线不可用」提示）
 // ——无声置灰比明确提示更让人困惑。真正的破坏还需通行密钥验证，离线时那一步本就会失败，
 // 这里的置灰只是省掉用户白走两步。
-// 注意：置灰只作用在**展开后的删除行**上——折叠触发器本身只是展开/收起，不需要联网。
+// ★ 置灰现在就作用在**入口本身**上（原先有折叠时，它只作用在展开后的删除行 —— 那两级已合并）。
 export default function WipeDataAction({ disabled = false, onBlocked }: {
   disabled?: boolean
   onBlocked?: () => void
 }) {
   const router = useRouter()
   const userName = useUserName()
-  const [open, setOpen] = useState(false)
   const [confirmStep, setConfirmStep] = useState<0 | 1>(0)
   const [wiping, setWiping] = useState(false)
 
@@ -72,35 +72,17 @@ export default function WipeDataAction({ disabled = false, onBlocked }: {
 
   return (
     <div>
-      {/* 折叠触发器：默认收起；**居中 + text-xs + 中性灰**（见文件头「再降一级」）。
-          w-fit 必需：块级 flex 元素默认占满宽度，只写 mx-auto 是**空操作**，不会居中。 */}
+      {/* 入口 = **一行小小文字**（没有折叠这一级，见文件头「演进 ③」）。
+          点击即进「输入『永久删除』」确认；离线时走 onBlocked（与设置页其余写操作一致）。
+          `mx-auto` + `w-fit`：居中（★ 少了 w-fit 就是空操作）；
+          `text-xs` + 中性灰：与降级 ② 同一档观感（用户要"小小的文字"）。 */}
       <button
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="mx-auto flex w-fit items-center justify-center gap-1 rounded-lg px-3 py-2 text-xs text-neutral-500 active:opacity-60 dark:text-neutral-400"
+        onClick={() => { if (disabled) { onBlocked?.(); return } setConfirmStep(1) }}
+        disabled={wiping}
+        className={`mx-auto flex w-fit items-center justify-center rounded-lg px-3 py-2 text-xs text-neutral-500 active:opacity-60 disabled:opacity-50 dark:text-neutral-400 ${disabled ? 'opacity-50' : ''}`}
       >
-        <p>危险操作</p>
-        {/* 展开时箭头转向下（静态旋转，不引入过渡属性） */}
-        <svg
-          aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-          strokeLinecap="round" strokeLinejoin="round"
-          className={`h-3 w-3 shrink-0 ${open ? 'rotate-90' : ''}`}
-        >
-          <path d="M9 18l6-6-6-6" />
-        </svg>
+        <p>删除所有数据</p>
       </button>
-      {open && (
-        <div className="mt-2">
-          <button
-            onClick={() => { if (disabled) { onBlocked?.(); return } setConfirmStep(1) }}
-            disabled={wiping}
-            className={`w-full rounded-xl border border-red-200 px-4 py-3 text-left active:opacity-60 disabled:opacity-50 dark:border-red-900 ${disabled ? 'opacity-50' : ''}`}
-          >
-            <p className="text-red-500 dark:text-red-400">删除所有数据</p>
-            <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">永久删除全部日记、通行密钥与恢复密钥</p>
-          </button>
-        </div>
-      )}
       {confirmStep === 1 && (
         <InputConfirmDialog
           title="删除确认"

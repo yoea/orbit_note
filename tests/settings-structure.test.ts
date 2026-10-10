@@ -135,44 +135,52 @@ describe('设置页信息架构', () => {
 })
 
 // ============================================================================
-// 「删除所有数据」的降级与折叠（2026-09-30 立；2026-10-10 用户第二次要求继续降级）
+// 「删除所有数据」的降级（2026-09-30 立；2026-10-10 用户两次要求继续降级）
 //
-// 这个功能的使用频率极低（一辈子可能一次），却曾经是设置页最后一行、红字带副标题——权重过高。
-// 两次降级：
-//   ① 2026-09-30「默认收起」（disclosure）：默认视图里没有红色项，红色删除项要展开才出现；
-//   ② 2026-10-10「入口整体移出设置页」→ 落到「关于 Orbit」弹窗最底部，触发器缩成居中中性小字。
-// 三道门槛始终不变：折叠 → 输入「永久删除」→ 通行密钥验证。
+// 这个功能的使用频率极低（一辈子可能一次），却曾经是设置页最后一行、红字带副标题 —— 权重过高。
+// 三次降级：
+//   ① 2026-09-30「默认收起」（disclosure）：默认视图里没有红色项，要展开才看到删除项；
+//   ② 2026-10-10「入口整体移出设置页」→ 落到「关于 Orbit」弹窗最底部，触发器缩成居中中性小字；
+//   ③ 2026-10-10（本次）「去掉折叠那一级」→ 直接就是一行小字入口，点它即进确认流程。
+// 剩余门槛：入口（小字 / 中性色 / 沉在弹窗最底部）→ 输入「永久删除」→ 通行密钥验证。
 // 容易悄悄退回去的性质各钉一条（P9~P15）。
 // ============================================================================
 const WIPE = 'components/WipeDataAction.tsx'
 
-describe('删除所有数据的折叠', () => {
-  it('P9 解析自检：触发器与删除项都能读到（防空转）', () => {
+describe('删除所有数据的降级', () => {
+  it('P9 解析自检：入口文案与强确认词都能读到（防空转）', () => {
     const src = code(WIPE)
-    expect(src).toContain('>危险操作</p>')
+    expect(src.length).toBeGreaterThan(400)
     expect(src).toContain('>删除所有数据</p>')
+    expect(src).toContain('WIPE_CONFIRM_TEXT')
+    expect(src).toContain('confirmStep === 1')
   })
 
-  it('P10 删除项在展开分支内，触发器不可见红字', () => {
+  it('P10 入口**直接渲染**，不再有「危险操作」折叠那一级', () => {
+    // 用户原话：「关于页面不用再多加一级『危险操作』了，直接显示一个小小的文字删除所有数据作为入口即可。」
     const src = code(WIPE)
-    // 触发器靠 aria-expanded + 状态位控制；删除项必须排在展开条件之后
-    expect(src).toContain('aria-expanded={open}')
-    expect(pos(src, 'aria-expanded={open}')).toBeLessThan(pos(src, '>删除所有数据</p>'))
-    expect(pos(src, 'open &&')).toBeLessThan(pos(src, '>删除所有数据</p>'))
-    // 默认收起：状态初值必须是 false（写成 true 等于没折）
-    expect(src).toMatch(/useState\(false\)/)
+    for (const gone of ['危险操作', 'aria-expanded', 'setOpen']) {
+      expect(src, `折叠那一级又回来了（源码里出现「${gone}」）—— 用户明确要求去掉`).not.toContain(gone)
+    }
+    // 「无条件渲染」的判据：从根节点 `return (` 到入口文案之间**不得出现 `&&`**。
+    // ⚠️ 起点必须从根节点起算，不能从 `<button` 起算 —— 若有人把入口包成 `{cond && <button`，
+    //    那个 `&&` 落在 `<button` **之前**，从 `<button` 切片就永远看不到它（第一版就是这么空转的，
+    //    非空转脚本当场抓到）。守卫：Temp/nonvacuous_wipe_direct.py 用例 3。
+    const entry = src.slice(pos(src, 'return ('), pos(src, '>删除所有数据</p>'))
+    expect(entry, '入口切片为空 —— 解析失败，断言会空转').toContain('className')
+    expect(entry, '入口被条件渲染包住了 —— 它该是一行无条件显示的小字').not.toContain('&&')
   })
 
-  it('P11 折叠触发器不被离线态置灰（置灰只作用在展开后的删除行）', () => {
+  it('P11 离线置灰作用在**入口本身**（两级合并后它就是那个会写服务器的按钮）', () => {
+    // ③ 之前入口是「折叠触发器」（只是展开/收起，不联网）⇒ 当时刻意不置灰；
+    // 现在它与「删除行」合并成同一个按钮 ⇒ 必须与设置页其余写操作一致地走 onBlocked
+    // （否则离线时用户要多走两步到通行密钥那一步才发现不可用）。
     const src = code(WIPE)
-    // ⚠️ 切片必须覆盖**整个 `<button>`**：原先切到 `aria-expanded={open}` 为止，而 `className`
-    //    排在它**后面** ⇒ 那半句永远看不到 className，是一条**空转**守卫（2026-10-10 顺手修掉）。
-    const start = pos(src, 'onClick={() => setOpen')
-    const trigger = src.slice(src.lastIndexOf('<button', start), src.indexOf('</button>', start))
-    expect(trigger, '触发器切片为空 —— 解析失败，断言会空转').toContain('className')
-    expect(trigger, '触发器上出现了禁用相关样式').not.toMatch(/opacity-50|disabled/)
-    // 而删除行仍保留离线置灰（disabled 由 prop 传入）
-    expect(src).toContain('if (disabled) { onBlocked?.(); return }')
+    const entry = src.slice(pos(src, '<button'), pos(src, '</button>'))
+    expect(entry, '入口点击没走 onBlocked 短路').toContain('if (disabled) { onBlocked?.(); return }')
+    expect(entry, '入口点击没有直接进入「输入永久删除」确认（去掉折叠后应当是点一下就到确认）')
+      .toContain('setConfirmStep(1)')
+    expect(entry, '入口没有离线置灰样式').toContain('opacity-50')
   })
 
   it('P12 根节点是普通块级 <div>（不再依赖列表上下文 —— 它现在挂在弹窗里）', () => {
@@ -198,8 +206,8 @@ describe('删除所有数据的折叠', () => {
   })
 
   it('P15 弹窗套弹窗安全：卡片及其祖先不得带 transform / filter（否则嵌套的确认弹窗会被裁）', () => {
-    // WipeDataAction 展开后点删除会再开一层 InputConfirmDialog（同样 `fixed inset-0 z-50`），
-    // 而它挂在**卡片内部**，卡片有 `overflow-hidden`。
+    // 点入口会再开一层 InputConfirmDialog（`fixed inset-0 z-50`），而它挂在**卡片内部**，
+    // 卡片有 `overflow-hidden`。
     // `position: fixed` 的包含块是**视口** ⇒ 不会被祖先的 overflow 裁掉（实测铺满 390×844）；
     // ★ 但祖先一旦成为包含块（transform / translate / rotate / scale / filter /
     //   backdrop-filter / will-change），它就退化成"相对卡片定位"并被裁进卡片里。
@@ -215,15 +223,16 @@ describe('删除所有数据的折叠', () => {
     }
   })
 
-  it('P14 折叠触发器已降级为「居中 + 小字 + 中性色」的一行，不再是整行设置项', () => {
+  it('P14 入口是「居中 + 小字 + 中性色」的一行，不是整行设置项', () => {
     const src = code(WIPE)
-    const start = pos(src, 'onClick={() => setOpen')
-    const trigger = src.slice(src.lastIndexOf('<button', start), src.indexOf('</button>', start))
-    expect(trigger, '触发器切片为空 —— 解析失败，断言会空转').toContain('className')
+    const entry = src.slice(pos(src, '<button'), pos(src, '</button>'))
+    expect(entry, '入口切片为空 —— 解析失败，断言会空转').toContain('className')
     // 居中：★ w-fit 必需 —— 块级 flex 元素默认占满整行，只写 mx-auto 是**空操作**，不会居中。
-    expect(trigger, '触发器没有居中').toContain('mx-auto')
-    expect(trigger, '只写 mx-auto 不写 w-fit —— 块级元素占满整行时居中不生效').toContain('w-fit')
-    expect(trigger, '触发器字号没降档，读起来还是一条正常设置项').toContain('text-xs')
-    expect(trigger, '触发器不是中性色（危险色只能出现在展开之后）').toContain('text-neutral-500')
+    expect(entry, '入口没有居中').toContain('mx-auto')
+    expect(entry, '只写 mx-auto 不写 w-fit —— 块级元素占满整行时居中不生效').toContain('w-fit')
+    expect(entry, '入口字号没降档，读起来还是一条正常设置项').toContain('text-xs')
+    expect(entry, '入口不是中性色（危险色只该出现在点击后的确认弹窗里）').toContain('text-neutral-500')
+    // 反面：入口不得染红 —— 红留给 `destructive` 的确认弹窗，入口本身不喊
+    expect(entry, '入口被染红了 —— 它该是一行不起眼的灰字').not.toMatch(/text-red-|border-red/)
   })
 })

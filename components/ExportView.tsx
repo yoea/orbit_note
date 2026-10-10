@@ -54,7 +54,7 @@ const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string; ext: stri
 // 页面内再分两侧）。这里因此没有 <main> 与返回箭头。
 //
 // 「删除所有数据」曾经挂在本组件底部——那是个错位：本组件的语义是"导出"，而它是"不可逆销毁"。
-// 已抽成 WipeDataAction，挂在设置页「数据」组的「危险操作」折叠里，勿搬回来
+// 已抽成 WipeDataAction，现在挂在「关于 Orbit」弹窗最底部（一行小字入口），勿搬回来
 // （tests/settings-structure.test.ts 守着）。
 //
 // ★ 字段承诺：导出的是数据库里的**全部笔记字段**——每一条的每一列都要在文件里，导入后能完整恢复。
