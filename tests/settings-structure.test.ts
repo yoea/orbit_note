@@ -37,6 +37,15 @@ function pos(src: string, needle: string): number {
   return i
 }
 
+/** 取两个锚点之间的片段（不含右界）——用于「这段逻辑确实写在这个函数里」的断言。
+ *  ★ 右界必须在左界之后且唯一，否则切片会跨过整个文件造成空转。 */
+function between(src: string, start: string, end: string): string {
+  const a = pos(src, start)
+  const b = src.indexOf(end, a)
+  expect(b, `右界锚点「${end}」不在「${start}」之后 —— 切片会空转`).toBeGreaterThan(a)
+  return src.slice(a, b)
+}
+
 const SETTINGS = 'components/SettingsView.tsx'
 const ABOUT = 'components/AboutDialog.tsx'
 
@@ -135,79 +144,123 @@ describe('设置页信息架构', () => {
 })
 
 // ============================================================================
-// 「删除所有数据」的降级（2026-09-30 立；2026-10-10 用户两次要求继续降级）
+// 「删除所有数据」的隐藏入口与四步流程（2026-09-30 立；2026-10-10 三次改变可发现性）
 //
-// 这个功能的使用频率极低（一辈子可能一次），却曾经是设置页最后一行、红字带副标题 —— 权重过高。
-// 三次降级：
-//   ① 2026-09-30「默认收起」（disclosure）：默认视图里没有红色项，要展开才看到删除项；
-//   ② 2026-10-10「入口整体移出设置页」→ 落到「关于 Orbit」弹窗最底部，触发器缩成居中中性小字；
-//   ③ 2026-10-10（本次）「去掉折叠那一级」→ 直接就是一行小字入口，点它即进确认流程。
-// 剩余门槛：入口（小字 / 中性色 / 沉在弹窗最底部）→ 输入「永久删除」→ 通行密钥验证。
-// 容易悄悄退回去的性质各钉一条（P9~P15）。
+// 这条功能一辈子可能只用一次，权重必须压到最低。三次「降级」：
+//   ① 2026-09-30 设置页末行 + 红字 → 折叠成 `危险操作 ›`（默认收起）；
+//   ② 2026-10-10 上午 移出设置页 → 「关于」弹窗最底部一行小字；
+//   ③ 2026-10-10（本次）**全隐藏** → 连点 LOGO「Orbit」**8 次**才出现。
+// 入口越隐蔽，越要把误触代价压到零 ⇒ 流程从两步扩成**四步**（用户指定）：
+//   ① 确认进入 → ② 输入「永久删除」→ ③ 通行密钥验证 → ④ 最后一次确认 → 执行。
+// 容易悄悄退回去的性质各钉一条（P9~P17）。
 // ============================================================================
 const WIPE = 'components/WipeDataAction.tsx'
 
-describe('删除所有数据的降级', () => {
-  it('P9 解析自检：入口文案与强确认词都能读到（防空转）', () => {
-    const src = code(WIPE)
-    expect(src.length).toBeGreaterThan(400)
-    expect(src).toContain('>删除所有数据</p>')
-    expect(src).toContain('WIPE_CONFIRM_TEXT')
-    expect(src).toContain('confirmStep === 1')
-  })
-
-  it('P10 入口**直接渲染**，不再有「危险操作」折叠那一级', () => {
-    // 用户原话：「关于页面不用再多加一级『危险操作』了，直接显示一个小小的文字删除所有数据作为入口即可。」
-    const src = code(WIPE)
-    for (const gone of ['危险操作', 'aria-expanded', 'setOpen']) {
-      expect(src, `折叠那一级又回来了（源码里出现「${gone}」）—— 用户明确要求去掉`).not.toContain(gone)
-    }
-    // 「无条件渲染」的判据：从根节点 `return (` 到入口文案之间**不得出现 `&&`**。
-    // ⚠️ 起点必须从根节点起算，不能从 `<button` 起算 —— 若有人把入口包成 `{cond && <button`，
-    //    那个 `&&` 落在 `<button` **之前**，从 `<button` 切片就永远看不到它（第一版就是这么空转的，
-    //    非空转脚本当场抓到）。守卫：Temp/nonvacuous_wipe_direct.py 用例 3。
-    const entry = src.slice(pos(src, 'return ('), pos(src, '>删除所有数据</p>'))
-    expect(entry, '入口切片为空 —— 解析失败，断言会空转').toContain('className')
-    expect(entry, '入口被条件渲染包住了 —— 它该是一行无条件显示的小字').not.toContain('&&')
-  })
-
-  it('P11 离线置灰作用在**入口本身**（两级合并后它就是那个会写服务器的按钮）', () => {
-    // ③ 之前入口是「折叠触发器」（只是展开/收起，不联网）⇒ 当时刻意不置灰；
-    // 现在它与「删除行」合并成同一个按钮 ⇒ 必须与设置页其余写操作一致地走 onBlocked
-    // （否则离线时用户要多走两步到通行密钥那一步才发现不可用）。
-    const src = code(WIPE)
-    const entry = src.slice(pos(src, '<button'), pos(src, '</button>'))
-    expect(entry, '入口点击没走 onBlocked 短路').toContain('if (disabled) { onBlocked?.(); return }')
-    expect(entry, '入口点击没有直接进入「输入永久删除」确认（去掉折叠后应当是点一下就到确认）')
-      .toContain('setConfirmStep(1)')
-    expect(entry, '入口没有离线置灰样式').toContain('opacity-50')
-  })
-
-  it('P12 根节点是普通块级 <div>（不再依赖列表上下文 —— 它现在挂在弹窗里）', () => {
-    // 挂进「关于」弹窗后它不再是列表项：再返回 <li> 就是"游离的列表项"，
-    // 而弹窗里没有 <ul> 可依托 —— HTML 结构非法。
-    const src = code(WIPE)
-    expect(src, '不该再有 <li>：它不是设置页的列表项了').not.toMatch(/<li>/)
-    expect(src, '根节点必须是 <div>，放哪都合法').toMatch(/return \(\s*<div>/)
-  })
-
-  it('P13 入口挂在「关于 Orbit」弹窗的**最底部**（2026-10-10 第二次降级）', () => {
-    // 用户原话：「把『删除所有数据』入口挪进『关于 Orbit』弹窗的最底部。」
-    // 为什么再挪：在设置页里它无论怎么缩小，读起来都还是"一条设置项"。
+describe('删除所有数据的隐藏入口与四步流程', () => {
+  it('P9 解析自检：四步流程与隐藏入口的锚点都能读到（防空转）', () => {
+    const wipe = code(WIPE)
     const about = code(ABOUT)
-    expect(about, '关于弹窗里没有渲染 WipeDataAction').toContain('<WipeDataAction')
-    // 必须在页脚（版权 / 第三方说明）**之后** ⇒ 才算"最底部"
-    expect(
-      pos(about, '<WipeDataAction'),
-      '「删除所有数据」不在弹窗最底部（应排在页脚的第三方说明之后）',
-    ).toBeGreaterThan(pos(about, '地名与天气来自第三方服务'))
-    // 离线禁用要随弹窗传下去（与设置页其余写操作一致）
-    expect(about, '没有把离线禁用传给 WipeDataAction').toMatch(/<WipeDataAction[^>]*disabled=/)
+    expect(wipe.length).toBeGreaterThan(500)
+    for (const needle of ['WIPE_CONFIRM_TEXT', "step === 'confirm'", "step === 'input'", "step === 'verifying'", "step === 'final'", 'startVerify']) {
+      expect(wipe, `WipeDataAction 里找不到锚点「${needle}」`).toContain(needle)
+    }
+    expect(about, '关于弹窗里找不到连点阈值').toContain('WIPE_TAP_TARGET')
+    expect(about, '关于弹窗里找不到连点处理函数').toContain('onLogoTap')
   })
 
-  it('P15 弹窗套弹窗安全：卡片及其祖先不得带 transform / filter（否则嵌套的确认弹窗会被裁）', () => {
-    // 点入口会再开一层 InputConfirmDialog（`fixed inset-0 z-50`），而它挂在**卡片内部**，
-    // 卡片有 `overflow-hidden`。
+  it('P10 「删除所有数据」在界面上**完全没有入口**（组件里不得再长出按钮）', () => {
+    // 入口的三个历史形态（设置页末行 / 折叠器 / 关于页底部小字）都已删除。
+    // 判据：WipeDataAction 里不该有任何 <button> —— 它现在只是流程，入口在 AboutDialog 的 LOGO 上。
+    const wipe = code(WIPE)
+    expect(wipe, 'WipeDataAction 里又长出可见入口了（它只该渲染流程弹窗）').not.toMatch(/<button/)
+    expect(wipe, '「危险操作」折叠那一级不该回来').not.toContain('危险操作')
+    expect(wipe, '流程起点必须是第一步确认弹窗').toContain('title="进入删除流程？"')
+  })
+
+  it('P11 入口 = 连点 LOGO 8 次（超过 2 秒的间隔重新计数）', () => {
+    const about = code(ABOUT)
+    expect(about, '阈值不是 8 次').toContain('const WIPE_TAP_TARGET = 8')
+    // ★ 「连续」必须有界定：否则用户在几天里零散点 LOGO 也会凑够 8 次
+    expect(about, '没有按间隔重置计数').toContain('if (now - lastTapRef.current > WIPE_TAP_GAP_MS) wipeTapsRef.current = 0')
+    expect(about, '没有按阈值判断是否达到 8 次').toContain('if (wipeTapsRef.current >= WIPE_TAP_TARGET) {')
+    expect(about, '达到阈值后没有打开流程').toContain('setWipeOpen(true)')
+    // LOGO 必须真的可点（语义化 button），且绑的是计数处理器
+    expect(about, 'LOGO 没有包成可点击的 button').toMatch(/<button type="button" onClick=\{onLogoTap\}/)
+    expect(about, 'LOGO 不是这个 button 的内容').toMatch(/onClick=\{onLogoTap\}[^>]*>\s*<OrbitLogo/)
+  })
+
+  it('P12 四步顺序固定：确认 → 输入 → 验证 → 最后确认', () => {
+    const wipe = code(WIPE)
+    expect(wipe, '状态类型不是这四步').toContain("export type WipeStep = 'confirm' | 'input' | 'verifying' | 'final'")
+    // 源码里的渲染顺序 = 用户看到的流程顺序
+    let prev = -1
+    for (const step of ["{step === 'confirm' &&", "{step === 'input' &&", "{step === 'verifying' &&", "{step === 'final' &&"]) {
+      const at = pos(wipe, step)
+      expect(at, `「${step}」的渲染顺序错了`).toBeGreaterThan(prev)
+      prev = at
+    }
+    // ② 用的是输入确认弹窗（必须输对字才能往下走）
+    const inputBlock = between(wipe, "{step === 'input' &&", "{step === 'verifying' &&")
+    expect(inputBlock, '第二步不是「输入指定文字」的强确认').toContain('<InputConfirmDialog')
+    expect(inputBlock, '第二步没有绑定强确认词').toContain('expected={WIPE_CONFIRM_TEXT}')
+  })
+
+  it('P13 通行密钥验证在**最后确认之前**，且整条流程只验一次', () => {
+    const wipe = code(WIPE)
+    const verifyFn = between(wipe, 'async function startVerify() {', 'async function wipe() {')
+    expect(verifyFn, '验证没有真的调通行密钥').toContain('const ok = await verifyWithPasskey()')
+    expect(verifyFn, '验证通过后没有进入最后确认').toContain("setStep('final')")
+    expect(verifyFn, '验证未通过时静默返回（用户不知道为什么没反应）').toContain('window.alert')
+    expect(verifyFn, '验证未通过后没有放弃整个流程').toContain('onClose()')
+    expect(pos(wipe, 'await verifyWithPasskey()'), '验证必须在最后确认之前').toBeLessThan(pos(wipe, "{step === 'final' &&"))
+
+    // 真正执行删除的那一段不得再验一次（身份已在第③步确认过）
+    const wipeFn = between(wipe, 'async function wipe() {', '  return (')
+    expect(wipeFn, '执行删除时又验了一次 —— 身份验证必须只做一次').not.toContain('verifyWithPasskey')
+  })
+
+  it('P14 最后确认是破坏性二次确认，确认后才真正执行删除', () => {
+    const wipe = code(WIPE)
+    const finalBlock = wipe.slice(pos(wipe, "{step === 'final' &&"))
+    expect(finalBlock, '最后一步不是确认弹窗').toContain('<ConfirmDialog')
+    expect(finalBlock, '最后一步不是破坏性样式').toContain('destructive')
+    expect(finalBlock, '最后一步的确认没有接到执行函数').toContain('void wipe()')
+
+    const wipeFn = between(wipe, 'async function wipe() {', '  return (')
+    expect(wipeFn).toContain("fetch('/api/admin/wipe', { method: 'POST' })")
+    expect(wipeFn, '没有清本地 IndexedDB（密文会留在设备上）').toContain('await idbClearAll()')
+    expect(wipeFn, '没有清内存里的 DEK').toContain('clearDek()')
+    expect(wipeFn, '删除后没有回到初始化页').toContain("router.replace('/setup')")
+  })
+
+  it('P15 离线在第一**步**就拦下（不让用户白走三步到验证那一步才失败）', () => {
+    const wipe = code(WIPE)
+    const startFn = between(wipe, 'function confirmStart() {', 'async function startVerify() {')
+    expect(startFn, '第一步没有拦离线').toContain('if (disabled) { onBlocked?.(); onClose(); return }')
+    expect(startFn, '第一步没有推进到输入步骤').toContain("setStep('input')")
+  })
+
+  it('P16 流程由调用方**条件渲染**（每次挂载都是干净的 state）', () => {
+    const about = code(ABOUT)
+    expect(about, '没有条件渲染流程 —— 每次触发必须从第一步重来').toContain('{wipeOpen && (')
+    // ⚠️ 逗号分隔的 props 里有箭头函数（`{() => …}`）⇒ 正则**不能用 `[^>]*`**（会在 `=>` 的 `>`
+    //    处截断，断言永远匹配不到 = 空转）。用 `[\s\S]{0,300}?` 限定在这一次组件调用内。
+    expect(about, '没有把离线禁用传下去').toMatch(/<WipeDataAction[\s\S]{0,300}?disabled=\{wipeDisabled\}/)
+    expect(about, '关闭时没有复位（下次点 8 次会直接又弹出来）').toMatch(
+      /<WipeDataAction[\s\S]{0,300}?onClose=\{\(\) => setWipeOpen\(false\)\}/,
+    )
+    // 反面：不要再加一个 `open` 属性（那会要求组件自己在 effect 里重置 state）
+    expect(about, '不要再传 open 属性 —— 用条件渲染').not.toMatch(/<WipeDataAction[\s\S]{0,300}?\bopen=/)
+    // ★ 流程层必须拦住冒泡：它挂在关于弹窗的遮罩内部，点流程遮罩的空白（= 取消流程）
+    //   不该继续冒泡到关于弹窗的 onClick 把整个弹窗也关掉。
+    const wipe = code(WIPE)
+    expect(wipe, '流程层没有拦冒泡 —— 点遮罩取消流程会连关于弹窗一起关掉').toMatch(
+      /return \(\s*<div onClick=\{\(e\) => e\.stopPropagation\(\)\}>/,
+    )
+  })
+
+  it('P17 嵌套弹窗安全：关于弹窗（及其祖先）不得带 transform / filter', () => {
+    // 删除流程的每一层都是 `fixed inset-0 z-50`，挂在关于弹窗内部（卡片有 overflow-hidden）。
     // `position: fixed` 的包含块是**视口** ⇒ 不会被祖先的 overflow 裁掉（实测铺满 390×844）；
     // ★ 但祖先一旦成为包含块（transform / translate / rotate / scale / filter /
     //   backdrop-filter / will-change），它就退化成"相对卡片定位"并被裁进卡片里。
@@ -216,23 +269,7 @@ describe('删除所有数据的降级', () => {
     // 本项目全站零 transform / 模糊，所以这条现在成立 —— 钉住它，别在「关于」里引入。
     const about = code(ABOUT)
     for (const bad of ['transform', 'translate-', 'rotate-', 'scale-', 'filter', 'backdrop-', 'will-change']) {
-      expect(
-        about,
-        `关于弹窗里出现了「${bad}」—— 会让嵌在卡片里的删除确认弹窗被裁掉`,
-      ).not.toContain(bad)
+      expect(about, `关于弹窗里出现了「${bad}」—— 会让嵌在内的删除确认弹窗被裁掉`).not.toContain(bad)
     }
-  })
-
-  it('P14 入口是「居中 + 小字 + 中性色」的一行，不是整行设置项', () => {
-    const src = code(WIPE)
-    const entry = src.slice(pos(src, '<button'), pos(src, '</button>'))
-    expect(entry, '入口切片为空 —— 解析失败，断言会空转').toContain('className')
-    // 居中：★ w-fit 必需 —— 块级 flex 元素默认占满整行，只写 mx-auto 是**空操作**，不会居中。
-    expect(entry, '入口没有居中').toContain('mx-auto')
-    expect(entry, '只写 mx-auto 不写 w-fit —— 块级元素占满整行时居中不生效').toContain('w-fit')
-    expect(entry, '入口字号没降档，读起来还是一条正常设置项').toContain('text-xs')
-    expect(entry, '入口不是中性色（危险色只该出现在点击后的确认弹窗里）').toContain('text-neutral-500')
-    // 反面：入口不得染红 —— 红留给 `destructive` 的确认弹窗，入口本身不喊
-    expect(entry, '入口被染红了 —— 它该是一行不起眼的灰字').not.toMatch(/text-red-|border-red/)
   })
 })

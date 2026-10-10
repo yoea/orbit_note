@@ -1,9 +1,16 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import OrbitLogo from './OrbitLogo'
 import WipeDataAction from './WipeDataAction'
 import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
+
+// 「删除所有数据」的**隐藏入口**：连点 LOGO「Orbit」8 次（2026-10-10 用户要求）。
+// 界面上不再有任何可见入口 —— 这条功能的可发现性一路降到零。
+const WIPE_TAP_TARGET = 8
+// 两次点击的间隔上限：超过它就重新计数。「连续点击」必须有这个界定，
+// 否则用户在几天内零散点 LOGO 也会凑够 8 次 ⇒ 误触（虽然还有三步确认兜着）。
+const WIPE_TAP_GAP_MS = 2000
 
 // 关于弹窗：iOS Alert 风格居中卡片（内容可滚动），展示项目最值得了解的信息。
 // 从设置页「关于 Orbit」项进入；遮罩点击或「完成」按钮关闭。
@@ -22,15 +29,14 @@ import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
 //   2026-10-02 定稿约 512px：390×844 一屏放完；375×667 需要轻微滚动（分节标题 + 彩色图标底 +
 //   页脚 GitHub 胶囊各自都要了空间，这是「更好看」换来的，知情取舍）。
 //   **加一行内容前先算总高**，否则常见机型会凭空多出一条滚动条。
-//   ★ 2026-10-10 用户要求「再紧凑一点」+ 把「删除所有数据」挪进来，两件事一起做：
-//     只压间距/尺寸，**不动结构与配色**（A0~A5 守卫管的是后者）。
-//     实测（Temp/qo-keyboard-probe/about-height.mjs，390×844）：
-//       含新入口的旧间距 582px → 定稿 492px（省 90px）；
-//       即「比不含新入口的原版（≈517px）还短」，加东西反而更矮。
+//   ★ 2026-10-10 用户要求「再紧凑一点」：只压间距/尺寸，**不动结构与配色**（A0~A5 守卫管后者）。
+//     实测（Temp/qo-keyboard-probe/about-height.mjs，390×844）：582px → 510px。
 //     各处收紧：hero `pt/pb-4→3`、图标底 `h-10→h-8`、优势行 `py-2.5→1.5`、
 //     更多特色 `pt-3→2.5` / `gap-y-2→1.5`、页脚 `mt-4/pt-4/pb-3.5→2.5/2.5/2.5`。
-//     ★ 坑：**hero 的留白不能再压**（试过 `pt-2.5/pb-2.5` + `h-16` 光晕）——副标题会贴住
-//       「核心优势」分节标题，两段层次糊在一起。列表与页脚可以更紧，hero 不行。
+//   ★ 同日晚些时候：「删除所有数据」入口改成**连点 LOGO 8 次**（见文件头常量），页面底部那一行
+//     入口连带 `border-t` 一起删掉 ⇒ 弹窗比上面那组数字再矮一行（≈61px）。
+//   ★ 坑：**hero 的留白不能再压**（试过 `pt-2.5/pb-2.5` + 光晕 `h-16`）——副标题会贴住
+//     「核心优势」分节标题，两段层次糊在一起。列表与页脚可以更紧，hero 不行。
 // - 底栏沿用 DIALOG_FOOTER_BUTTON_CLASS（自带 w-full）——块级卡片里漏了它，按钮会缩成
 //   两个字宽贴在左边（rc6 真实事故，见 tests/dialog-footer.test.ts）。
 //
@@ -169,6 +175,22 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
   wipeDisabled?: boolean
   onWipeBlocked?: () => void
 }) {
+  // 隐藏入口：连点 LOGO 的次数与上次点击时间（ref 存 —— 计数不该触发重渲染）
+  const [wipeOpen, setWipeOpen] = useState(false)
+  const wipeTapsRef = useRef(0)
+  const lastTapRef = useRef(0)
+
+  function onLogoTap() {
+    const now = Date.now()
+    if (now - lastTapRef.current > WIPE_TAP_GAP_MS) wipeTapsRef.current = 0
+    lastTapRef.current = now
+    wipeTapsRef.current += 1
+    if (wipeTapsRef.current >= WIPE_TAP_TARGET) {
+      wipeTapsRef.current = 0
+      setWipeOpen(true)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={onClose}>
       <div
@@ -192,7 +214,12 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
               className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-orange-50 via-rose-50 to-transparent dark:from-violet-500/10 dark:via-rose-500/5 dark:to-transparent"
             />
             <div className="relative">
-              <OrbitLogo size="lg" />
+              {/* ★ 隐藏入口：连点这里 8 次进入删除流程（见文件头常量）。
+                  用 <button> 而不是给 LOGO 挂 onClick：可点击元素该是语义化按钮（键盘/读屏可达）。
+                  Tailwind preflight 已把 button 的背景/边框/内边距清零 ⇒ 观感与纯文本完全一致。 */}
+              <button type="button" onClick={onLogoTap} className="inline-block" aria-label="Orbit">
+                <OrbitLogo size="lg" />
+              </button>
               <p className="mt-1.5 text-sm text-neutral-500 dark:text-neutral-400">端到端加密的私人日记</p>
             </div>
           </div>
@@ -261,25 +288,23 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
               地名与天气来自第三方服务，查询时会发送坐标。
             </p>
           </div>
-
-          {/* 「删除所有数据」：**入口在本弹窗最底部**，就是一行小小的灰字（2026-10-10 用户两次要求
-              降低可发现性 —— 先挪进这里，再去掉「危险操作」那一级折叠，直接以小字入口呈现）。
-              为什么放这里而不是设置页：在设置页里它无论怎么缩小都还是"一条设置项"的观感；
-              挪进「关于」之后，它变成"得翻到关于页最底部才看到的一行小字"。
-              ★ 弹窗里嵌套弹窗：点这行小字会再开一层 InputConfirmDialog（同样是 `fixed inset-0 z-50`）。
-              它能正常盖在这张卡片之上 —— 卡片虽然有 `overflow-hidden`，但 `position: fixed` 的
-              包含块是**视口**，不会被祖先的 overflow 裁掉；本项目全站零 transform / filter，
-              祖先也不会退化成包含块。
-              逐帧实测见 Temp/qo-keyboard-probe/about-nested-dialog.mjs。守卫 P15。 */}
-          <div className="mt-2.5 border-t border-neutral-100 px-6 pb-2 pt-2.5 dark:border-neutral-800">
-            <WipeDataAction disabled={wipeDisabled} onBlocked={onWipeBlocked} />
-          </div>
         </div>
 
         <button onClick={onClose} className={DIALOG_FOOTER_BUTTON_CLASS}>
           完成
         </button>
       </div>
+
+      {/* 删除流程（④步确认）挂在**卡片之外**：它是 `fixed inset-0 z-50` 的一层，
+          放在卡片内虽然也能正常铺满（fixed 的包含块是视口，卡片又零 transform），
+          但它不该参与卡片的滚动与裁剪 —— 放外层最省心。条件渲染 ⇒ 每次都是干净的 state。 */}
+      {wipeOpen && (
+        <WipeDataAction
+          onClose={() => setWipeOpen(false)}
+          disabled={wipeDisabled}
+          onBlocked={onWipeBlocked}
+        />
+      )}
     </div>
   )
 }
