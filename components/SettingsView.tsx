@@ -10,7 +10,6 @@ import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
 import RecoveryRegenerateDialog from '@/components/RecoveryRegenerateDialog'
 import NameEditDialog from '@/components/NameEditDialog'
 import ProfileCard from '@/components/ProfileCard'
-import WipeDataAction from '@/components/WipeDataAction'
 import Toast from '@/components/Toast'
 import { clearDek } from '@/lib/client/session'
 import { clearUserNameCache } from '@/lib/client/profile'
@@ -25,7 +24,7 @@ import { useOffline } from '@/lib/client/use-offline'
 //   1) 账号与安全 —— 通行密钥 / 恢复密钥 / 退出登录
 //   2) 通用       —— 偏好设置 / 关于 Orbit
 //   3) 数据       —— 导入与导出（单一入口）
-//   页面末尾      —— 「危险操作」折叠（内含「删除所有数据」），**刻意不给分组、不给卡片**
+//   页面末尾      —— 空（「删除所有数据」已移进「关于 Orbit」弹窗最底部，见下）
 //
 // 两条纠错记录（都是"归位"，不是审美）：
 //   - 「退出登录」原先在「数据」组的第三行、紧跟在「导出笔记」后面。它是会话/账号操作，
@@ -38,11 +37,14 @@ import { useOffline } from '@/lib/client/use-offline'
 //   ★ 顺序定稿（2026-10-10 用户要求）：设置项名称与页内分段**同名同序** ——「导入与导出」，
 //     分段也是「导入」在前、「导出」在后（导入会把数据拿回来，是更常用的方向）。
 //
-// ★ 「删除所有数据」再降一级（2026-10-10 用户要求：几乎没有使用场景，要进一步降低可发现性）：
-//   它从「数据」分组卡片里**移出**，落到页面最底部，独立成一个**没有卡片底色**的 <ul>，
-//   触发器也从"与其它设置项同构的一整行"缩成一行**居中中性小字**。三道门槛不变：
-//   ① 折叠（默认收起 ⇒ 默认视图里没有任何红字）→ ② 输入「永久删除」→ ③ 通行密钥验证。
-//   守卫 tests/settings-structure.test.ts P9~P13。
+// ★ 「删除所有数据」两级降级（2026-10-10 用户两次要求：几乎没有使用场景，要降低可发现性）：
+//   第一级：从「数据」分组卡片里**移出**，落到页面最底部、不带卡片底色的独立容器，
+//           触发器从"与其它设置项同构的一整行"缩成**居中中性小字**；
+//   第二级：**入口整体移出设置页**，放进「关于 Orbit」弹窗的最底部（本次）——
+//           在设置页里它无论怎么缩小都还是"一条设置项"的观感。
+//   三道门槛不变：① 折叠（默认收起 ⇒ 默认视图里没有任何红字）→ ② 输入「永久删除」
+//   → ③ 通行密钥验证。任何一次误触最多只是展开，删不掉东西。
+//   守卫 tests/settings-structure.test.ts P9~P15。
 //
 // 离线权限：改昵称 / 改恢复密钥 / 改通行密钥 / 改偏好设置 / 退出登录 / 导入与导出 / 删除数据
 // 都依赖服务器写操作或需拉取服务器数据，离线时置灰并提示「该功能离线模式暂不可用」——
@@ -212,15 +214,10 @@ export default function SettingsView() {
           </Link>
         </li>
       </ul>
-      {/* 「删除所有数据」：**不在任何分组卡片里**（2026-10-10 用户要求进一步降低可发现性）。
-          放在页面最底部、独立成一个没有底色/圆角/分割线的 <ul>，离上一组拉开 mt-10；
-          触发器本身在 WipeDataAction 里缩成一行居中中性小字。
-          为什么还留一个 <ul>：WipeDataAction 的契约就是"返回一个 <li>"（见其文件头），
-          而 <li> 不能直接挂在 <main> 下——那不是列表上下文，HTML 上是非法结构。
-          离线禁用同其余写操作（真正的破坏还要过通行密钥验证这一关）。 */}
-      <ul className="mt-10">
-        <WipeDataAction disabled={offline} onBlocked={notifyOffline} />
-      </ul>
+      {/* 「删除所有数据」**不在本页**（2026-10-10）：入口已挪进「关于 Orbit」弹窗的最底部。
+          理由：在设置页里它无论怎么缩小都还是"一条设置项"的观感；放进「关于」之后，
+          得翻到关于页底部才会看到，可发现性再降一档。
+          它的离线禁用随弹窗一起传下去（见下面 <AboutDialog> 的两个 prop）。守卫 P13/P15。 */}
       {/* 底部留白由 main 的 pb-4 承担（与其他 (app) 页面统一）。
           这里原先放了一个 <div className="h-10" aria-hidden /> 和更早的 Orbit 字标：
           字标当初用来给「关于 Orbit」留间隔，该行已移入「通用」分组；字标移除后改用了 h-10 占位，
@@ -236,7 +233,13 @@ export default function SettingsView() {
           onCancel={() => setConfirmLogout(false)}
         />
       )}
-      {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
+      {showAbout && (
+        <AboutDialog
+          onClose={() => setShowAbout(false)}
+          wipeDisabled={offline}
+          onWipeBlocked={notifyOffline}
+        />
+      )}
       {showPrefs && <PrefsDialog onClose={() => setShowPrefs(false)} />}
       {showPasskeys && (
         <PasskeysDialog initialData={passkeysData} onClose={() => setShowPasskeys(false)} />

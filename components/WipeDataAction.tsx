@@ -11,7 +11,8 @@ import { useUserName } from '@/lib/client/use-user-name'
 // 删除所有数据：必须手动输入这段文字才能通过（防误触强确认）
 const WIPE_CONFIRM_TEXT = '永久删除'
 
-// 「删除所有数据」入口 —— 返回一个 <li>，供设置页的列表直接嵌入。
+// 「删除所有数据」入口 —— 根节点是**普通块级 <div>**（2026-10-10 起挂在「关于」弹窗里，
+// 不再是设置页的列表项，所以不再返回 <li>；<div> 不依赖任何列表上下文，放哪都合法）。
 //
 // 为什么从导出页搬到这里：它原先挂在 /settings/export 的底部（且是在**未验证身份**阶段就露出），
 // 而那个页面的语义是"导出"。一个不可逆销毁全部数据的操作，放在语义正好相反的页面上，
@@ -70,7 +71,7 @@ export default function WipeDataAction({ disabled = false, onBlocked }: {
   }
 
   return (
-    <li>
+    <div>
       {/* 折叠触发器：默认收起；**居中 + text-xs + 中性灰**（见文件头「再降一级」）。
           w-fit 必需：块级 flex 元素默认占满宽度，只写 mx-auto 是**空操作**，不会居中。 */}
       <button
@@ -116,6 +117,6 @@ export default function WipeDataAction({ disabled = false, onBlocked }: {
           onCancel={() => setConfirmStep(0)}
         />
       )}
-    </li>
+    </div>
   )
 }

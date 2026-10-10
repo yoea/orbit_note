@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react'
 import OrbitLogo from './OrbitLogo'
+import WipeDataAction from './WipeDataAction'
 import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
 
 // 关于弹窗：iOS Alert 风格居中卡片（内容可滚动），展示项目最值得了解的信息。
@@ -21,6 +22,15 @@ import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
 //   2026-10-02 定稿约 512px：390×844 一屏放完；375×667 需要轻微滚动（分节标题 + 彩色图标底 +
 //   页脚 GitHub 胶囊各自都要了空间，这是「更好看」换来的，知情取舍）。
 //   **加一行内容前先算总高**，否则常见机型会凭空多出一条滚动条。
+//   ★ 2026-10-10 用户要求「再紧凑一点」+ 把「删除所有数据」挪进来，两件事一起做：
+//     只压间距/尺寸，**不动结构与配色**（A0~A5 守卫管的是后者）。
+//     实测（Temp/qo-keyboard-probe/about-height.mjs，390×844）：
+//       含新入口的旧间距 582px → 定稿 492px（省 90px）；
+//       即「比不含新入口的原版（≈517px）还短」，加东西反而更矮。
+//     各处收紧：hero `pt/pb-4→3`、图标底 `h-10→h-8`、优势行 `py-2.5→1.5`、
+//     更多特色 `pt-3→2.5` / `gap-y-2→1.5`、页脚 `mt-4/pt-4/pb-3.5→2.5/2.5/2.5`。
+//     ★ 坑：**hero 的留白不能再压**（试过 `pt-2.5/pb-2.5` + `h-16` 光晕）——副标题会贴住
+//       「核心优势」分节标题，两段层次糊在一起。列表与页脚可以更紧，hero 不行。
 // - 底栏沿用 DIALOG_FOOTER_BUTTON_CLASS（自带 w-full）——块级卡片里漏了它，按钮会缩成
 //   两个字宽贴在左边（rc6 真实事故，见 tests/dialog-footer.test.ts）。
 //
@@ -153,7 +163,12 @@ const MORE = [
   { Icon: DownloadIcon, label: '导出导入' },
 ]
 
-export default function AboutDialog({ onClose }: { onClose: () => void }) {
+export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlocked }: {
+  onClose: () => void
+  /** 「删除所有数据」的离线禁用（与设置页其余写操作一致）；真正的破坏还要过通行密钥验证 */
+  wipeDisabled?: boolean
+  onWipeBlocked?: () => void
+}) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={onClose}>
       <div
@@ -171,10 +186,10 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
               它只是背景色，不含任何模糊属性；作用是把卡片顶部和下面几节分开，
               让「这是谁」与「他有什么」在观感上是两段。高度 96px，滚动时随内容一起走。
               ★ 这里不再放版本胶囊：版本号在页脚，而且**必须是一个可点击的胶囊**（用户要求显眼）。 */}
-          <div className="relative px-6 pb-4 pt-4 text-center">
+          <div className="relative px-6 pb-3 pt-3 text-center">
             <div
               aria-hidden
-              className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-orange-50 via-rose-50 to-transparent dark:from-violet-500/10 dark:via-rose-500/5 dark:to-transparent"
+              className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-orange-50 via-rose-50 to-transparent dark:from-violet-500/10 dark:via-rose-500/5 dark:to-transparent"
             />
             <div className="relative">
               <OrbitLogo size="lg" />
@@ -188,9 +203,9 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
               divide 分隔线内缩在 px-6 之内（行自身不加左右 padding），视觉上更收敛。 */}
           <ul className="divide-y divide-neutral-100 px-6 dark:divide-neutral-800">
             {HIGHLIGHTS.map(({ Icon, title, desc, tile }) => (
-              <li key={title} className="flex items-center gap-3 py-2.5">
-                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white ${tile}`}>
-                  <Icon className="h-[19px] w-[19px]" />
+              <li key={title} className="flex items-center gap-3 py-1.5">
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white ${tile}`}>
+                  <Icon className="h-4 w-4" />
                 </span>
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-neutral-800 dark:text-neutral-100">{title}</p>
@@ -200,12 +215,12 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
             ))}
           </ul>
 
-          <div className="pt-3">
+          <div className="pt-2.5">
             <SectionLabel>更多特色</SectionLabel>
           </div>
           {/* 两列网格：图标与文字同色（继承 li 的 currentColor），比逐个上色更干净。
               这一节刻意**不加图标底**——次级内容不该跟上面三条抢注意力。 */}
-          <ul className="grid grid-cols-2 gap-x-3 gap-y-2 px-6">
+          <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-6">
             {MORE.map(({ Icon, label }) => (
               <li key={label} className="flex items-center gap-2 text-neutral-600 dark:text-neutral-300">
                 <Icon className="h-4 w-4 shrink-0" />
@@ -221,7 +236,7 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
                · 版权与开源说明各占一行、更小更淡：它们不需要被注意，只需要在那里。
                · 颜色沿用 AA 配对——neutral-300/600 那一对是**反向**的（浅色底用浅灰 ≈1.5:1），
                  10px 小字在手机上等于看不见。 */}
-          <div className="mt-4 border-t border-neutral-100 px-6 pb-3.5 pt-4 dark:border-neutral-800">
+          <div className="mt-2.5 border-t border-neutral-100 px-6 pb-2.5 pt-2.5 dark:border-neutral-800">
             <div className="flex justify-center">
               <a
                 href="https://github.com/yoea/orbit_note"
@@ -239,12 +254,24 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
                 <span className="tabular-nums">{process.env.NEXT_PUBLIC_VERSION ?? 'dev'}</span>
               </a>
             </div>
-            <p className="mt-2.5 text-center text-[10px] text-neutral-500 dark:text-neutral-400">
+            <p className="mt-1.5 text-center text-[10px] text-neutral-500 dark:text-neutral-400">
               © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'} · MIT 开源
             </p>
-            <p className="mt-1.5 text-center text-[10px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+            <p className="mt-0.5 text-center text-[10px] leading-relaxed text-neutral-500 dark:text-neutral-400">
               地名与天气来自第三方服务，查询时会发送坐标。
             </p>
+          </div>
+
+          {/* 「删除所有数据」：**入口移到本弹窗最底部**（2026-10-10 用户要求再降一级可发现性）。
+              为什么放这里而不是设置页：在设置页里它无论怎么缩小都还是"一条设置项"的观感；
+              挪进「关于」之后，它变成"得翻到关于页最底部才看到的一行小字"。
+              ★ 弹窗里嵌套弹窗：WipeDataAction 展开后点删除会再开一层 InputConfirmDialog
+              （同样是 `fixed inset-0 z-50`）。它能正常盖在这张卡片之上 —— 卡片虽然有
+              `overflow-hidden`，但 `position: fixed` 的包含块是**视口**，不会被祖先的 overflow
+              裁掉；本项目全站零 transform / filter，祖先也不会退化成包含块。
+              逐帧实测见 Temp/qo-keyboard-probe/about-nested-dialog.mjs。守卫 P15。 */}
+          <div className="mt-2.5 border-t border-neutral-100 px-6 pb-2 pt-2.5 dark:border-neutral-800">
+            <WipeDataAction disabled={wipeDisabled} onBlocked={onWipeBlocked} />
           </div>
         </div>
 

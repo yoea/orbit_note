@@ -37,24 +37,8 @@ function pos(src: string, needle: string): number {
   return i
 }
 
-/** 求某个标签的配对区间（如 `<ul>…</ul>`）。
- *  为什么需要它：判断「某个组件在不在那张卡片里」按源码下标是看不出来的（两种情况下标都可能
- *  更大），必须真的把标签配平才能定归属。 */
-function tagRange(src: string, tag: string, start: number): [number, number] | null {
-  const re = new RegExp(`<${tag}\\b|</${tag}>`, 'g')
-  re.lastIndex = start
-  let depth = 0
-  let m: RegExpExecArray | null
-  while ((m = re.exec(src))) {
-    if (m[0].startsWith('</')) {
-      depth--
-      if (depth <= 0) return [start, m.index + m[0].length]
-    } else depth++
-  }
-  return null
-}
-
 const SETTINGS = 'components/SettingsView.tsx'
+const ABOUT = 'components/AboutDialog.tsx'
 
 describe('设置页信息架构', () => {
   it('P0 解析自检：三个分组标题都能读到（防空转）', () => {
@@ -93,9 +77,11 @@ describe('设置页信息架构', () => {
     expect(src).not.toContain('InputConfirmDialog')
   })
 
-  it('P5 删除数据由 WipeDataAction 承载，且排在「数据」分组**之后**', () => {
+  it('P5 设置页**不再**出现「删除所有数据」入口（已移入「关于 Orbit」弹窗）', () => {
+    // 2026-10-10 用户要求把它挪进关于弹窗 —— 设置页里它无论怎么缩小都还是"一条设置项"的观感。
     const src = code(SETTINGS)
-    expect(pos(src, '<WipeDataAction')).toBeGreaterThan(pos(src, '>数据</p>'))
+    expect(src, '设置页还在渲染 WipeDataAction').not.toContain('WipeDataAction')
+    expect(src, '设置页还留着「危险操作」触发器').not.toContain('危险操作')
   })
 
   it('P6 导出 / 导入面板都不再是整页，页头由分段容器提供', () => {
@@ -149,13 +135,14 @@ describe('设置页信息架构', () => {
 })
 
 // ============================================================================
-// 「删除所有数据」的折叠（2026-09-30）
+// 「删除所有数据」的降级与折叠（2026-09-30 立；2026-10-10 用户第二次要求继续降级）
 //
-// 这个功能的使用频率极低，却曾经是设置页最后一行、红字带副标题——权重过高，且正好停在
-// 拇指滑到底的位置。改成默认收起后有三条容易悄悄退回去的性质，各钉一条：
-//   1. 默认视图里只有中性色的折叠触发器，红色删除项要展开才出现；
-//   2. 触发器是"展开/收起"，不该被离线态置灰（它不联网）；
-//   3. 折叠不能破坏 WipeDataAction「就是一个 <li>」的契约（设置页把它直接塞进 <ul>）。
+// 这个功能的使用频率极低（一辈子可能一次），却曾经是设置页最后一行、红字带副标题——权重过高。
+// 两次降级：
+//   ① 2026-09-30「默认收起」（disclosure）：默认视图里没有红色项，红色删除项要展开才出现；
+//   ② 2026-10-10「入口整体移出设置页」→ 落到「关于 Orbit」弹窗最底部，触发器缩成居中中性小字。
+// 三道门槛始终不变：折叠 → 输入「永久删除」→ 通行密钥验证。
+// 容易悄悄退回去的性质各钉一条（P9~P15）。
 // ============================================================================
 const WIPE = 'components/WipeDataAction.tsx'
 
@@ -188,25 +175,44 @@ describe('删除所有数据的折叠', () => {
     expect(src).toContain('if (disabled) { onBlocked?.(); return }')
   })
 
-  it('P12 仍然是单个 <li>（设置页把它直接放进 <ul>，嵌套 li 是非法结构）', () => {
+  it('P12 根节点是普通块级 <div>（不再依赖列表上下文 —— 它现在挂在弹窗里）', () => {
+    // 挂进「关于」弹窗后它不再是列表项：再返回 <li> 就是"游离的列表项"，
+    // 而弹窗里没有 <ul> 可依托 —— HTML 结构非法。
     const src = code(WIPE)
-    expect((src.match(/<li>/g) ?? []).length).toBe(1)
-    expect(src).not.toMatch(/<li>[^]*?<li>/)
+    expect(src, '不该再有 <li>：它不是设置页的列表项了').not.toMatch(/<li>/)
+    expect(src, '根节点必须是 <div>，放哪都合法').toMatch(/return \(\s*<div>/)
   })
 
-  it('P13 「删除所有数据」已脱离「数据」分组卡片，落到页面最底部（2026-10-10 用户要求降级）', () => {
-    // 用户原话：「几乎没有使用场景（即使用也仅会用一次）…移到更深的层级或更不显眼的位置」。
-    // 判据：它不能再出现在「数据」那张卡片（含 href="/settings/backup" 的 <ul>）里面 ——
-    // 在同一张卡片里就是"一等设置项"的观感，无论字号多小。
-    const src = code(SETTINGS)
-    const cardStart = src.lastIndexOf('<ul', pos(src, 'href="/settings/backup"'))
-    expect(cardStart, '找不到「数据」分组的 <ul>').toBeGreaterThanOrEqual(0)
-    const card = tagRange(src, 'ul', cardStart)
-    expect(card, '「数据」分组的 <ul> 没配平 —— 解析失败，断言会空转').not.toBeNull()
+  it('P13 入口挂在「关于 Orbit」弹窗的**最底部**（2026-10-10 第二次降级）', () => {
+    // 用户原话：「把『删除所有数据』入口挪进『关于 Orbit』弹窗的最底部。」
+    // 为什么再挪：在设置页里它无论怎么缩小，读起来都还是"一条设置项"。
+    const about = code(ABOUT)
+    expect(about, '关于弹窗里没有渲染 WipeDataAction').toContain('<WipeDataAction')
+    // 必须在页脚（版权 / 第三方说明）**之后** ⇒ 才算"最底部"
     expect(
-      pos(src, '<WipeDataAction'),
-      '「删除所有数据」又回到「数据」卡片里了 —— 会被看成一等设置项',
-    ).toBeGreaterThan(card![1])
+      pos(about, '<WipeDataAction'),
+      '「删除所有数据」不在弹窗最底部（应排在页脚的第三方说明之后）',
+    ).toBeGreaterThan(pos(about, '地名与天气来自第三方服务'))
+    // 离线禁用要随弹窗传下去（与设置页其余写操作一致）
+    expect(about, '没有把离线禁用传给 WipeDataAction').toMatch(/<WipeDataAction[^>]*disabled=/)
+  })
+
+  it('P15 弹窗套弹窗安全：卡片及其祖先不得带 transform / filter（否则嵌套的确认弹窗会被裁）', () => {
+    // WipeDataAction 展开后点删除会再开一层 InputConfirmDialog（同样 `fixed inset-0 z-50`），
+    // 而它挂在**卡片内部**，卡片有 `overflow-hidden`。
+    // `position: fixed` 的包含块是**视口** ⇒ 不会被祖先的 overflow 裁掉（实测铺满 390×844）；
+    // ★ 但祖先一旦成为包含块（transform / translate / rotate / scale / filter /
+    //   backdrop-filter / will-change），它就退化成"相对卡片定位"并被裁进卡片里。
+    // 逐帧对照实测：Temp/qo-keyboard-probe/about-nested-dialog.mjs（无 transform = 铺满视口；
+    // 给卡片加 translateZ(0) = 立刻被裁成 32,234,358,610）。
+    // 本项目全站零 transform / 模糊，所以这条现在成立 —— 钉住它，别在「关于」里引入。
+    const about = code(ABOUT)
+    for (const bad of ['transform', 'translate-', 'rotate-', 'scale-', 'filter', 'backdrop-', 'will-change']) {
+      expect(
+        about,
+        `关于弹窗里出现了「${bad}」—— 会让嵌在卡片里的删除确认弹窗被裁掉`,
+      ).not.toContain(bad)
+    }
   })
 
   it('P14 折叠触发器已降级为「居中 + 小字 + 中性色」的一行，不再是整行设置项', () => {
