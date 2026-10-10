@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 // 守的是三件"改一次就可能悄悄退回去"的事：
 //   1. 分组顺序与归属 —— 「退出登录」属于账号与会话，不属于数据；「删除所有数据」属于数据，
 //      但不该和「备份」同页（语义正好相反）。
-//   2. 单一入口 —— 导出与导入合并成「备份与恢复」一行后，不许再在设置页长出第二个入口。
+//   2. 单一入口 —— 导出与导入合并成一个入口后，不许再在设置页长出第二个入口。
 //   3. 旧路由留重定向 —— 合并/改造会留下 /settings/export、/settings/import、
 //      /settings/passkey 三个旧地址，必须有 redirect 页兜住（书签、浏览器历史）。
 //
@@ -37,6 +37,23 @@ function pos(src: string, needle: string): number {
   return i
 }
 
+/** 求某个标签的配对区间（如 `<ul>…</ul>`）。
+ *  为什么需要它：判断「某个组件在不在那张卡片里」按源码下标是看不出来的（两种情况下标都可能
+ *  更大），必须真的把标签配平才能定归属。 */
+function tagRange(src: string, tag: string, start: number): [number, number] | null {
+  const re = new RegExp(`<${tag}\\b|</${tag}>`, 'g')
+  re.lastIndex = start
+  let depth = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(src))) {
+    if (m[0].startsWith('</')) {
+      depth--
+      if (depth <= 0) return [start, m.index + m[0].length]
+    } else depth++
+  }
+  return null
+}
+
 const SETTINGS = 'components/SettingsView.tsx'
 
 describe('设置页信息架构', () => {
@@ -61,10 +78,10 @@ describe('设置页信息架构', () => {
     expect(logout).toBeLessThan(pos(src, '>通用</p>'))
   })
 
-  it('P3 导出与导入是单一入口，设置页不再直接暴露导出 / 导入两项', () => {
+  it('P3 导入与导出是单一入口，设置页不再直接暴露导出 / 导入两项', () => {
     const src = code(SETTINGS)
     expect(src).toContain('href="/settings/backup"')
-    expect(src).toContain('>导出与导入</p>')
+    expect(src).toContain('>导入与导出</p>')
     expect(src).not.toContain('href="/settings/export"')
     expect(src).not.toContain('href="/settings/import"')
   })
@@ -76,7 +93,7 @@ describe('设置页信息架构', () => {
     expect(src).not.toContain('InputConfirmDialog')
   })
 
-  it('P5 删除数据由 WipeDataAction 承载，且排在「数据」组内', () => {
+  it('P5 删除数据由 WipeDataAction 承载，且排在「数据」分组**之后**', () => {
     const src = code(SETTINGS)
     expect(pos(src, '<WipeDataAction')).toBeGreaterThan(pos(src, '>数据</p>'))
   })
@@ -161,7 +178,11 @@ describe('删除所有数据的折叠', () => {
 
   it('P11 折叠触发器不被离线态置灰（置灰只作用在展开后的删除行）', () => {
     const src = code(WIPE)
-    const trigger = src.slice(pos(src, "onClick={() => setOpen"), pos(src, 'aria-expanded={open}'))
+    // ⚠️ 切片必须覆盖**整个 `<button>`**：原先切到 `aria-expanded={open}` 为止，而 `className`
+    //    排在它**后面** ⇒ 那半句永远看不到 className，是一条**空转**守卫（2026-10-10 顺手修掉）。
+    const start = pos(src, 'onClick={() => setOpen')
+    const trigger = src.slice(src.lastIndexOf('<button', start), src.indexOf('</button>', start))
+    expect(trigger, '触发器切片为空 —— 解析失败，断言会空转').toContain('className')
     expect(trigger, '触发器上出现了禁用相关样式').not.toMatch(/opacity-50|disabled/)
     // 而删除行仍保留离线置灰（disabled 由 prop 传入）
     expect(src).toContain('if (disabled) { onBlocked?.(); return }')
@@ -171,5 +192,32 @@ describe('删除所有数据的折叠', () => {
     const src = code(WIPE)
     expect((src.match(/<li>/g) ?? []).length).toBe(1)
     expect(src).not.toMatch(/<li>[^]*?<li>/)
+  })
+
+  it('P13 「删除所有数据」已脱离「数据」分组卡片，落到页面最底部（2026-10-10 用户要求降级）', () => {
+    // 用户原话：「几乎没有使用场景（即使用也仅会用一次）…移到更深的层级或更不显眼的位置」。
+    // 判据：它不能再出现在「数据」那张卡片（含 href="/settings/backup" 的 <ul>）里面 ——
+    // 在同一张卡片里就是"一等设置项"的观感，无论字号多小。
+    const src = code(SETTINGS)
+    const cardStart = src.lastIndexOf('<ul', pos(src, 'href="/settings/backup"'))
+    expect(cardStart, '找不到「数据」分组的 <ul>').toBeGreaterThanOrEqual(0)
+    const card = tagRange(src, 'ul', cardStart)
+    expect(card, '「数据」分组的 <ul> 没配平 —— 解析失败，断言会空转').not.toBeNull()
+    expect(
+      pos(src, '<WipeDataAction'),
+      '「删除所有数据」又回到「数据」卡片里了 —— 会被看成一等设置项',
+    ).toBeGreaterThan(card![1])
+  })
+
+  it('P14 折叠触发器已降级为「居中 + 小字 + 中性色」的一行，不再是整行设置项', () => {
+    const src = code(WIPE)
+    const start = pos(src, 'onClick={() => setOpen')
+    const trigger = src.slice(src.lastIndexOf('<button', start), src.indexOf('</button>', start))
+    expect(trigger, '触发器切片为空 —— 解析失败，断言会空转').toContain('className')
+    // 居中：★ w-fit 必需 —— 块级 flex 元素默认占满整行，只写 mx-auto 是**空操作**，不会居中。
+    expect(trigger, '触发器没有居中').toContain('mx-auto')
+    expect(trigger, '只写 mx-auto 不写 w-fit —— 块级元素占满整行时居中不生效').toContain('w-fit')
+    expect(trigger, '触发器字号没降档，读起来还是一条正常设置项').toContain('text-xs')
+    expect(trigger, '触发器不是中性色（危险色只能出现在展开之后）').toContain('text-neutral-500')
   })
 })

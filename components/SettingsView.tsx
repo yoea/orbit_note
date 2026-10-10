@@ -24,18 +24,27 @@ import { useOffline } from '@/lib/client/use-offline'
 // 分组与排序（每次改动都要同步 tests/settings-structure.test.ts）：
 //   1) 账号与安全 —— 通行密钥 / 恢复密钥 / 退出登录
 //   2) 通用       —— 偏好设置 / 关于 Orbit
-//   3) 数据       —— 导出与导入（单一入口）/ 危险操作（折叠，内含「删除所有数据」）
+//   3) 数据       —— 导入与导出（单一入口）
+//   页面末尾      —— 「危险操作」折叠（内含「删除所有数据」），**刻意不给分组、不给卡片**
 //
 // 两条纠错记录（都是"归位"，不是审美）：
 //   - 「退出登录」原先在「数据」组的第三行、紧跟在「导出笔记」后面。它是会话/账号操作，
 //     不是数据操作；而且两个"离开"语义的入口相邻（一个带走数据、一个退出会话）容易误触。
 //     已移入「账号与安全」。
 //   - 「删除所有数据」原先藏在导出页底部（且是在未验证身份的阶段），而那个页面的语义是"备份"，
-//     正好相反。已抽成 WipeDataAction 挂在本页「数据」组末行。
+//     正好相反。已抽成 WipeDataAction。
 //   另外「导入笔记」「导出笔记」合并为单行入口——两者是同一件事的两端，
 //   分成两行会让它们看起来无关。页面内用分段切换，数据层没有任何改动。
+//   ★ 顺序定稿（2026-10-10 用户要求）：设置项名称与页内分段**同名同序** ——「导入与导出」，
+//     分段也是「导入」在前、「导出」在后（导入会把数据拿回来，是更常用的方向）。
 //
-// 离线权限：改昵称 / 改恢复密钥 / 改通行密钥 / 改偏好设置 / 退出登录 / 导出与导入 / 删除数据
+// ★ 「删除所有数据」再降一级（2026-10-10 用户要求：几乎没有使用场景，要进一步降低可发现性）：
+//   它从「数据」分组卡片里**移出**，落到页面最底部，独立成一个**没有卡片底色**的 <ul>，
+//   触发器也从"与其它设置项同构的一整行"缩成一行**居中中性小字**。三道门槛不变：
+//   ① 折叠（默认收起 ⇒ 默认视图里没有任何红字）→ ② 输入「永久删除」→ ③ 通行密钥验证。
+//   守卫 tests/settings-structure.test.ts P9~P13。
+//
+// 离线权限：改昵称 / 改恢复密钥 / 改通行密钥 / 改偏好设置 / 退出登录 / 导入与导出 / 删除数据
 // 都依赖服务器写操作或需拉取服务器数据，离线时置灰并提示「该功能离线模式暂不可用」——
 // 与其让用户点进去撞一次「保存失败」，不如入口处就说明白。「关于」不受限（纯本地只读）。
 // 退出登录为何也禁：其本质是撤销服务器会话（POST /api/auth/logout），离线发不出去；
@@ -182,12 +191,13 @@ export default function SettingsView() {
       <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">数据</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
-          {/* 导出与导入：导出与导入本来就是同一件事的两端，合并为单一入口（页面内分段切换），
+          {/* 导入与导出：两者本来就是同一件事的两端，合并为单一入口（页面内分段切换），
               数据层毫无改动——分成两行会让它们看起来无关。
-              命名（2026-09-30 统一）：功能名与页内动词**必须同词根**。原先入口叫「备份与恢复」、
-              页内按钮却叫「导出 / 导入」，两套词并存；现已全部统一到「导出 / 导入」——
-              它也是机制上唯一准确的叫法：CSV 明确不能导回本应用、从 Day One 迁入属于「导入」
-              而非「恢复」。守卫 tests/export-terms.test.ts。
+              命名与顺序（2026-10-10 用户要求）：设置项名称与页内分段**同名同序** ——
+              「导入与导出」，分段里**导入在前、导出在后**。原先入口叫「导出与导入」、
+              分段也是导出在前，与本页的这个词序不一致。术语仍只用「导出 / 导入」一个词根
+              （CSV 明确不能导回本应用、从 Day One 迁入属于「导入」而非「恢复」）。
+              守卫 tests/export-terms.test.ts。
               离线禁用：导出要拉服务器全量密文（本地缓存不保证完整）、导入必须写服务器。 */}
           <Link
             href="/settings/backup"
@@ -195,14 +205,20 @@ export default function SettingsView() {
             className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}
           >
             <div>
-              <p className="text-neutral-800 dark:text-neutral-200">导出与导入</p>
-              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">把日记导出为文件，或从文件导入</p>
+              <p className="text-neutral-800 dark:text-neutral-200">导入与导出</p>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">把日记从文件导入，或导出为文件</p>
             </div>
             <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </Link>
         </li>
-        {/* 删除所有数据：危险操作，红色文字 + 置于本组末行（组件内部自带
-            「输入永久删除 + 通行密钥验证」两道确认）。离线禁用同其余写操作 */}
+      </ul>
+      {/* 「删除所有数据」：**不在任何分组卡片里**（2026-10-10 用户要求进一步降低可发现性）。
+          放在页面最底部、独立成一个没有底色/圆角/分割线的 <ul>，离上一组拉开 mt-10；
+          触发器本身在 WipeDataAction 里缩成一行居中中性小字。
+          为什么还留一个 <ul>：WipeDataAction 的契约就是"返回一个 <li>"（见其文件头），
+          而 <li> 不能直接挂在 <main> 下——那不是列表上下文，HTML 上是非法结构。
+          离线禁用同其余写操作（真正的破坏还要过通行密钥验证这一关）。 */}
+      <ul className="mt-10">
         <WipeDataAction disabled={offline} onBlocked={notifyOffline} />
       </ul>
       {/* 底部留白由 main 的 pb-4 承担（与其他 (app) 页面统一）。

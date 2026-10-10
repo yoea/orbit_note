@@ -24,6 +24,15 @@ const WIPE_CONFIRM_TEXT = '永久删除'
 //   折叠触发器刻意用**中性色**（不是红色）——危险由展开后的红字与两道确认承担，
 //   不在默认视图里提前喊。守卫 tests/settings-structure.test.ts P9/P10。
 //
+// ★ 再降一级（2026-10-10 用户要求：「几乎没有使用场景，进一步降低可发现性」）：
+//   两条同时做，缺一不可 ——
+//     1) **位置**：设置页不再把它放进「数据」分组卡片，改为页面最底部、独立的无卡片 <ul>
+//        （见 SettingsView 里的说明）。它因此从"一条正常设置项"变成"页面角落的一行小字"；
+//     2) **视觉**：触发器从"整行、左对齐、与其它设置项同构"改为**居中、text-xs、中性灰**，
+//        且不再带整行的行高与分隔线语境。
+//   三道门槛不变（用户明确要求"考虑防止误触"）：折叠（默认收起）→ 输入「永久删除」→
+//   通行密钥验证。任何一次误触最多只是展开，删不掉东西。守卫 P13/P14。
+//
 // 两道确认不变：先输入「永久删除」，再走通行密钥验证（与导出同一套认证链路）。
 //
 // disabled / onBlocked 与设置页其余入口一致：离线时视觉置灰，但点击仍触发（弹「离线不可用」提示）
@@ -62,24 +71,25 @@ export default function WipeDataAction({ disabled = false, onBlocked }: {
 
   return (
     <li>
-      {/* 折叠触发器：默认收起，中性色（见文件头「为什么默认收起」） */}
+      {/* 折叠触发器：默认收起；**居中 + text-xs + 中性灰**（见文件头「再降一级」）。
+          w-fit 必需：块级 flex 元素默认占满宽度，只写 mx-auto 是**空操作**，不会居中。 */}
       <button
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60"
+        className="mx-auto flex w-fit items-center justify-center gap-1 rounded-lg px-3 py-2 text-xs text-neutral-500 active:opacity-60 dark:text-neutral-400"
       >
-        <p className="text-neutral-800 dark:text-neutral-200">危险操作</p>
+        <p>危险操作</p>
         {/* 展开时箭头转向下（静态旋转，不引入过渡属性） */}
         <svg
           aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
           strokeLinecap="round" strokeLinejoin="round"
-          className={`h-4 w-4 shrink-0 text-neutral-500 dark:text-neutral-400 ${open ? 'rotate-90' : ''}`}
+          className={`h-3 w-3 shrink-0 ${open ? 'rotate-90' : ''}`}
         >
           <path d="M9 18l6-6-6-6" />
         </svg>
       </button>
       {open && (
-        <div className="px-4 pb-3.5">
+        <div className="mt-2">
           <button
             onClick={() => { if (disabled) { onBlocked?.(); return } setConfirmStep(1) }}
             disabled={wiping}

@@ -21,7 +21,7 @@ export interface EncryptedEntry {
   locationName: string | null
   weather: string | null
   timezone: string | null
-  /** 收藏（星标）：明文的元数据列，入数据库、跟随导出与导入 */
+  /** 收藏（星标）：明文的元数据列，入数据库、跟随导入与导出 */
   starred: boolean
   /** 打开次数（我自己看过几次）：数据库列，由 POST /api/diary/[id]/view 原子自增 */
   viewCount: number

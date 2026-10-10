@@ -38,7 +38,7 @@ function readExportFormat(): ExportFormat {
 // - CSV：给 Excel / 表格用户，字段扁平可读，但**不能导回本应用**（也没有日记 App 认它）。
 //
 // ★ 措辞（2026-09-30 统一）：全流程只用「导出 / 导入」一个词根。这里刻意**不再叫「备份包」**——
-//   功能名、页标题、分段、按钮、提示都已是「导出与导入」，「备份」只会又造出第二套叫法。
+//   功能名、页标题、分段、按钮、提示都已是「导入与导出」，「备份」只会又造出第二套叫法。
 //   「这份文件是你的备份」这层意思由面板正文承担（"重新导入即完整恢复"）。
 //   守卫 tests/export-terms.test.ts 会拦回退。
 const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string; ext: string }[] = [

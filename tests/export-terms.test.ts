@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // ============================================================================
-// 「导出与导入」术语守卫（2026-09-30）
+// 「导入与导出」术语守卫（2026-09-30 立；2026-10-10 按用户要求把词序改成「导入与导出」）
 //
 // 背景：同一个功能曾有三套叫法——设置项与页标题叫「备份与恢复」、页内分段与按钮叫
 // 「导出 / 导入」、格式清单里又叫「JSON 备份包」。用户进设置页点「备份与恢复」，
@@ -37,23 +37,33 @@ const FILES = [
   'lib/client/import.ts',
 ]
 
-describe('导出与导入 · 术语统一', () => {
+describe('导入与导出 · 术语统一', () => {
   it('T0 解析自检：四个文件都读到了（防空转）', () => {
     for (const f of FILES) expect(code(f).length, `${f} 读不到内容`).toBeGreaterThan(500)
   })
 
   it('T1 功能名在入口、页标题、读屏标签三处完全一致', () => {
-    expect(code('components/SettingsView.tsx')).toContain('>导出与导入</p>')
+    expect(code('components/SettingsView.tsx')).toContain('>导入与导出</p>')
     const page = code('components/BackupRestoreView.tsx')
-    expect(page).toContain('text-lg font-semibold">导出与导入</h1>')
-    expect(page).toContain('aria-label="导出与导入"')
+    expect(page).toContain('text-lg font-semibold">导入与导出</h1>')
+    expect(page).toContain('aria-label="导入与导出"')
   })
 
-  it('T2 页内分段与功能名同词根（导出 / 导入），不是另一套词', () => {
+  it('T2 页内分段与功能名同词根，且**顺序与功能名一致**（导入在前、导出在后）', () => {
     // 去掉空白再比对，避免把缩进写死在断言里
     const page = code('components/BackupRestoreView.tsx').replace(/\s+/g, '')
-    expect(page).toContain('>导出</button>')
     expect(page).toContain('>导入</button>')
+    expect(page).toContain('>导出</button>')
+    // ★ 顺序（2026-10-10 用户要求）：分段第一个必须是「导入」，与设置项名称「导入与导出」同序。
+    //   原先入口叫「导出与导入」而分段也是导出在前 —— 词序不一致本身就是这次的改动点。
+    expect(
+      page.indexOf('>导入</button>'),
+      '分段顺序反了：应与设置项名称「导入与导出」同序（导入在前）',
+    ).toBeLessThan(page.indexOf('>导出</button>'))
+    // 顺序对了但打开时默认选中「导出」，观感仍然不一致 ⇒ 默认段必须也是「导入」
+    expect(page, '默认分段不是「导入」—— 顺序调了但打开时高亮的还是导出').toMatch(
+      /useState<'export'\|'import'>\('import'\)/,
+    )
   })
 
   it('T3 旧词已从全流程清除（备份与恢复 / 备份包 / 备份文件）', () => {
@@ -76,10 +86,10 @@ describe('导出与导入 · 术语统一', () => {
     }
   })
 
-  it('T5 设置项的副标题与标题同源（描述的是"导出 / 导入"，不是"备份"）', () => {
+  it('T5 设置项的副标题与标题同源，且顺序一致（先导入后导出）', () => {
     // 两者必须**相邻**：只断言「都在文件里」会漏掉"标题改回来了、副标题没跟着改"这种情况
     expect(code('components/SettingsView.tsx')).toMatch(
-      />导出与导入<\/p>\s*<p className="[^"]*">把日记导出为文件，或从文件导入<\/p>/,
+      />导入与导出<\/p>\s*<p className="[^"]*">把日记从文件导入，或导出为文件<\/p>/,
     )
   })
 
