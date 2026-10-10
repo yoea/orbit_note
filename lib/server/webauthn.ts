@@ -12,6 +12,7 @@ import type {
   WebAuthnCredential,
 } from '@simplewebauthn/server'
 import { env } from './env'
+import { buildPasskeyUserNames } from './passkey-name'
 
 export const rpID = env.WEBAUTHN_RP_ID
 export const rpName = env.WEBAUTHN_RP_NAME
@@ -38,12 +39,17 @@ export function takeChallenge(token: string, type: 'register' | 'login'): string
   return entry.challenge
 }
 
-export async function generateRegisterOptions() {
+export async function generateRegisterOptions(displayBase?: string | null) {
+  // 账户名：有用户名 → 「Ethan的Orbit」；没有（首次 setup）→ 「Orbit_User」。
+  // 规则与字节上限见 lib/server/passkey-name.ts（纯函数，可单测）。
+  const { name, displayName } = buildPasskeyUserNames(displayBase)
   return generateRegistrationOptions({
     rpName,
     rpID,
-    userName: 'orbit_user',
-    userDisplayName: 'Orbit User',
+    userName: name,
+    userDisplayName: displayName,
+    // ★ userID 刻意**固定**：同一 RP 下的所有通行密钥代表同一个用户，改它会变成"另一个账户"，
+    //   系统通行密钥列表里会多出一个孤立分组。只有展示名随用户名变化（上面两行）。
     userID: new TextEncoder().encode('quiet-orbit-owner'),
     attestationType: 'none',
     authenticatorSelection: {

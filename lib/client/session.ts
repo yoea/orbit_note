@@ -8,6 +8,12 @@ import type { WrappedKeyRow } from './types'
 // PRF 不可用/无结果错误码：登录页据此切换到 Recovery Key 输入模式
 export const PRF_UNAVAILABLE = 'prf_unavailable'
 
+// 「这把通行密钥没有完成设置」错误码（客户端判定，不来自服务器）：
+// 认证本身成功了，但这把钥匙在库里**没有对应的 PRF wrapper** ⇒ 永远解不开 DEK。
+// 与 PRF_UNAVAILABLE 必须分开：后者是「浏览器不支持 PRF」的正常降级路径（静默切恢复密钥），
+// 前者是「这把钥匙是坏的」，要给用户一句明确的话 + 一个可操作的出路。
+export const INCOMPLETE_CREDENTIAL = 'incomplete_credential'
+
 // 服务器错误码 → 用户可读的中文提示（登录页显示；未列出的码原样透传便于定位）
 export const LOGIN_ERRORS: Record<string, string> = {
   unknown_credential: '此通行密钥不存在或已被删除',
@@ -16,6 +22,20 @@ export const LOGIN_ERRORS: Record<string, string> = {
   counter_replay_detected: '通行密钥验证异常，请重新注册',
   challenge_expired: '验证已过期，请重试',
   too_many_requests: '操作太频繁，请稍后再试',
+  [INCOMPLETE_CREDENTIAL]: '这把通行密钥没有完成设置，无法解锁日记。请改用其他通行密钥或恢复密钥登录，登录后在「设置 → 通行密钥」中删除它',
+}
+
+/**
+ * 归一化 credentialId 后再比较：同一把凭据在不同浏览器 / 系统版本上返回的 base64url
+ * 可能在填充或大小写上不同（服务器侧也做同样的归一化，见 /api/auth/login）。
+ * 不归一化时会出现「wrapper 明明存在却找不到」的假阴性。
+ */
+function normalizeCredentialId(id: string): string {
+  try {
+    return toBase64Url(fromBase64Url(id))
+  } catch {
+    return id
+  }
 }
 
 // credentialCount / prfWrappers / hasRecoveryWrapper 仅在已认证时由服务端返回
@@ -39,7 +59,7 @@ export interface LoginResult {
 // 被迫重复 Face ID——sessionStorage 在导航/重载后保留（同标签页会话），DEK 自动恢复。
 // 安全权衡（用户确认）：sessionStorage 为会话级（关闭标签页清除、不落盘），
 // XSS 威胁模型下与内存持有等价（脚本均可访问）。
-import { fromBase64, toBase64, toBase64Url } from './crypto/base64'
+import { fromBase64, fromBase64Url, toBase64, toBase64Url } from './crypto/base64'
 import { cacheWrappersForOffline, getCachedWrappers, isOfflineUnlockAvailable, requestPersistentStorage } from './offline'
 
 const DEK_KEY = '__orbit_dek__'
@@ -126,7 +146,10 @@ export async function loginWithPasskey(): Promise<LoginResult> {
       // 输出也各不相同。必须用"与本次认证凭证匹配"的 wrapper 解包（每把钥匙一个 wrapper，
       // credentialId 对应）。取第一个 wrapper 在单钥匙时恰好正确，多钥匙时必然解包失败。
       const assertionId = typeof assertion.id === 'string' ? assertion.id : null
-      const prfWrapper = wrappers.find((w) => w.wrapperType === 'passkey_prf' && w.credentialId === assertionId)
+      const prfWrapper = wrappers.find(
+        (w) => w.wrapperType === 'passkey_prf' && w.credentialId != null && assertionId != null
+          && normalizeCredentialId(w.credentialId) === normalizeCredentialId(assertionId),
+      )
       if (prfWrapper) {
         try {
           const kek = await derivePrfKek(prfResult, prfWrapper.salt)
@@ -141,7 +164,13 @@ export async function loginWithPasskey(): Promise<LoginResult> {
           return { ok: false, error: '解锁失败', via: null }
         }
       }
-      return { ok: false, error: PRF_UNAVAILABLE, via: null }
+      // ★ 走到这里 = 认证成功（服务器已验过签名），但这把钥匙**没有对应的 PRF wrapper**：
+      //   注册流程是「先登记凭据 → 再认证一次拿 PRF 输出 → 存 wrapper」三段，用户在第三段
+      //   放弃（取消系统弹窗）或那一步失败（网络断），库里就只剩前两段的产物。
+      //   这种钥匙能通过认证却永远解不开 DEK —— 必须与 PRF_UNAVAILABLE 分开报错：
+      //   后者是「浏览器不支持 PRF」的正常降级（登录页静默切恢复密钥模式），
+      //   前者要明确告诉用户「这把钥匙是坏的，登录后去设置里删掉」。
+      return { ok: false, error: INCOMPLETE_CREDENTIAL, via: null }
     }
     // PRF 无结果（浏览器不支持）→ 前端转入 recovery 输入模式
     return { ok: false, error: PRF_UNAVAILABLE, via: null }

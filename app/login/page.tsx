@@ -2,22 +2,26 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { LOGIN_ERRORS, PRF_UNAVAILABLE, fetchSession, getDek, unlockWithRecoveryKey, unlockWithPasskeyAuto } from '@/lib/client/session'
+import { INCOMPLETE_CREDENTIAL, LOGIN_ERRORS, PRF_UNAVAILABLE, fetchSession, getDek, unlockWithRecoveryKey, unlockWithPasskeyAuto } from '@/lib/client/session'
 import { isOfflineUnlockAvailable } from '@/lib/client/offline'
 import OrbitLogo from '@/components/OrbitLogo'
 import VersionFooter from '@/components/VersionFooter'
 
 export default function LoginPage() {
   const router = useRouter()
+  // 首页守卫踢回时携带原因（诊断）；`incomplete` 是解锁入口带过来的「这把钥匙没完成设置」。
+  // ★ 必须放在 useState 之前：要用它给 mode 做**惰性初值**（见下），而不是在 effect 里 setState
+  //   （react-hooks/set-state-in-effect 会把 effect 内的直接 setState 判为错误）。
+  const reason = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('reason')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState(false)
-  const [mode, setMode] = useState<'passkey' | 'recovery'>('passkey')
+  // reason=incomplete 时直接以恢复密钥模式开场 —— 此刻那是用户唯一的出路
+  // （登录进去之后可以在「设置 → 通行密钥」里删掉那把坏钥匙）。
+  const [mode, setMode] = useState<'passkey' | 'recovery'>(reason === 'incomplete' ? 'recovery' : 'passkey')
   const [recoveryKey, setRecoveryKey] = useState('')
   // 通行密钥登录失败过 → 才显示"使用恢复密钥"入口（平时不打扰）
   const [passkeyFailed, setPasskeyFailed] = useState(false)
-  // 首页守卫踢回时携带原因（诊断）
-  const reason = typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('reason')
   useEffect(() => {
     void (async () => {
       try {
@@ -54,6 +58,15 @@ export default function LoginPage() {
         return
       }
       if (result.error === PRF_UNAVAILABLE) { setMode('recovery'); return }
+      // 未完成设置的钥匙（注册最后一步没走完）：必须**说出原因**再送去恢复密钥。
+      // ★ 不能与上面的 PRF_UNAVAILABLE 合并：那条是「浏览器不支持 PRF」的正常降级，
+      //   静默切换是对的；这条静默切换就是用户报的「验证之后没反应」——Face ID 过了，
+      //   界面只是默默换成了恢复密钥输入框。
+      if (result.error === INCOMPLETE_CREDENTIAL) {
+        setMode('recovery')
+        setError(LOGIN_ERRORS[INCOMPLETE_CREDENTIAL])
+        return
+      }
       // 通行密钥被禁用：直接切到恢复密钥输入（可恢复的明确路径）。
       // 注意：恢复密钥只解锁数据，不会解除禁用——禁用状态要在设置页手动重新启用。
       if (result.error === LOGIN_ERRORS.disabled_credential) {
@@ -163,6 +176,12 @@ export default function LoginPage() {
       {error && <p className="text-sm text-red-500">{error}</p>}
       {reason === 'no-dek' && <p className="text-sm text-amber-600 dark:text-amber-400">解锁未完成：密钥未载入内存（诊断 no-dek）</p>}
       {reason === 'no-auth' && <p className="text-sm text-amber-600 dark:text-amber-400">会话未建立（诊断 no-auth）</p>}
+      {/* 从解锁入口跳来：那把钥匙没完成设置（详见 lib/client/session.ts 的 INCOMPLETE_CREDENTIAL） */}
+      {reason === 'incomplete' && (
+        <p className="text-sm text-amber-600 dark:text-amber-400">
+          这把通行密钥没有完成设置，无法解锁日记。请用恢复密钥登录，登录后在「设置 → 通行密钥」中删除它
+        </p>
+      )}
       {mode === 'recovery' && (
         <button
           onClick={() => { setMode('passkey'); setPasskeyFailed(false); setError(null) }}

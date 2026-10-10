@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { PRF_UNAVAILABLE, fetchSession, getDek, initDek, unlockWithPasskeyAuto } from './session'
+import { INCOMPLETE_CREDENTIAL, PRF_UNAVAILABLE, fetchSession, getDek, initDek, unlockWithPasskeyAuto } from './session'
 import { isOfflineUnlockAvailable } from './offline'
 
 export type UnlockState = 'loading' | 'ready' | 'need-unlock' | 'error'
@@ -58,6 +58,10 @@ export function useRequireUnlock(): { state: UnlockState; retryUnlock: () => Pro
       const result = await unlockWithPasskeyAuto()
       if (result.ok && getDek()) { setState('ready'); return null }
       if (result.error === PRF_UNAVAILABLE) { router.replace('/login'); return null }
+      // 这把钥匙没完成设置（注册最后一步没走完）⇒ 登录页有恢复密钥入口与说明，带 reason 过去。
+      // ★ 不走下面的「自动重试一次」：那把钥匙试几次都解不开，重试只会再弹一次 Face ID，
+      //   把「验证之后没反应」从一次变成两次。
+      if (result.error === INCOMPLETE_CREDENTIAL) { router.replace('/login?reason=incomplete'); return null }
       if (!isRetry) {
         retriedRef.current = true
         // 首次失败不向调用方报错，稍后自动重试一次

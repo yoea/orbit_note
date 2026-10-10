@@ -18,7 +18,14 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'already_initialized' }, { status: 403 })
   }
   const { token, challenge } = storeChallenge('register')
-  const options = await generateRegisterOptions()
+  // 账户显示名（用户自己的名字）：只用于把通行密钥命名成「X的Orbit」（用户要求）。
+  // ★ 走查询串 ⇒ 必须净化：去掉控制/格式字符（Cc/Cf）+ 限长 32 字符。
+  //   它不参与任何校验，也不会入库（服务器上用户名始终是 DEK 加密存储的）。
+  const rawName = new URL(req.url).searchParams.get('name')
+  const displayName = rawName
+    ? rawName.replace(/[\p{Cc}\p{Cf}]/gu, '').slice(0, 32).trim() || null
+    : null
+  const options = await generateRegisterOptions(displayName)
   // 用我们存储的 challenge 覆盖库生成的（保证与验证时一致）
   return NextResponse.json({ token, options: { ...options, challenge } })
 }

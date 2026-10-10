@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { registerPasskey, authenticatePasskey } from '@/lib/client/webauthn'
 import { detectDeviceName } from '@/lib/client/device'
 import { getDek } from '@/lib/client/session'
+import { useUserName } from '@/lib/client/use-user-name'
 import { derivePrfKek, wrapWithKek } from '@/lib/client/crypto/setup'
 import { fromBase64Url } from '@/lib/client/crypto/base64'
 import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
@@ -18,15 +19,42 @@ import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 // PRF 不变量（别改）：所有通行密钥必须共用**同一个** PRF eval 输入 S，即第一个 wrapper 的 salt。
 // 新注册时把现有 S 注入 registration，之后用同一个 S 派生 KEK 包裹 DEK——若这里生成新 S，
 // 新旧凭据将解不开同一份 DEK。
+//
+// ★ 不变量：**要么跑完，要么清理**（2026-10-10 补）。
+//   本流程是四段：①取 S → ②注册凭据（服务器落库）→ ③用新钥匙认证一次拿 PRF 输出 →
+//   ④存 wrapper。②③之间用户放弃（取消系统弹窗）或失败（网络断），库里就会留下
+//   一把「认证能过、解不开日记」的坏钥匙。因此 catch 里会用刚拿到的 credentialId
+//   调 purge 尽力清掉；清不掉就明确引导去设置页删除（那边会标成「未完成」）。
+//   列表接口（/api/keys/passkeys）返回的 `ready` 就是「④是否完成」。
+/**
+ * 尽力删掉「注册已登记、但后续步骤没跑完」的凭据（见下方 add 的注释）。
+ * 404 也算成功 —— 注册请求本身可能就没落库，我们的目的只是**别留下坏钥匙**，
+ * 而不是精确报告服务器状态。失败时返回一句给用户看的话（引导去设置页手动删除）。
+ */
+async function purgeRegistered(credentialId: string): Promise<string> {
+  const fallback = '这把通行密钥未完成设置，请在「设置 → 通行密钥」中删除它'
+  try {
+    const res = await fetch(`/api/keys/passkeys/${encodeURIComponent(credentialId)}/purge`, { method: 'POST' })
+    return res.ok || res.status === 404 ? '已清理这次注册，可直接重试' : fallback
+  } catch {
+    return fallback
+  }
+}
+
 export default function AddPasskeyPanel({ onAdded }: {
   onAdded: () => void
 }) {
   const router = useRouter()
+  const userName = useUserName()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function add() {
     setBusy(true); setError(null)
+    // 服务器已登记的凭据 id：从注册接口成功那一刻起，本函数就负责「要么跑完、要么清理」。
+    // 不清理的后果是一把**认证能过、却解不开日记**的坏钥匙 —— 用户拿它登录会觉得
+    // 「验证之后没反应」（根因与判定见 lib/client/session.ts 的 INCOMPLETE_CREDENTIAL）。
+    let registeredId: string | null = null
     try {
       const dek = getDek()
       if (!dek) { router.replace('/login'); return }
@@ -39,7 +67,10 @@ export default function AddPasskeyPanel({ onAdded }: {
       const prfEvalBytes = fromBase64Url(prfEval)
 
       // 2. 注册新 Passkey（注入同一个 S，绝不生成新的）
-      const optsRes = await fetch('/api/auth/register/options')
+      //    ?name= 让认证器把账户命名成「X的Orbit」（用户要求）；无用户名时服务器回退 Orbit_User。
+      const optsRes = await fetch(
+        `/api/auth/register/options${userName ? `?name=${encodeURIComponent(userName)}` : ''}`,
+      )
       if (!optsRes.ok) throw new Error('网络错误，请重试')
       const { token, options } = await optsRes.json()
       const { registration, prfEnabled } = await registerPasskey(options, prfEvalBytes)
@@ -50,6 +81,8 @@ export default function AddPasskeyPanel({ onAdded }: {
         body: JSON.stringify({ token, registration, device: detectDeviceName(navigator.userAgent) }),
       })
       if (!regResp.ok) throw new Error('注册失败')
+      // 从这一刻起服务器已登记这把凭据：之后任何失败都必须在 catch 里把它清掉
+      registeredId = (registration as { id?: string }).id ?? null
 
       // 3. 重新获取登录选项（新 token）→ 认证新 Passkey 获取 PRF 输出（eval 输入仍是同一个 S）
       const authOptsRes = await fetch('/api/auth/login/options')
@@ -69,7 +102,7 @@ export default function AddPasskeyPanel({ onAdded }: {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           wrapperType: 'passkey_prf',
-          credentialId: (registration as { id?: string }).id ?? '',
+          credentialId: registeredId ?? '',
           encryptedDek: wrapped.encryptedDek,
           salt: prfEval, // 复用同一个 S！
           encryptionVersion: 1,
@@ -80,7 +113,10 @@ export default function AddPasskeyPanel({ onAdded }: {
       // 成功后交回上层：它负责刷新列表并切回列表视图（不再跳转路由）
       onAdded()
     } catch (e) {
-      setError(e instanceof Error ? e.message : '添加失败')
+      const msg = e instanceof Error ? e.message : '添加失败'
+      // ★ 收尾清理：注册已登记、但「认证取 PRF / 存 wrapper」没跑完 ⇒ 这把钥匙是坏的。
+      //   清掉它，用户就能直接重试；清不掉（离线等）就明确告诉他去设置页删。
+      setError(registeredId ? `${msg}（${await purgeRegistered(registeredId)}）` : msg)
     } finally {
       setBusy(false)
     }
