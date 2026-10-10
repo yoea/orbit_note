@@ -214,23 +214,33 @@ describe('未完成设置的通行密钥', () => {
 // ============================================================================
 // 四、「启用 ▾」下拉（用户要求：禁用之后不该只能启用，还要能删）
 // ============================================================================
-describe('已禁用钥匙的「启用 ▾」下拉', () => {
-  it('N13 下拉含「启用」「删除」两项，删除走 purge 而不是软禁用的 DELETE', () => {
+describe('已禁用钥匙的两个按钮与信息行', () => {
+  it('N13 已禁用行直接并排「启用」「删除」两个按钮（不再有折叠展开）', () => {
     const src = code(DIALOG)
-    expect(src, '没有下拉语义').toContain('aria-haspopup="menu"')
-    expect(src).toContain('role="menu"')
-    expect((src.match(/role="menuitem"/g) ?? []).length, '菜单里应恰好两项：启用、删除').toBe(2)
-    const menu = between(src, 'role="menu"', '</div>')
-    expect(menu, '菜单里没有「启用」').toContain('void enable(pk)')
-    expect(menu, '菜单里没有「删除」').toContain('setRemoving(pk)')
+    // 用户要求（2026-10-10）：禁用后按钮那里就变成 2 个按钮，不要折叠展开
+    for (const gone of ['aria-haspopup', 'setMenuFor', 'role="menuitem"']) {
+      expect(src, `折叠展开那一级又回来了（源码里出现「${gone}」）`).not.toContain(gone)
+    }
+    const branch = between(src, ') : pk.disabled ? (', ') : (')
+    expect(branch, '已禁用行不是并排两个按钮').toContain('flex shrink-0 gap-1.5')
+    expect(branch, '少了「启用」').toContain('void enable(pk)')
+    expect(branch, '少了「删除」').toContain('setRemoving(pk)')
     // 删除必须是硬删除（purge），不能复用软禁用的 DELETE
     expect(src, '删除没有走 purge 接口').toContain('fetch(`/api/keys/passkeys/${pk.id}/purge`')
   })
 
-  it('N14 下拉是行内展开，不是绝对定位浮层（浮层会被弹窗滚动区裁掉）', () => {
+  it('N14 信息行独占一整行：去掉凭证尾号、「添加于」是天数、「最近使用」带冒号', () => {
     const src = code(DIALOG)
-    const menu = between(src, 'role="menu"', '</div>')
-    expect(menu, '菜单用了浮层定位 —— 本弹窗滚动区是 overflow-y-auto，底部那几行会被裁掉').not.toContain('absolute')
+    // 用户反馈「最近使用被截断」：它原先与凭证尾号挤在按钮左侧，两个按钮一进来就只剩 ~160px。
+    expect(src, '凭证尾号又出现在列表里了（它会把「最近使用」挤掉）').not.toContain('{pk.credentialIdMasked}')
+    const infoAt = pos(src, '添加于 {daysAgo(pk.createdAt)}')
+    expect(infoAt, '信息行必须排在按钮行之后（独占整行，才不会被挤断）').toBeGreaterThan(
+      pos(src, '<div className="flex items-center justify-between gap-3">'),
+    )
+    expect(src, '没有「x 天前」的换算').toContain("return days <= 0 ? '今天' : `${days} 天前`")
+    expect(src, '「最近使用」丢了冒号或完整日期时间').toContain('最近使用：${fmtDateTime(pk.lastUsedAt)}')
+    // 反面：旧的那两个短格式函数不该再被用到
+    expect(src).not.toContain('fmtShortTime')
   })
 
   it('N15 删除是破坏性操作：必须二次确认，且最后一个可用钥匙要给出强提示', () => {

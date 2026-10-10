@@ -26,9 +26,12 @@ export interface PasskeyInfo {
 //     （用户取消弹窗 / 网络断 / 直接关掉页面）。这种钥匙**认证会成功但永远解不开日记**，
 //     唯一出路是**删除**后重新添加。上面的 `ready` 就是它。
 //
-// 已禁用的行：右侧是「启用 ▾」——点开出现「启用」「删除」两项（用户要求：
-// 禁用之后不该只能启用，还得能彻底删掉）。用行内展开而不是浮层下拉：
-// 本弹窗的滚动区是 `max-h-[70dvh] overflow-y-auto`，浮层会被它裁掉，行内展开没有这个问题。
+// 已禁用的行：右侧**并排两个按钮**（启用 / 删除）—— 2026-10-10 用户要求：
+// 原先的「启用 ▾」折叠展开多一步，禁用之后不该只能启用，就该直接给两个按钮。
+//
+// 信息行（「添加于 x 天前 · 最近使用：…」）**独占一整行**，排在按钮行之后：
+// 2026-10-10 用户反馈「最近使用被截断」—— 根因是它原先与凭证尾号一起挤在按钮左侧，
+// 禁用后右侧变成两个按钮，留给它的宽度只剩 ~160px。现在去掉凭证尾号 + 整行独占。
 //
 // 数据由设置页预取后传入（initialData）——弹窗打开第一帧即完整列表，无加载闪烁；
 // 预取失败（initialData=null）时显示错误 + 重试。
@@ -46,8 +49,6 @@ export default function PasskeysDialog({ initialData, onClose }: {
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<PasskeyInfo | null>(null)
   const [busy, setBusy] = useState(false)
-  // 「启用 ▾」下拉展开在哪一行（同一时刻只开一个）
-  const [menuFor, setMenuFor] = useState<string | null>(null)
   // 待确认**删除**（硬删除）的那一条
   const [removing, setRemoving] = useState<PasskeyInfo | null>(null)
 
@@ -118,15 +119,16 @@ export default function PasskeysDialog({ initialData, onClose }: {
     }
   }
 
-  // "月-日"短格式（同一列表里年份冗余）
-  const fmtShort = (s: string) => {
-    const d = new Date(s)
-    return `${d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}`
+  // 「添加于 x 天前」——按**自然日**算（23:59 注册、00:01 查看不该算成 1 天前）
+  const daysAgo = (s: string) => {
+    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+    const days = Math.round((startOfDay(new Date()) - startOfDay(new Date(s))) / 86_400_000)
+    return days <= 0 ? '今天' : `${days} 天前`
   }
-  // "月-日 时:分"（最近使用需要精确到时间）
-  const fmtShortTime = (s: string) => {
+  // 完整日期 + 时间（2026/10/10 11:23）——「最近使用」要能一眼看出是哪天
+  const fmtDateTime = (s: string) => {
     const d = new Date(s)
-    return `${d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+    return `${d.toLocaleDateString('zh-CN')} ${d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}`
   }
   // 还能真正解锁日记的钥匙数量（未完成的不算，已禁用的不算）——用于删除确认的强提示
   const usableCount = passkeys.filter((p) => p.ready && !p.disabled).length
@@ -177,91 +179,68 @@ export default function PasskeysDialog({ initialData, onClose }: {
             {passkeys.map((pk) => (
               <li key={pk.id} className="py-3 first:pt-0 last:pb-0">
                 <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <p className="flex items-center gap-1.5 text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                    <span className={pk.disabled ? 'text-neutral-500 dark:text-neutral-400' : undefined}>{pk.device ?? '未知设备'}</span>
-                    {/* 当前会话登录用的那把 key（登录后自动标注） */}
-                    {pk.isCurrent && !pk.disabled && (
-                      <span className="rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">当前</span>
-                    )}
-                    {/* 未完成（无 PRF wrapper）：注册最后一步没走完，认证能过但解不开日记 */}
-                    {!pk.ready ? (
-                      <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">未完成</span>
-                    ) : pk.disabled && (
-                      /* 已禁用（软禁用，可重新启用或彻底删除） */
-                      <span className="rounded-full bg-neutral-500/10 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 dark:text-neutral-400">已禁用</span>
-                    )}
-                  </p>
-                  {/* 信息行：添加/最近使用左对齐，凭证尾号右对齐（信息区 flex-1 撑满至按钮左侧） */}
-                  <div className="mt-0.5 flex items-baseline justify-between gap-2">
-                    <span className="min-w-0 truncate text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
-                      添加于 {fmtShort(pk.createdAt)} · {pk.lastUsedAt ? `最近使用 ${fmtShortTime(pk.lastUsedAt)}` : '从未使用'}
-                    </span>
-                    <span className="shrink-0 font-mono text-xs text-neutral-500 dark:text-neutral-400">{pk.credentialIdMasked}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-neutral-800 dark:text-neutral-200">
+                      <span className={pk.disabled ? 'text-neutral-500 dark:text-neutral-400' : undefined}>{pk.device ?? '未知设备'}</span>
+                      {/* 当前会话登录用的那把 key（登录后自动标注） */}
+                      {pk.isCurrent && !pk.disabled && (
+                        <span className="rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">当前</span>
+                      )}
+                      {/* 未完成（无 PRF wrapper）：注册最后一步没走完，认证能过但解不开日记 */}
+                      {!pk.ready ? (
+                        <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">未完成</span>
+                      ) : pk.disabled && (
+                        /* 已禁用（软禁用，可重新启用或彻底删除） */
+                        <span className="rounded-full bg-neutral-500/10 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 dark:text-neutral-400">已禁用</span>
+                      )}
+                    </p>
                   </div>
-                </div>
-                {!pk.ready ? (
-                  /* 未完成：只能删除（它既没有「启用」的意义，也不该让人以为可以救活） */
-                  <button
-                    onClick={() => setRemoving(pk)}
-                    disabled={busy}
-                    className="shrink-0 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
-                  >
-                    删除
-                  </button>
-                ) : pk.disabled ? (
-                  /* 已禁用：「启用 ▾」——点开出现「启用」「删除」（用户要求：禁用之后不该只能启用）。
-                     用**行内展开**而不是浮层下拉：本弹窗的滚动区是 overflow-y-auto，浮层会被裁掉。 */
-                  <button
-                    onClick={() => setMenuFor((v) => (v === pk.id ? null : pk.id))}
-                    disabled={busy}
-                    aria-expanded={menuFor === pk.id}
-                    aria-haspopup="menu"
-                    className="flex shrink-0 items-center gap-0.5 rounded-lg bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
-                  >
-                    启用
-                    {/* 展开时箭头转向下（静态旋转，不引入过渡属性） */}
-                    <svg
-                      aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                      strokeLinecap="round" strokeLinejoin="round"
-                      className={`h-3 w-3 shrink-0 ${menuFor === pk.id ? 'rotate-90' : ''}`}
-                    >
-                      <path d="M9 18l6-6-6-6" />
-                    </svg>
-                  </button>
-                ) : (
-                  /* 可用：禁用（红色填充小按钮，破坏性语义，样式与主题按钮统一） */
-                  <button
-                    onClick={() => setConfirming(pk)}
-                    disabled={busy}
-                    className="shrink-0 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
-                  >
-                    禁用
-                  </button>
-                )}
-                </div>
-                {/* 「启用 ▾」展开的菜单。条件里重复校验 ready/disabled：菜单开着的时候
-                    列表可能已被刷新（如另一处启用了它），不能让陈旧菜单继续显示。 */}
-                {menuFor === pk.id && pk.ready && pk.disabled && (
-                  <div role="menu" className="mt-2 flex justify-end gap-2">
+                  {!pk.ready ? (
+                    /* 未完成：只能删除（它既没有「启用」的意义，也不该让人以为可以救活） */
                     <button
-                      role="menuitem"
-                      onClick={() => { setMenuFor(null); void enable(pk) }}
+                      onClick={() => setRemoving(pk)}
                       disabled={busy}
-                      className="rounded-lg bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
-                    >
-                      启用
-                    </button>
-                    <button
-                      role="menuitem"
-                      onClick={() => { setMenuFor(null); setRemoving(pk) }}
-                      disabled={busy}
-                      className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
+                      className="shrink-0 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
                     >
                       删除
                     </button>
-                  </div>
-                )}
+                  ) : pk.disabled ? (
+                    /* 已禁用：**直接并排两个按钮**（启用 / 删除）。
+                       2026-10-10 用户要求去掉「启用 ▾」折叠那一级 —— 一步可达，不用先展开。 */
+                    <div className="flex shrink-0 gap-1.5">
+                      <button
+                        onClick={() => void enable(pk)}
+                        disabled={busy}
+                        className="rounded-lg bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
+                      >
+                        启用
+                      </button>
+                      <button
+                        onClick={() => setRemoving(pk)}
+                        disabled={busy}
+                        className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ) : (
+                    /* 可用：禁用（红色填充小按钮，破坏性语义，样式与主题按钮统一） */
+                    <button
+                      onClick={() => setConfirming(pk)}
+                      disabled={busy}
+                      className="shrink-0 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
+                    >
+                      禁用
+                    </button>
+                  )}
+                </div>
+                {/* 信息行：**独占一整行**（排在按钮行之后），因此永远不会被按钮挤断。
+                    2026-10-10 用户反馈「最近使用被截断」—— 根因是它原先与凭证尾号挤在按钮左侧，
+                    禁用后右侧变成两个按钮，留给它的宽度只剩 ~160px。同时按用户要求：
+                    去掉凭证尾号、把「添加于」改成天数。 */}
+                <p className="mt-1 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+                  添加于 {daysAgo(pk.createdAt)} · {pk.lastUsedAt ? `最近使用：${fmtDateTime(pk.lastUsedAt)}` : '从未使用'}
+                </p>
               </li>
             ))}
           </ul>
