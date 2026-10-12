@@ -6,6 +6,7 @@ import { INCOMPLETE_CREDENTIAL, LOGIN_ERRORS, PRF_UNAVAILABLE, fetchSession, get
 import { isOfflineUnlockAvailable } from '@/lib/client/offline'
 import OrbitLogo from '@/components/OrbitLogo'
 import VersionFooter from '@/components/VersionFooter'
+import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -143,11 +144,12 @@ export default function LoginPage() {
           <button
             onClick={() => void handlePasskey()}
             disabled={busy}
-            /* flex + justify-center：图标与文字成一行居中（按钮默认 text-align:center 只对
-               纯文本有效，加了图标就必须自己排）。
-               尺寸比全站主按钮（PRIMARY_BUTTON_CLASS 的 py-4/text-base）小一档
-               （2026-10-12 用户要求「按钮缩小一点」）。 */
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white active:scale-[0.98] disabled:opacity-50"
+            /* 尺寸/圆角/字号与写页「保存」**同一个来源**（PRIMARY_BUTTON_CLASS，
+               2026-10-12 用户要求统一）：这里原先手写了一份「小一档」的串
+               （py-3 / text-sm / rounded-xl），那正是 primary-button.test.ts 要防的漂移。
+               额外加 flex + justify-center + gap-2：按钮默认的 text-align:center 只能居中
+               纯文本，里面放了图标就必须自己排（否则图标贴左、文字居中会散开）。 */
+            className={`${PRIMARY_BUTTON_CLASS} ${BRAND_GRADIENT_CLASS} flex items-center justify-center gap-2`}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0" aria-hidden>
               <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
@@ -182,7 +184,10 @@ export default function LoginPage() {
             spellCheck={false}
             className="rounded-xl border border-neutral-200 px-4 py-3 text-base outline-none focus:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
           />
-          <button type="submit" disabled={busy || !recoveryKey.trim()} className="rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white disabled:opacity-50">
+          {/* 与上面那颗主按钮**同一个样式源**（PRIMARY_BUTTON_CLASS）——
+              同一页上的两个「登录」按钮不能一个高一个矮（这正是 primary-button.test.ts
+              当初存在的理由）。它没有图标，所以不需要 flex/justify-center。 */}
+          <button type="submit" disabled={busy || !recoveryKey.trim()} className={`${PRIMARY_BUTTON_CLASS} ${BRAND_GRADIENT_CLASS}`}>
             {busy ? '正在登录…' : '登录'}
           </button>
         </form>

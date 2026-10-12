@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import OrbitLogo from './OrbitLogo'
 import VersionFooter from './VersionFooter'
+import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 
 // 手动解锁入口（留在当前页）；单次认证完成登录+解锁。
 // 点击后立即唤起系统通行密钥弹窗（userVerification: discouraged——不自动识别，
@@ -48,11 +49,12 @@ export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<str
           <button
             onClick={() => void handleUnlock()}
             disabled={busy}
-            /* flex + justify-center：图标与文字成一行居中（按钮默认 text-align:center 只对
-               纯文本有效，加了图标就必须自己排）。
-               尺寸比全站主按钮（PRIMARY_BUTTON_CLASS 的 py-4/text-base）小一档
-               （2026-10-12 用户要求「按钮缩小一点」）。 */
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white active:scale-[0.98] disabled:opacity-50"
+            /* 尺寸/圆角/字号与写页「保存」**同一个来源**（PRIMARY_BUTTON_CLASS，
+               2026-10-12 用户要求统一）：它原先在这里手写了一份「小一档」的串
+               （py-3 / text-sm / rounded-xl），那正是 primary-button.test.ts 要防的漂移。
+               额外加 flex + justify-center + gap-2：按钮默认的 text-align:center 只能居中
+               纯文本，里面放了图标就必须自己排（否则图标贴左、文字居中会散开）。 */
+            className={`${PRIMARY_BUTTON_CLASS} ${BRAND_GRADIENT_CLASS} flex items-center justify-center gap-2`}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0" aria-hidden>
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
