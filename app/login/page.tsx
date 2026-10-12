@@ -127,33 +127,32 @@ export default function LoginPage() {
         {/* 品牌标识：LOGO + 一句话说明。单独成块是为了让 tagline 与 LOGO 用 12px 间距，
             而整块与下方按钮区仍保持父级 gap-8 的 32px 间距；文字水平居中靠
             items-center + text-center 双重保证（宽度随内容收缩也不会偏）。
-            ★ 身份标识（2026-10-12 用户要求）：下面那枚胶囊是**本页与解锁页唯一的区别**——
-              两页除它之外逐字相同（含按钮文案），用户一直分不清在哪一页。
-              这里是「钥匙 + 登录」，components/UnlockPrompt.tsx 是「锁 + 解锁」；
-              图标与词都必须不同，tests/login-unlock-identity.test.ts 同时钉两边。 */}
+            ★ 身份标识在**主按钮里**（2026-10-12 用户定稿）：钥匙图标 + 「使用通行密钥登录」；
+              解锁页是锁图标 + 「解锁」。身份**融进按钮**、不另占一行 —— 按钮是这屏最大、
+              最先被看到的元素，比挂在 tagline 下面更容易扫到，也少一个元素。
+              ★ 改文案/图标时两页必须同时看：tests/login-unlock-identity.test.ts 双向钉住
+              「图标与词必须不同」，谁把两页抄成一样都会立刻变红。 */}
         <div className="flex flex-col items-center gap-3">
           <OrbitLogo size="lg" />
           <p className="text-center text-xs tracking-wide text-neutral-500 dark:text-neutral-400">
             端到端加密的私人日记。
           </p>
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 px-3 py-1 text-[11px] font-medium text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden>
-              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
-            </svg>
-            登录
-          </span>
         </div>
       {mode === 'passkey' ? (
         <div className="w-full max-w-xs">
           <button
             onClick={() => void handlePasskey()}
             disabled={busy}
-            /* 尺寸比全站主按钮（PRIMARY_BUTTON_CLASS 的 py-4/text-base）小一档
-               （2026-10-12 用户要求「按钮缩小一点」）；文案压成两个字，
-               与解锁页的「解锁」形成对照。 */
-            className="w-full rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white active:scale-[0.98] disabled:opacity-50"
+            /* flex + justify-center：图标与文字成一行居中（按钮默认 text-align:center 只对
+               纯文本有效，加了图标就必须自己排）。
+               尺寸比全站主按钮（PRIMARY_BUTTON_CLASS 的 py-4/text-base）小一档
+               （2026-10-12 用户要求「按钮缩小一点」）。 */
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white active:scale-[0.98] disabled:opacity-50"
           >
-            {busy ? '正在登录…' : '登录'}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0" aria-hidden>
+              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+            </svg>
+            {busy ? '正在验证…' : '使用通行密钥登录'}
           </button>
           {/* 按钮下方原本还有两行小字说明（重复解释通行密钥、并列举行指纹 / 面容 / Hello），
               已删除：按钮文案本身完整，再啰嗦一遍信息增量为零；且那两行是浅灰小字
