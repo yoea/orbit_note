@@ -1,9 +1,16 @@
-// 守卫：查看页底部的两个区域 —— 「编辑于」行 + 4 图标操作栏。
+// 守卫：查看页的**顶部信息行**与**底部 4 图标操作栏**。
 //
 // ★ 2026-09-30 用户要求的三处调整（此前的 F1~F6 是围绕「内容尾行」写的，已整体改写）：
 //   1. 打开次数从尾行搬进操作栏、排在**收藏之前**，四个图标统一 18px / strokeWidth 2；
 //   2. 收藏**去掉文字标签**，状态只由星形表达（实心 = 已收藏）；
-//   3. 「编辑于」不再跟着正文往上浮 —— 用 `mt-auto` 钉在分割线**正上方**，字号再降一档。
+//   3. 「编辑于」不再跟着正文往上浮。
+//
+// ★ 2026-10-12 用户要求（F1 因此改写）：查看页顶部信息行三段太挤
+//   （「2026年10月12日 17:26 · 282 字 · 编辑于 2026年10月12日 17:26」）——
+//   「编辑于」**整段删掉**、这一行字号降到 text-xs，**上次编辑时间只在编辑态显示**
+//   （点编辑图标之后、保存按钮正上方那条「上次编辑 …」）。
+//   ⇒ 那条「编辑于必须并进顶部信息行」的旧断言已作废（它守的是当年的 61px 死区问题，
+//     而 F2/F8 仍然原样守着那个问题）。
 //
 // ★ 这里最容易踩的两个坑（都在本文件里防着）：
 //   · `indexOf` 未命中返回 -1，而 `-1 < 正数` 恒真 ⇒ 所有比较前先断言下标 >= 0
@@ -66,10 +73,10 @@ function windowFrom(hay: string, needle: string, len: number): string {
   return hay.slice(i, i + len)
 }
 
-describe('F · 查看页底部（编辑于行 + 4 图标操作栏）', () => {
+describe('F · 查看页信息行 + 底部 4 图标操作栏', () => {
   it('F0 解析自检：锚点齐全（防断言空转）', () => {
     expect(src.length).toBeGreaterThan(2000)
-    for (const needle of ['MarkdownBoundary', '编辑于', '打开过', BODY, BAR, '-mr-2', 'fmtDate', 'showViews && (']) {
+    for (const needle of ['MarkdownBoundary', '上次编辑', '打开过', BODY, BAR, '-mr-2', 'fmtDate', 'showViews && (']) {
       expect(src, `找不到锚点「${needle}」`).toContain(needle)
     }
     // 被废除的留白行必须**已经不在**（正文本行内容 + 注释里提到它，注释已被剥掉）
@@ -77,15 +84,25 @@ describe('F · 查看页底部（编辑于行 + 4 图标操作栏）', () => {
     expect(attrs.length, '没能解析出任何 class 属性').toBeGreaterThan(10)
   })
 
-  it('F1 「编辑于」在**顶部信息行**里（与「日期 · 字数」同一行），且不在正文/底部', () => {
-    // 2026-10-09 用户要求把「编辑于」并进顶部信息行。
-    // 原因：它原先钉在底部分割线正上方，在正文与操作栏之间占掉 61px，使正文滚到底也
-    // 够不到分割线（用户反馈「内容最下方多出一块空白、内容区没把中间这部分用满」）。
+  it('F1 查看页信息行只有「创建时间 · 字数」，且字号已缩小', () => {
+    // 2026-10-12 用户要求：查看页顶部那行太挤，「编辑于」整段删掉、这行文字缩小，
+    // 上次编辑时间只在点编辑图标之后的编辑页显示。
+    // 判据分两半：
+    //  ① 信息行切片（fmtDate(created) → 正文滚动区之前）里不得再出现「编辑于」；
+    //  ② 「上次编辑」必须在**编辑态**那一段里（BAR 是查看态操作栏的分割线，它更靠后）。
     const created = indexOrFail('fmtDate(created)')
-    const edited = indexOrFail('编辑于')
     const bodyAt = indexOrFail(BODY)
-    expect(edited, '「编辑于」跑到创建时间前面去了').toBeGreaterThan(created)
-    expect(edited, '「编辑于」不在顶部信息行 —— 它跑到正文或底部去了').toBeLessThan(bodyAt)
+    const row = src.slice(created, bodyAt)
+    expect(row, '「编辑于」又回到查看页信息行了（用户要求删掉）').not.toContain('编辑于')
+    const edited = indexOrFail('上次编辑')
+    expect(edited, '「上次编辑」跑到查看态里去了 —— 它只该出现在编辑态').toBeLessThan(indexOrFail(BAR))
+    // 字号：只认**信息行自己的** class 属性（别拿切片里任意一个 text-xs 充数 ——
+    // 定位块、添加定位面板里都有 text-xs，那种断言等于空转）。
+    const rowAttr = attrs.filter((a) => a.text.includes('flex-wrap') && a.text.includes('tabular-nums'))
+    expect(rowAttr.length, '找不到信息行的 class 属性（flex-wrap + tabular-nums 应唯一）').toBe(1)
+    const tokens = classTokens(rowAttr[0].text)
+    expect(tokens, '信息行字号没缩小（用户要求把这一行文字变小）').toContain('text-xs')
+    expect(tokens, '信息行又用回 text-sm').not.toContain('text-sm')
   })
 
   it('F2 底部不得再有任何留白行（正文滚动区与操作栏必须紧邻）', () => {
@@ -101,8 +118,9 @@ describe('F · 查看页底部（编辑于行 + 4 图标操作栏）', () => {
     expect(barAttrs.length, '找不到操作栏的 class 属性').toBe(1)
     const tokens = classTokens(barAttrs[0].text)
     expect(tokens, '操作栏没有两端对齐（左＝状态组、右＝操作组）').toContain('justify-between')
-    // mt-auto 已经交给「编辑于」那一行；操作栏自己不再需要它（两者都写会平分剩余空间）
-    expect(tokens, 'mt-auto 归「编辑于」行所有，操作栏不该再写').not.toContain('mt-auto')
+    // mt-auto 归编辑态底部那一段（`mt-auto flex flex-col …`）所有；操作栏在查看态，
+    // 它上面是 `flex-1` 的正文滚动区，再写 mt-auto 只会和正文抢空间
+    expect(tokens, 'mt-auto 不该出现在查看态操作栏上').not.toContain('mt-auto')
 
     const divider = indexOrFail(BAR)
     const eye = indexOrFail('showViews && (')
@@ -137,8 +155,9 @@ describe('F · 查看页底部（编辑于行 + 4 图标操作栏）', () => {
     expect(star, '少了 title，桌面端没有 tooltip（移动端本来就没有 hover）').toContain('title=')
   })
 
-  it('F6 「编辑于」不在操作栏里', () => {
-    expect(barSlice(), '「编辑于」又被放回操作栏了——那它就不是「钉在分割线上方」了').not.toContain('编辑于')
+  it('F6 「编辑于」不在操作栏里（反向钉：查看页整页都不该有这四个字）', () => {
+    expect(barSlice(), '「编辑于」又被放回操作栏了（2026-10-12 起它整段废除）').not.toContain('编辑于')
+    expect(src, '「编辑于」又出现在查看页里了——编辑时间只该在编辑态以「上次编辑」显示').not.toContain('编辑于')
   })
 
   it('F7 四个图标的尺寸与线宽统一（打开次数 / 收藏 / 编辑 / 删除）', () => {

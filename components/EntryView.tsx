@@ -549,7 +549,8 @@ export default function EntryView({ id }: { id: string }) {
   if (!entry) return <main className="mx-auto h-full w-full max-w-md overflow-y-auto px-5" />
 
   const created = new Date(entry.createdAt)
-  // 编辑过（updatedAt 晚于 createdAt）→ 额外显示"编辑于"；否则只显示创建时间
+  // 编辑过（updatedAt 晚于 createdAt）→ 编辑态底部显示「上次编辑」。
+  // ★ 查看页**不再**显示编辑时间（2026-10-12 用户要求），所以 isEdited 只服务编辑态那一条脚注。
   const editedAt = new Date(entry.updatedAt)
   const isEdited = editedAt.getTime() !== created.getTime()
   const fmtDate = (d: Date) =>
@@ -565,7 +566,7 @@ export default function EntryView({ id }: { id: string }) {
     // ── 布局（2026-10-06 改，与写页同一套；2026-10-09 修 order 误用）──────────────
     // main **不再滚动**：页头、元信息行、底部操作栏都在流内固定；滚动只发生在正文那一块。
     //
-    // 源码顺序 = 视觉顺序（页眉 → 日期字数 → 定位/天气 → 正文 → 编辑于/操作栏），
+    // 源码顺序 = 视觉顺序（页眉 → 日期字数 → 定位/天气 → 正文 → 操作栏），
     // **不需要任何重排**。
     // ★ 别再引入 flex `order`（2026-10-09 真实回归）：曾经用 `order-1` 把正文提到最前、
     //   其余一律 `order-10`，理由是「日期、字数、定位、编辑于都是正文的落款」—— 这个前提
@@ -607,17 +608,18 @@ export default function EntryView({ id }: { id: string }) {
           </Link>
         )}
       </header>
-      <p className="flex flex-wrap items-center gap-2 text-sm tabular-nums text-neutral-500 dark:text-neutral-400">
+      {/* 信息行：**只有「创建时间 · 字数」**（2026-10-12 用户要求）。
+          · 「编辑于」已从这里删掉：三段挤在一行过密（「2026年10月12日 17:26 · 282 字 ·
+            编辑于 2026年10月12日 17:26」）；上次编辑时间改为**只在编辑态**显示，
+            也就是点编辑图标之后、保存按钮正上方那一条「上次编辑 …」（见下方 footer）。
+          · 字号 text-xs（12px）：这行是纯脚注（页头 text-lg、正文 text-base），
+            用户要求「把创建、编辑时间这段文字缩小」，原来跟着信息行用 text-sm 偏大了。
+          · 位置约束没变：它排在正文滚动区之前，底部操作栏不接受任何东西插在它与正文之间
+            （F8 —— 原先「编辑于」钉在分割线正上方要独占 61px，正文滚到底也够不到分割线）。 */}
+      <p className="flex flex-wrap items-center gap-2 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
         {fmtDate(created)}
         {/* 字数在解密时计算（与编辑器底部"共 x 字"一致：trim 后长度） */}
         {!decryptFailed && <> · {countWords(plain)} 字</>}
-        {/* ★「编辑于」在这个信息行里（2026-10-09 用户要求）。
-            它原先钉在底部分割线正上方，要在正文与操作栏之间占掉 61px（32px 上留白 + 一行 + 12px
-            下留白），使正文滚到底也够不到分割线、中间永远空着一块（用户反馈「内容区没把中间
-            这部分用满」）。并进这里之后，底部整块让给正文。
-            字号跟随本行（text-sm）：它现在是「这一篇的时间信息」的一部分，与创建时间同类，
-            不再需要单独降档。 */}
-        {isEdited && <> · 编辑于 {fmtDate(editedAt)}</>}
         {/* 未同步徽标：离线新增、尚未上传服务器的笔记（同步后自动消失） */}
         {pendingSync && (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
@@ -780,9 +782,9 @@ export default function EntryView({ id }: { id: string }) {
               取 16px（pb-4）与查看态操作栏的下内边距一致；底部安全区由 TabBar 的 pb-safe 承担。 */}
           <div className="mt-auto flex flex-col gap-2 pb-4 pt-2">
             {isEdited && (
-              /* 11px：编辑态输入区下方的落款，压得比正文低一档（用户要求日期再小一档）。
-                 查看态的「编辑于」已并入顶部信息行、跟随该行的 text-sm（2026-10-09），
-                 两处字号不同是**刻意的**：前者是输入区外的一条脚注，后者是信息行的一部分。 */
+              /* ★ 编辑时间**只在这里显示**（2026-10-12 用户要求）：查看页的信息行已经不带
+                 「编辑于」了，想看「上次编辑」就进编辑态 —— 查看页只留「创建时间 · 字数」。
+                 11px：输入区下方的落款，压得比正文低一档（用户要求日期再小一档）。 */
               <p className="text-[11px] tabular-nums text-neutral-500 dark:text-neutral-400">上次编辑 {fmtDate(editedAt)}</p>
             )}
             <button
@@ -814,7 +816,9 @@ export default function EntryView({ id }: { id: string }) {
                 而 `mt-auto` 在有 `flex-1` 兄弟时是**空操作**（flex-grow 先吃光剩余空间），
                 所以那 61px 恒定存在、正文永远够不到 ⇒ 用户看到「内容最下方多出一块空白、
                 内容区没把中间这部分用满」，并伴随「滚到最底部就滑不动了」的观感。
-                ⇒ 定稿：**「编辑于」并入顶部「日期 · 字数」行**，底部整块让给正文。
+                ⇒ 定稿：**底部整块让给正文**。当年是把「编辑于」并进顶部信息行；
+                  2026-10-12 用户嫌那行三段太挤，那四个字**整段废除**（编辑时间移进编辑态），
+                  F8 这条「中间不许夹东西」的约束原样不变。
                 证据：Temp/qo-keyboard-probe/view-bottom.mjs（旧 gap=61px / 新 gap=0px；
                 两版的滚动能力都正常 ⇒ 病根是这段死区，不是滚动本身）。守卫 F8/F9。 */}
           <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
