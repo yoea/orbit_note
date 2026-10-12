@@ -241,3 +241,54 @@ describe('S3 · 写页与详情页编辑态共用同一套 Markdown 接线', () 
     })
   }
 })
+
+// ============================================================================
+// S4 · 插入标记后不得移动滚动位置（2026-10-12 用户反馈的真事故）
+//
+// 症状：在写页把正文写长（textarea 自身溢出），滚到中间后点工具条（H / B / I / ❝ / • / </>），
+// 滚动条会「自动滚到底部」——点一次跳一次，光标却还在原处，等于每次改格式都要重新找位置。
+//
+// 根因不在选区还原（那步是对的），而在紧挨着它的 `el.focus()`：
+//   · 工具条按钮是 <button>，点它时焦点先被移给按钮 ⇒ textarea 失焦；
+//   · React 重写受控 value，按规范会把**插入光标移到文本末尾**；
+//   · 此时裸 `focus()` 聚焦一个「失焦 + 光标在文末」的 textarea ⇒ 浏览器把光标滚入视野
+//     ⇒ 内部直接滚到底。随后的 setSelectionRange 只还原选区，**不把滚动位置带回来**。
+// 修法 = `focus({ preventScroll: true })`。证据与逐变体对照见 Temp/qo-toolbar-scroll/probe.mjs
+// （scrollTop 300 → 2557；去掉 focus 或加 preventScroll 都停在 300）。
+//
+// 这条只能做**源码级**守卫（无 jsdom，且真正的滚动行为要布局引擎才能量），
+// 所以断言写得尽量窄：钉住「带 preventScroll 的那一次 focus」存在、且没有裸 focus 混进来。
+// 非空转验证：Temp/nonvacuous_toolbar_scroll.py。
+// ============================================================================
+describe('S4 · 工具条插入标记不得移动滚动位置', () => {
+  const src = code('lib/client/use-markdown-editor.ts')
+
+  it('S4.0 解析自检：读到了待还原选区与选区还原调用（防断言空转）', () => {
+    expect(src.length, '读不到 hook 源码').toBeGreaterThan(500)
+    expect(src, '找不到 pendingSelectionRef').toContain('pendingSelectionRef')
+    expect(src, '找不到 setSelectionRange').toContain('setSelectionRange(')
+  })
+
+  it('S4.1 聚焦必须带 preventScroll（否则 point 一次工具条就滚到底）', () => {
+    expect(
+      src,
+      'el.focus() 少了 { preventScroll: true } —— 点工具条后视图会被拽到文末（用户看到的「自动滚到底部」）',
+    ).toContain('el.focus({ preventScroll: true })')
+  })
+
+  it('S4.2 本 hook 内不得出现裸 focus()', () => {
+    // 反过来钉：只要有人把 preventScroll 去掉，S4.1 与这条会同时红
+    expect(
+      src.match(/\.focus\(\s*\)/g) ?? [],
+      '出现了不带参数的 focus() —— 在这个 hook 里焦点只由「插入标记后」这一处负责，必须带 preventScroll',
+    ).toEqual([])
+  })
+
+  it('S4.3 先聚焦再还原选区（顺序颠倒会让选区落在失焦元素上）', () => {
+    const focusAt = src.indexOf('el.focus(')
+    const selAt = src.indexOf('el.setSelectionRange(sel[0], sel[1])')
+    expect(focusAt, '找不到 el.focus(，后面的比较会空转').toBeGreaterThanOrEqual(0)
+    expect(selAt, '找不到选区还原调用，后面的比较会空转').toBeGreaterThanOrEqual(0)
+    expect(focusAt, '顺序反了：必须先聚焦，再把选区写回去').toBeLessThan(selAt)
+  })
+})

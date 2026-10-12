@@ -3,8 +3,9 @@
 // 正文编辑的「工具条 + 预览切换」接线（纯客户端状态，无渲染）。
 //
 // 抽出来的原因：写页（DiaryEditor）与详情页编辑态（EntryView）是同一件事的两处实现——
-// 都要给 <textarea> 加 Markdown 工具条、都能切「预览」看渲染结果。这段接线里有两个
-// 容易写错又很难肉眼发现的细节（选区还原、预览滚动定位），各写一份必然漂移：
+// 都要给 <textarea> 加 Markdown 工具条、都能切「预览」看渲染结果。这段接线里有三个
+// 容易写错又很难肉眼发现的细节（选区还原、预览滚动定位、插入标记后**不得移动滚动位置**），
+// 各写一份必然漂移：
 // 事实上详情页编辑态一开始就漏掉了整条工具条（用户举报的 bug）。两处共用这一份后，
 // 组件层只剩下「渲染 textarea 还是渲染预览」。UI 部分见 components/MarkdownToolbar.tsx。
 //
@@ -12,6 +13,8 @@
 // 选区只存在于真实 DOM 节点（受控 value 替代不了），预览滚动要读容器自身的几何。
 // 另外：**必须用本 hook 返回的 resetPreview() 复位预览态**，不要自己 setPreview(false)
 // （那会留下上一次会话的位置快照，见 resetPreview）。
+// 还有：插入标记后的聚焦由本 hook 负责（且必须带 preventScroll，见下面的长注释），
+// 调用方**不要**再自己 focus 一次 textarea —— 裸 focus() 会把视图拽到文末。
 
 import { useLayoutEffect, useRef, useState } from 'react'
 import { lineAtOffset, pickScrollTop, toggleLinePrefix, toggleWrap, type ToolbarAction } from './markdown'
@@ -39,13 +42,30 @@ export function useMarkdownEditor({ text, applyText }: {
   const pendingEditorCaretRef = useRef<number | null>(null)
 
   // 用 layout effect 而不是 rAF——前者严格在 DOM 变更后、绘制前执行，顺序确定。
+  //
+  // ★ `focus({ preventScroll: true })` 的 preventScroll 是**必需**的（2026-10-12 用户反馈
+  //   「点工具条改正文时，滚动条自动滚到底部」）。机理是一串三跳，缺任何一跳都不复现：
+  //     1. 工具条按钮是 `<button>`，点它时浏览器把焦点移给按钮 ⇒ **textarea 此刻是失焦的**；
+  //     2. `applyText` 让 React 重写受控 textarea 的 `value`。按 HTML 规范，给 textarea
+  //        赋 value 会把**文本插入光标移到文本末尾**（并清掉选区）——注意此时选区还没还原；
+  //     3. 本 effect 紧接着 `el.focus()`。对一个「失焦 + 插入光标在文末」的 textarea 聚焦，
+  //        浏览器会把插入光标滚入视野 ⇒ **textarea 内部直接滚到最底**。
+  //   后面那句 setSelectionRange 只还原**选区**，**不会**把滚动位置带回来（实测：光标正确
+  //   回到原位，scrollTop 却停在最大值）——所以不是"少还原了一步"，而是这一跳根本不该发生。
+  //   ⇒ 触发条件：正文长到 textarea 自身溢出（scrollHeight > clientHeight）**且**本次动作
+  //     真的改动了正文（`result.text !== text`，否则 pendingSelectionRef 不写、effect 早退）。
+  //   证据与逐变体对照：`Temp/qo-toolbar-scroll/probe.mjs`（390×844，60 行长文本，
+  //   scrollTop 300 → 2557；去掉 focus 或加上 preventScroll 都停在 300）。
+  //   不要改回裸 `el.focus()`：那会重现 bug。反例见 tests/markdown-layout.test.ts 的 S4。
+  //   （另注：AutoTextarea 挂载时的 autoFocus 走的是**裸 focus()**，那里是刻意的——
+  //     挂载时 value 刚被赋上、插入光标就在文末，滚到文末正是"接着上次继续写"该有的样子。）
   useLayoutEffect(() => {
     const sel = pendingSelectionRef.current
     if (!sel) return
     pendingSelectionRef.current = null
     const el = editorRef.current
     if (!el) return
-    el.focus()
+    el.focus({ preventScroll: true })
     el.setSelectionRange(sel[0], sel[1])
   }, [text])
 
