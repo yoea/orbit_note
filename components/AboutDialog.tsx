@@ -3,6 +3,7 @@
 import { useRef, useState, type ReactNode } from 'react'
 import OrbitLogo from './OrbitLogo'
 import HiddenPanel from './HiddenPanel'
+import { pulseLogo, tapHaptic } from '@/lib/client/logo-tap'
 import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
 
 // 「删除所有数据」的**隐藏入口**：连点 LOGO「Orbit」8 次（2026-10-10 用户要求）。
@@ -180,15 +181,25 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
   const [hiddenOpen, setHiddenOpen] = useState(false)
   const wipeTapsRef = useRef(0)
   const lastTapRef = useRef(0)
+  // 动画要作用在**按钮**上（它包着 LOGO），这样点击区域与缩放的视觉边界一致
+  const logoRef = useRef<HTMLButtonElement | null>(null)
 
+  // 每次点击都给回应（2026-10-29 用户要求）：
+  //   · 动画 → 所有平台都有（iOS 上这就是唯一的即时反馈）；
+  //   · 震动 → 只有支持 navigator.vibrate 的环境会响（iOS 没有这个 API，见 logo-tap.ts）。
+  // 顺序上先 pulse 再计数：反馈不该依赖"这次是不是第 8 下"。
   function onLogoTap() {
+    pulseLogo(logoRef.current)
     const now = Date.now()
     if (now - lastTapRef.current > WIPE_TAP_GAP_MS) wipeTapsRef.current = 0
     lastTapRef.current = now
     wipeTapsRef.current += 1
     if (wipeTapsRef.current >= WIPE_TAP_TARGET) {
       wipeTapsRef.current = 0
+      tapHaptic('unlock') // 达到阈值这一下用更长的三段模式，做出"解锁"的手感
       setHiddenOpen(true)
+    } else {
+      tapHaptic('tap')
     }
   }
 
@@ -218,7 +229,7 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
               {/* ★ 隐藏入口：连点这里 8 次进入删除流程（见文件头常量）。
                   用 <button> 而不是给 LOGO 挂 onClick：可点击元素该是语义化按钮（键盘/读屏可达）。
                   Tailwind preflight 已把 button 的背景/边框/内边距清零 ⇒ 观感与纯文本完全一致。 */}
-              <button type="button" onClick={onLogoTap} className="inline-block" aria-label="Orbit">
+              <button ref={logoRef} type="button" onClick={onLogoTap} className="inline-block" aria-label="Orbit">
                 <OrbitLogo size="lg" />
               </button>
               <p className="mt-1.5 text-sm text-neutral-500 dark:text-neutral-400">端到端加密的私人日记</p>

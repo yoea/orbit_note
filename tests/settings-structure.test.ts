@@ -190,7 +190,9 @@ describe('删除所有数据的隐藏入口与四步流程', () => {
     expect(about, '达到阈值后没有打开隐藏面板').toContain('setHiddenOpen(true)')
     expect(about, '隐藏面板没有条件渲染').toContain('{hiddenOpen && (')
     // LOGO 必须真的可点（语义化 button），且绑的是计数处理器
-    expect(about, 'LOGO 没有包成可点击的 button').toMatch(/<button type="button" onClick=\{onLogoTap\}/)
+    // 2026-10-29 按钮上多了 ref（动画要作用在它上面）⇒ 允许标签内有其他属性。
+    // ⚠️ 限定用的仍是 `[\s\S]{0,120}?` 而非 `[^>]*`（后者会在属性里的 `>` 处截断）。
+    expect(about, 'LOGO 没有包成可点击的 button').toMatch(/<button[\s\S]{0,120}?onClick=\{onLogoTap\}/)
     expect(about, 'LOGO 不是这个 button 的内容').toMatch(/onClick=\{onLogoTap\}[^>]*>\s*<OrbitLogo/)
   })
 
@@ -263,6 +265,33 @@ describe('删除所有数据的隐藏入口与四步流程', () => {
     expect(wipe, '流程层没有拦冒泡 —— 点遮罩取消流程会连关于弹窗一起关掉').toMatch(
       /return \(\s*<div onClick=\{\(e\) => e\.stopPropagation\(\)\}>/,
     )
+  })
+
+  it('P18 LOGO 点击有动画 + 震动，且不支持震动时静默降级（2026-10-29）', () => {
+    const about = code(ABOUT)
+    expect(about, '点击没有触发动画').toContain('pulseLogo(logoRef.current)')
+    expect(about, '点击没有触发震动').toMatch(/tapHaptic\('tap'\)/)
+    // 达到阈值那一下要有区别（三段模式），否则连点 8 次手感完全一样
+    expect(about, "阈值那一次没有用 'unlock'").toContain("tapHaptic('unlock')")
+    // 反馈必须先于计数判断：不该出现"只有第 8 下才有反馈"
+    const pulseAt = about.indexOf('pulseLogo(logoRef.current)')
+    const countAt = about.indexOf('wipeTapsRef.current += 1')
+    expect(pulseAt, '动画调用跑到计数后面去了').toBeLessThan(countAt)
+
+    const fb = code('lib/client/logo-tap.ts')
+    // ★ 优雅降级：iOS 没有 navigator.vibrate，检测不到就必须直接返回（不是抛错、不是兜底音效）
+    expect(fb, '没有检测 vibrate 是否存在 —— iOS 上会直接抛错').toMatch(/typeof nav\.vibrate !== 'function'\) return/)
+    // ★ 震动失败不能影响主流程（连点计数 / 面板打开）
+    expect(fb, '震动调用没有 try/catch').toContain('catch')
+    // 动画参数是用户明确问过的，改之前先想清楚
+    // 时长用常量表达（PULSE_MS = 180）⇒ 断言"常量的值"与"它被用到动画上"，
+    // 而不是断言 `duration: 180` 这种字面写法（那样一改写法就假红）
+    expect(fb, '动画时长不是 180ms').toMatch(/const PULSE_MS = 180/)
+    expect(fb, '动画没用 PULSE_MS').toContain('duration: PULSE_MS')
+    expect(fb, '缓动不是回弹曲线').toContain('cubic-bezier(0.34, 1.56, 0.64, 1)')
+
+    // P17 仍然成立：transform 只在 logo-tap.ts 里出现，不进关于弹窗这个文件
+    expect(about, '动画的 transform 漏进了 AboutDialog —— P17 的约定会被打破').not.toContain('transform')
   })
 
   it('P17 嵌套弹窗安全：关于弹窗（及其祖先）不得带 transform / filter', () => {
