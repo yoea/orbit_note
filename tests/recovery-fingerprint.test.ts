@@ -53,10 +53,33 @@ describe('恢复密钥：只暴露指纹 + 创建时间', () => {
     const src = code('components/RecoveryRegenerateDialog.tsx')
     expect(src, '弹窗没有展示创建时间').toContain('keyInfo.createdAt')
     expect(src, '弹窗没有展示指纹').toContain('keyInfo.fingerprint')
-    expect(src, '指纹没有格式化成「XXXX-XXXX」').toContain('formatFingerprint')
+    expect(src, '弹窗没有用预取来的指纹').toContain('keyInfo.fingerprint')
+    // ★ 格式化在共享模块 lib/client/recovery-info.ts（设置页与弹窗共用一份，避免漂移）
+    const fmt = code('lib/client/recovery-info.ts')
+    expect(fmt, '共享模块里没有指纹格式化').toContain('formatRecoveryFingerprint')
+    expect(fmt, '指纹不是 4+4 分组大写').toContain('slice(0, 4).toUpperCase()')
+    expect(fmt, '没有从 wrappers 取辨认信息的入口').toContain('recoveryInfoFromWrappers')
     // 反面：不得出现「头 3 尾 3 + 星号」那种明文片段展示
     expect(src, '恢复密钥弹窗里出现了明文片段展示').not.toMatch(/slice\(0,\s*3\)/)
     expect(src, '恢复密钥弹窗里出现了星号掩码').not.toContain('******')
+  })
+
+  it('R5 弹窗打开不闪：优先用预取数据 + 固定高度槽位（2026-10-29 用户反馈「点开时闪一下」）', () => {
+    const src = code('components/RecoveryRegenerateDialog.tsx')
+    // ① 父组件预取的优先（打开第一帧即完整 ⇒ 没有「先空后有」的跳动）
+    expect(src, '弹窗没有优先使用预取来的信息').toContain('initialInfo ?? fetchedInfo')
+    expect(src, '拿到预取信息后仍在自己请求（会重复取）').toContain('if (initialInfo) return')
+    // ② 兜底那条路也有固定高度的槽位 ⇒ 内容迟到也不顶动下方
+    expect(src, '辨认信息那一行没有固定高度（内容迟到会把下方顶下去）').toContain('min-h-4')
+    // 反面：不能再用「有才渲染」的写法（那正是闪一下的根因）
+    expect(src, '又回到「有才渲染」的写法（会闪）').not.toContain('{keyInfo && (')
+  })
+
+  it('R6 设置页预取辨认信息并传给弹窗（换新后要能更新）', () => {
+    const src = code('components/SettingsView.tsx')
+    expect(src, '设置页没有预取恢复密钥的辨认信息').toContain('recoveryInfoFromWrappers')
+    expect(src, '预取结果没有传进弹窗').toContain('initialInfo={recoveryInfo}')
+    expect(src, '换新后没有把新指纹回报设置页（下次打开会显示旧指纹）').toContain('onInfoChange={setRecoveryInfo}')
   })
 
   it('R4 客户端类型带上指纹与创建时间（前端不再靠隐式字段）', () => {

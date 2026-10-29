@@ -116,14 +116,25 @@ describe('桌面端无障碍基线', () => {
     expect(css, '没有 outline（焦点环要真的画出来）').toContain('outline: 2px solid')
     expect(css, '没有 prefers-reduced-motion（前庭敏感用户）').toContain('prefers-reduced-motion: reduce')
 
-    // ★ 分层（2026-10-29 用户反馈「写页输入框突然多了个紫色边框」）：
-    //   品牌紫只留给按钮 / 链接 / 开关 / 标签页；输入框走 1px 中性描边；
-    //   正文文本域（无边框编辑器）完全不画描边 —— 光标本身就是焦点指示。
+    // ★ 分层（2026-10-29 用户两次反馈：「写页输入框突然多了个紫色边框」
+    //   +「输入框 / 下拉框 1px 描边也去掉」）：
+    //   品牌紫只留给按钮 / 链接 / 开关 / 标签页；
+    //   **输入框 / 下拉 / 正文文本域一律不画描边** —— 它们的聚焦指示由自身既有样式承担
+    //   （有边框的走 focus:border-neutral-400；无边框搜索框走 focus-within 底色；
+    //   正文文本域里光标本身就是焦点指示）。
     const focusRules = css.split('}').filter((r) => r.includes(':focus-visible'))
-    const purpleOnInput = focusRules.some((r) => /input/.test(r) && r.includes('#8b5cf6'))
+    const purpleOnInput = focusRules.some((r) => /input|select/.test(r) && r.includes('#8b5cf6'))
     expect(purpleOnInput, '输入框仍在用品牌紫焦点环（写页正文会突兀）').toBe(false)
-    const textareaNone = focusRules.some((r) => r.includes('textarea') && /outline:\s*none/.test(r))
-    expect(textareaNone, '正文文本域应去掉焦点描边（光标即是焦点指示）').toBe(true)
+    // ★ 逐条看：凡涉及输入框 / 下拉 / 文本域的焦点规则，outline 的值**必须**是 none。
+    //   （早先写成 /outline:\s*(?!none)/ 会被正则的贪婪回溯坑掉：\s* 退化成空匹配后
+    //     lookahead 看到的是空格而不是 "none" ⇒ 规则照样命中 ⇒ 假红。）
+    const inputRules = focusRules.filter((r) => /input|select|textarea/.test(r))
+    expect(inputRules.length, '没有针对输入框 / 下拉 / 文本域的焦点规则').toBeGreaterThan(0)
+    for (const r of inputRules) {
+      expect(r, '输入框 / 下拉 / 文本域的焦点规则必须是 outline: none').toMatch(/outline:\s*none/)
+    }
+    // 唯一无边框的输入框是搜索框：靠底色加深提示焦点（不是描边）
+    expect(code('components/SearchDialog.tsx'), '无边框搜索框没有聚焦提示').toContain('focus-within:bg-neutral-200')
   })
 
   it('A2 输入框都要有可读名称（placeholder 不是标签）', () => {

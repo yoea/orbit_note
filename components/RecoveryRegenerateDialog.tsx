@@ -8,44 +8,47 @@ import { decodeRecoveryKey, generateRecoveryKey, sha256Hex } from '@/lib/client/
 import { copyText } from '@/lib/client/clipboard'
 import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
 import { useDialogBehavior } from '@/lib/client/dialog'
-
-// 8 位 hex 指纹 → 「XXXX-XXXX」大写展示。指纹 = 服务端 SHA-256 哈希的前 8 位，
-// 不可逆、不可爆破（完整哈希已停止下发），仅供辨认「现在这把是哪把」。
-function formatFingerprint(fp: string): string {
-  return `${fp.slice(0, 4).toUpperCase()}-${fp.slice(4, 8).toUpperCase()}`
-}
+import { recoveryInfoFromWrappers, type RecoveryKeyInfo } from '@/lib/client/recovery-info'
 
 // 重新生成恢复密钥弹窗（iOS Alert 风格卡片）：输入当前密钥验证（能解开 wrapper 才算正确）→
 // 生成新密钥 → 用新密钥重新包裹 DEK 并更新服务器（wrapper + SHA-256 哈希）。旧密钥立即失效。
-export default function RecoveryRegenerateDialog({ onClose }: { onClose: () => void }) {
+export default function RecoveryRegenerateDialog({ onClose, initialInfo = null, onInfoChange }: {
+  onClose: () => void
+  /** 设置页预取好的辨认信息（指纹 + 创建时间）。给了它 ⇒ 打开第一帧就有内容、**零闪烁** */
+  initialInfo?: RecoveryKeyInfo | null
+  /** 重新生成成功后回报新的辨认信息（否则设置页下次打开仍显示旧指纹） */
+  onInfoChange?: (info: RecoveryKeyInfo) => void
+}) {
   const router = useRouter()
   const [currentKey, setCurrentKey] = useState('')
   const [result, setResult] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
-  // 当前密钥的辨认信息（指纹 + 创建时间）：挂载时取一次；取不到（网络失败）就不展示，不影响验证流程
-  const [keyInfo, setKeyInfo] = useState<{ fingerprint: string; createdAt: string } | null>(null)
+  // 辨认信息（指纹 + 创建时间）：**父组件预取的优先**；没有才自己取（兜底）。
+  // ★ 2026-10-29 用户反馈「点开时闪一下」：这一行原先是弹窗挂载后异步取到的，
+  //   取到就把下方内容顶下去（布局跳动）。现在两处一起治：
+  //   ① 设置页在打开前就把信息取好（initialInfo）⇒ 打开第一帧即完整；
+  //   ② 兜底那条路也有**固定高度的槽位**（见渲染处 min-h-4）⇒ 迟到也不跳。
+  const [fetchedInfo, setFetchedInfo] = useState<RecoveryKeyInfo | null>(null)
   const aliveRef = useRef(true)
+  const keyInfo = initialInfo ?? fetchedInfo
   // Esc / Tab 循环 / 焦点归还（2026-10-29）。★ Esc 与底部「完成」按钮**同一语义**：
   //   已经生成出新密钥时先尽力复制再关（否则用户一按 Esc 就把只显示一次的密钥弄丢了）。
   const cardRef = useRef<HTMLDivElement>(null)
   useDialogBehavior(cardRef, closeDialog)
 
   useEffect(() => {
+    if (initialInfo) return // 预取到了就别再请求
     aliveRef.current = true
     void fetchWrappers()
       .then((wrappers) => {
-        const rec = wrappers.find((w) => w.wrapperType === 'recovery')
-        if (!aliveRef.current || !rec?.recoveryKeyFingerprint || !rec.createdAt) return
-        setKeyInfo({
-          fingerprint: formatFingerprint(rec.recoveryKeyFingerprint),
-          createdAt: new Date(rec.createdAt).toLocaleDateString('zh-CN'),
-        })
+        if (!aliveRef.current) return
+        setFetchedInfo(recoveryInfoFromWrappers(wrappers))
       })
       .catch(() => { /* 静默：辨认信息只是辅助展示 */ })
     return () => { aliveRef.current = false }
-  }, [])
+  }, [initialInfo])
 
   async function handleCopyResult() {
     if (!result) return
@@ -81,6 +84,14 @@ export default function RecoveryRegenerateDialog({ onClose }: { onClose: () => v
       })
       if (!up.ok) throw new Error('更新失败')
       setResult(next)
+      // 换新 ⇒ 指纹与创建时间都变了：重取一次并回报设置页（否则它下次打开仍显示旧指纹）
+      try {
+        const fresh = recoveryInfoFromWrappers(await fetchWrappers())
+        if (fresh) {
+          setFetchedInfo(fresh)
+          onInfoChange?.(fresh)
+        }
+      } catch { /* 取不到就沿用旧信息，不影响本流程 */ }
     } catch {
       // session 过期（fetchWrappers 401）→ 回登录页重新解锁；其余错误保持"验证失败"提示
       try {
@@ -109,11 +120,12 @@ export default function RecoveryRegenerateDialog({ onClose }: { onClose: () => v
             <>
               <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">重新生成恢复密钥</p>
               <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">先输入当前恢复密钥验证身份，验证通过后生成新密钥</p>
-              {keyInfo && (
-                <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
-                  当前密钥创建于 {keyInfo.createdAt} · 指纹 {keyInfo.fingerprint}
-                </p>
-              )}
+              {/* ★ 固定高度的槽位（min-h-4 = 一行 text-xs 的高度）：无论信息是预取到、
+                  还是稍后异步到达，这一行的占位始终不变 ⇒ 下方内容不会被顶下去
+                  （「点开时闪一下」就是这里引起的）。没取到时留空，不显示占位文案。 */}
+              <p className="mt-2 min-h-4 text-xs text-neutral-500 dark:text-neutral-400">
+                {keyInfo ? `当前密钥创建于 ${keyInfo.createdAt} · 指纹 ${keyInfo.fingerprint}` : ''}
+              </p>
               <input
                 value={currentKey}
                 onChange={(e) => setCurrentKey(e.target.value)}

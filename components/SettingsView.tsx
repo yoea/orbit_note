@@ -11,8 +11,9 @@ import BackupSheet from '@/components/BackupSheet'
 import NameEditDialog from '@/components/NameEditDialog'
 import ProfileCard from '@/components/ProfileCard'
 import Toast from '@/components/Toast'
-import { clearDek } from '@/lib/client/session'
+import { clearDek, fetchWrappers } from '@/lib/client/session'
 import { clearUserNameCache } from '@/lib/client/profile'
+import { recoveryInfoFromWrappers, type RecoveryKeyInfo } from '@/lib/client/recovery-info'
 import { useUserName } from '@/lib/client/use-user-name'
 import { useOffline } from '@/lib/client/use-offline'
 
@@ -93,6 +94,21 @@ export default function SettingsView() {
   const userName = useUserName()
   // 预取的 Passkey 列表：点击前 fetch 完成，弹窗打开第一帧即完整列表（无加载闪烁）
   const [passkeysData, setPasskeysData] = useState<PasskeyInfo[] | null>(null)
+  // 当前恢复密钥的辨认信息（指纹 + 创建时间）：同样**在设置页挂载时就取好**，
+  // 点「恢复密钥」时弹窗打开第一帧就有内容 —— 2026-10-29 用户反馈「点开会闪一下」，
+  // 根因是那一行原先是弹窗挂载后异步取到的，取到就把下方内容顶下去（布局跳动）。
+  const [recoveryInfo, setRecoveryInfo] = useState<RecoveryKeyInfo | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    void fetchWrappers()
+      .then((wrappers) => {
+        if (!alive) return
+        setRecoveryInfo(recoveryInfoFromWrappers(wrappers))
+      })
+      .catch(() => { /* 取不到就由弹窗自己兜底取 */ })
+    return () => { alive = false }
+  }, [])
 
   // 先取数据再打开弹窗；fetch 失败也打开（弹窗内显示错误 + 重试）
   async function openPasskeysDialog() {
@@ -251,7 +267,13 @@ export default function SettingsView() {
       {showPasskeys && (
         <PasskeysDialog initialData={passkeysData} onClose={() => setShowPasskeys(false)} />
       )}
-      {showRecovery && <RecoveryRegenerateDialog onClose={() => setShowRecovery(false)} />}
+      {showRecovery && (
+        <RecoveryRegenerateDialog
+          onClose={() => setShowRecovery(false)}
+          initialInfo={recoveryInfo}
+          onInfoChange={setRecoveryInfo}
+        />
+      )}
       {showNameEdit && userName && (
         <NameEditDialog current={userName} onSaved={() => setShowNameEdit(false)} onClose={() => setShowNameEdit(false)} />
       )}

@@ -249,10 +249,11 @@ body {
    而写页正文是**无边框编辑器**，一圈紫描边直接破坏了它的观感）：
    · 按钮 / 链接 / 开关 / 标签页：2px 品牌紫 —— 这些元素本身没有边框，
      必须有一圈醒目的指示才看得出焦点在哪。
-   · 输入框 / 下拉：1px 中性描边 —— 有边框的输入框几乎看不出变化，
-     无边框的搜索框仍保留一道可见指示。
-   · 正文文本域（写页 / 详情页编辑态，都是无边框编辑器）：**不画描边** ——
-     那里光标本身就是焦点指示（WCAG 2.4.7 满足），加描边只会破坏观感。
+   · **输入框 / 下拉 / 正文文本域：一律不画描边**（2026-10-29 用户要求「1px 描边也去掉」）。
+     它们的聚焦指示由**自身的既有样式**承担：有边框的输入框走
+     `focus:border-neutral-400`（边框由 neutral-200 加深到 400，足够醒目）；
+     无边框的搜索框走 `focus-within:bg-neutral-200`（底色加深，不是描边）；
+     正文文本域（写页 / 详情页编辑态）里**光标本身就是焦点指示**（WCAG 2.4.7 满足）。
    ★ 优先级说明：`:is()` 的参数里带属性选择器（[role="switch"] 等）⇒ (0,2,0)，
      高于 Tailwind 工具类 `.outline-none` (0,1,0)；且这些规则**未放进 @layer**，
      未分层样式在层叠里优先于 @layer utilities ⇒ 写了 outline-none 的元素
@@ -263,11 +264,10 @@ body {
   outline: 2px solid #8b5cf6;
   outline-offset: 2px;
 }
-:is(input, select):focus-visible {
-  outline: 1px solid var(--color-neutral-400);
-  outline-offset: 1px;
-}
-textarea:focus-visible {
+/* 输入框 / 下拉 / 文本域：明确**不画焦点描边**。
+   ★ 写成显式的 none 而不是「不写」：上面那条按钮规则未分层、优先级很高，
+     若这里不显式关掉，input 会被它连带接管（:is() 里若含 input 就会命中）。 */
+:is(input, select, textarea):focus-visible {
   outline: none;
 }
 
