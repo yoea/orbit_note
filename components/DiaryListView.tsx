@@ -16,7 +16,7 @@ import ContributionHeatmap from './ContributionHeatmap'
 import StarIcon from './StarIcon'
 import Toast from './Toast'
 import { displayLocationName } from '@/lib/client/location'
-import { isHeatmapEnabled } from '@/lib/client/prefs'
+import { isHeatmapEnabled, statsScopeQuery } from '@/lib/client/prefs'
 import { deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
 import { dayKeyOf } from '@/lib/client/date-jump'
 
@@ -217,6 +217,12 @@ export default function DiaryListView() {
     setSelected(id ? new Set([id]) : new Set())
   }
 
+  // 全选 / 取消全选。范围 = **当前已加载的** items（分页没到底时不含更早的）——
+  // 客户端拿不到"服务器上的全部"，硬说要"全选所有"就是在骗人。
+  function toggleSelectAll() {
+    setSelected((prev) => (prev.size === items.length ? new Set() : new Set(items.map((i) => i.id))))
+  }
+
   function toggleItem(id: string) {
     setSelected((prev) => {
       const next = new Set(prev)
@@ -252,7 +258,7 @@ export default function DiaryListView() {
       await patchCachedEntries(stillThere, { archivedAt: new Date().toISOString() })
       // 顶部统计要跟着变：stats 是挂载时拉的，不重拉会一直显示归档前的篇数。
       // 失败静默——它只是行概览，不影响刚做完的这件事。
-      void fetch('/api/diary/stats')
+      void fetch(`/api/diary/stats${statsScopeQuery()}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => { if (d) { setStats(d); void cacheStats(d) } })
         .catch(() => {})
@@ -283,7 +289,7 @@ export default function DiaryListView() {
       // 少了队列这一半，离线新建的条目被删后仍会带着「未同步」躺在列表里。
       await removeCachedEntries(ids)
       await Promise.all(ids.map((id) => removeQueuedEntry(id))).catch(() => {})
-      void fetch('/api/diary/stats')
+      void fetch(`/api/diary/stats${statsScopeQuery()}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => { if (d) { setStats(d); void cacheStats(d) } })
         .catch(() => {})
@@ -480,7 +486,7 @@ export default function DiaryListView() {
       try {
         const restore = readScrollState()
         const [statsRes, first] = await Promise.all([
-          fetch('/api/diary/stats')
+          fetch(`/api/diary/stats${statsScopeQuery()}`)
             .then((r) => (r.ok ? r.json() : null))
             .catch(() => null),
           fetchPage(null),
@@ -754,12 +760,12 @@ export default function DiaryListView() {
                         <span className="flex min-w-0 flex-1 flex-col gap-1">{rowBody(item)}</span>
                       </button>
                     ) : (
-                      /* 浏览态：整行是 <Link>。select-none 是长按进选择态的必要条件 ——
-                         没有它，iOS 长按会先弹系统的"选择文本 / 拷贝 / 分享"菜单，
-                         那个菜单会吃掉我们的 500ms 计时；桌面端则会把整行文字刷蓝。 */
+                      /* 浏览态：整行是 <Link>。qo-hold-select 是长按进选择态的必要条件 ——
+                         它带 -webkit-touch-callout: none（挡掉 iOS 的链接预览浮层）
+                         与 user-select: none（桌面端别把整行文字刷蓝）。见 globals.css。 */
                       <Link
                         href={`/entry/${item.id}`}
-                        className="flex select-none flex-col gap-1 py-3 active:opacity-60"
+                        className="qo-hold-select flex flex-col gap-1 py-3 active:opacity-60"
                         onPointerDown={() => startLongPress(item.id)}
                         onPointerUp={cancelLongPress}
                         onPointerMove={cancelLongPress}
@@ -812,13 +818,14 @@ export default function DiaryListView() {
       {selectMode && (
         <BulkActionBar
           count={selected.size}
+          total={items.length}
           busy={bulkBusy}
           label="归档"
           busyLabel="处理中…"
           dangerLabel="删除"
+          onToggleAll={toggleSelectAll}
           onAction={() => setConfirmBulk(true)}
           onDanger={() => setConfirmDelete(true)}
-          onCancel={exitSelect}
         />
       )}
 

@@ -2,7 +2,7 @@
 
 import { useRef, useState, type ReactNode } from 'react'
 import OrbitLogo from './OrbitLogo'
-import WipeDataAction from './WipeDataAction'
+import HiddenPanel from './HiddenPanel'
 import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
 
 // 「删除所有数据」的**隐藏入口**：连点 LOGO「Orbit」8 次（2026-10-10 用户要求）。
@@ -176,7 +176,8 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
   onWipeBlocked?: () => void
 }) {
   // 隐藏入口：连点 LOGO 的次数与上次点击时间（ref 存 —— 计数不该触发重渲染）
-  const [wipeOpen, setWipeOpen] = useState(false)
+  // 2026-10-29 起它打开的是一个**面板**（已归档 / 删除所有数据两扇门），不再是直接进删除流程。
+  const [hiddenOpen, setHiddenOpen] = useState(false)
   const wipeTapsRef = useRef(0)
   const lastTapRef = useRef(0)
 
@@ -187,7 +188,7 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
     wipeTapsRef.current += 1
     if (wipeTapsRef.current >= WIPE_TAP_TARGET) {
       wipeTapsRef.current = 0
-      setWipeOpen(true)
+      setHiddenOpen(true)
     }
   }
 
@@ -295,14 +296,14 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
         </button>
       </div>
 
-      {/* 删除流程（④步确认）挂在**卡片之外**：它是 `fixed inset-0 z-50` 的一层，
+      {/* 隐藏面板挂在**卡片之外**：它是 `fixed inset-0 z-50` 的一层，
           放在卡片内虽然也能正常铺满（fixed 的包含块是视口，卡片又零 transform），
           但它不该参与卡片的滚动与裁剪 —— 放外层最省心。条件渲染 ⇒ 每次都是干净的 state。 */}
-      {wipeOpen && (
-        <WipeDataAction
-          onClose={() => setWipeOpen(false)}
-          disabled={wipeDisabled}
-          onBlocked={onWipeBlocked}
+      {hiddenOpen && (
+        <HiddenPanel
+          onClose={() => setHiddenOpen(false)}
+          wipeDisabled={wipeDisabled}
+          onWipeBlocked={onWipeBlocked}
         />
       )}
     </div>

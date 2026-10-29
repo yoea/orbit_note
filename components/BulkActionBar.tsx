@@ -11,36 +11,44 @@
 // 这里是**一个模式里的确认动作**，不是这一屏的主角。
 // 「删除」用红字而不是红底：红底块在整个应用里等于"最危险的那一步"，
 // 而这里只是打开一个确认弹窗 —— 真正的不可逆动作在弹窗里才发生。
+//
+// 一条操作条上最多三颗按钮 + 一行统计，320px 宽时是紧的 ⇒ 统一 text-sm / px-3.5。
+// 「退出选择态」不放这里：两个页面在**页头**都有「完成」，重复一个只会挤宽度。
 export default function BulkActionBar({
-  count, busy, label, busyLabel, dangerLabel, onAction, onDanger, onCancel,
+  count, total, busy, label, busyLabel, dangerLabel, onToggleAll, onAction, onDanger,
 }: {
   count: number
+  /** 当前**已加载**的条目数 —— 全选的范围就是它（不是服务器上的全部，见下面注释） */
+  total: number
   busy: boolean
   /** 主操作文案：「归档」/「取消归档」 */
   label: string
   /** 进行中文案 */
   busyLabel: string
-  /** 次级的破坏性操作文案（如「删除」）。不传就不渲染这个按钮。 */
+  /** 次级的破坏性操作文案（如「彻底删除」）。不传就不渲染这个按钮。 */
   dangerLabel?: string
+  onToggleAll: () => void
   onAction: () => void
   onDanger?: () => void
-  onCancel: () => void
 }) {
+  const allSelected = total > 0 && count === total
   return (
     <div className="shrink-0 border-t border-neutral-100 bg-white px-5 py-3 dark:border-neutral-800 dark:bg-neutral-950">
-      {/* 一条操作条最多三颗按钮，320px 宽时是紧的 ⇒ 统一 text-sm / px-3.5 */}
       <div className="flex items-center gap-2">
-        <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+        {/* 全选的口径 = **已加载的**（分页没到底时不含更早的）。
+            title 里写明数量，避免用户以为"全选 = 服务器上的全部"。 */}
+        <button
+          onClick={onToggleAll}
+          disabled={busy || total === 0}
+          title={allSelected ? '取消全选' : `全选已加载的 ${total} 篇`}
+          className="shrink-0 rounded-xl px-2.5 py-2.5 text-xs font-medium text-neutral-600 active:opacity-60 disabled:opacity-40 dark:text-neutral-300"
+        >
+          {allSelected ? '取消全选' : '全选'}
+        </button>
+        <span className="min-w-0 truncate text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
           已选 {count} 篇
         </span>
         <span className="flex-1" aria-hidden />
-        <button
-          onClick={onCancel}
-          disabled={busy}
-          className="shrink-0 rounded-xl px-3.5 py-2.5 text-sm text-neutral-500 active:opacity-60 disabled:opacity-40 dark:text-neutral-400"
-        >
-          取消
-        </button>
         {dangerLabel && onDanger && (
           <button
             onClick={onDanger}

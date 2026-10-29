@@ -80,7 +80,8 @@ app/                    Next.js 路由与页面
   api/                  服务端接口（auth / diary / draft / keys / prefs / profile / prompts / weather / admin）
   (app)/                登录后区（route group，不产生 URL 段）：共享 layout 统一做解锁守卫 +
                         渲染底部 TabBar；组内页面 = 首页 / diary / entry/[id] / settings
-                        （含子页 settings/backup 导入导出、settings/archive 已归档）
+                        （含子页 settings/backup 导入导出、settings/archive 已归档；
+                        归档入口在「关于」连点 LOGO 8 次打开的隐藏面板里）
   login|setup|history   组外：认证流程与旧路由重定向（/history → /diary）
 components/             React 组件（编辑器、列表、热力图、TabBar、各种弹窗）
 lib/client/             客户端逻辑：crypto/（加密/KDF/PRF/恢复密钥/包装）、webauthn、session、
@@ -135,7 +136,10 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
 - `POST /api/diary/archive`（**批量**归档/取消归档：`{ids, archived}` → `{updated, missing}`，
   一次 UPDATE 全部落库。刻意不循环调 `PATCH /api/diary/[id]` —— 单实例内存限流下 50 条就撞 429；
   只写 `archived_at` 一列、跳过已达标行、如实返回服务器上已不存在的 id）
-- `GET /api/diary/stats`、`GET /api/diary/on-this-day`
+- `POST /api/diary/delete`（**批量**永久删除：`{ids}` → `{deleted, missing}`，一次 DELETE 全部落库；
+  限流 10 次/分钟，比归档的 20 更严——删除不可逆）
+- `GET /api/diary/stats?includeArchived=1`、`GET /api/diary/on-this-day?includeArchived=1`
+  （默认只统计未归档；`includeArchived=1` 由偏好「归档计入统计」控制）
 - `GET|PUT|DELETE /api/draft`
 - `GET|POST /api/keys/wrappers`、`PUT /api/keys/wrappers/recovery`
 - `GET|POST /api/keys/passkeys`、`DELETE /api/keys/passkeys/[id]`、`POST /api/keys/passkeys/[id]/enable`

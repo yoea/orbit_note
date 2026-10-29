@@ -5,6 +5,7 @@ import {
   GEOCODE_KEY, HEATMAP_KEY, LOCATION_KEY, OFFLINE_KEY, OTD_KEY, PROMPT_KEY,
   SAVE_SOUND_KEY, SHOW_VIEWS_KEY, STREAK_KEY, WEATHER_KEY,
   syncPrefToServer,
+  COUNT_ARCHIVED_KEY,
 } from '@/lib/client/prefs'
 import { clearOfflineData, getQueuedCount } from '@/lib/client/offline'
 import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
@@ -56,6 +57,8 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
   const [saveSound, setSaveSound] = useState(true)
   const [showViews, setShowViews] = useState(true)
   const [heatmap, setHeatmap] = useState(true)
+  // 默认 **false**（见 lib/client/prefs.ts 的 COUNT_ARCHIVED_KEY）：归档默认不计入统计
+  const [countArchived, setCountArchived] = useState(false)
   // 打开弹窗时顺带读队列条数：有待同步条目时在「离线缓存」开关的说明里提醒
   // （关闭开关会连同队列一起清除 = 丢弃这些未上传的离线日记）
   const [queuedCount, setQueuedCount] = useState(0)
@@ -81,6 +84,8 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
       setSaveSound(localStorage.getItem(SAVE_SOUND_KEY) !== '0')
       setShowViews(localStorage.getItem(SHOW_VIEWS_KEY) !== '0')
       setHeatmap(localStorage.getItem(HEATMAP_KEY) !== '0')
+      // ★ 这一行是 `=== '1'` 而不是 `!== '0'`：默认值是关，写反了会让所有人一打开弹窗就看到「开」
+      setCountArchived(localStorage.getItem(COUNT_ARCHIVED_KEY) === '1')
     } catch { /* localStorage 不可用则保持默认 */ }
     setPrefsReady(true)
     void getQueuedCount().then(setQueuedCount)
@@ -124,6 +129,7 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
     { group: '写作页', key: OTD_KEY, label: '显示去年的今天', hint: '首页顶部往年今日回忆卡片', enabled: showOtd, setEnabled: setShowOtd },
     { group: '日记列表与详情', key: HEATMAP_KEY, label: '显示写作热力图', hint: '日记页顶部固定的写作热力图', enabled: heatmap, setEnabled: setHeatmap },
     { group: '日记列表与详情', key: SHOW_VIEWS_KEY, label: '显示打开次数', hint: '详情页底部的打开次数', enabled: showViews, setEnabled: setShowViews },
+    { group: '日记列表与详情', key: COUNT_ARCHIVED_KEY, label: '归档计入统计', hint: '热力图、连续天数、篇数与字数都包含已归档的日记', enabled: countArchived, setEnabled: setCountArchived },
     { group: '其他', key: SAVE_SOUND_KEY, label: '保存音效', hint: '保存成功时播放提示音', enabled: saveSound, setEnabled: setSaveSound },
     { group: '其他', key: OFFLINE_KEY, label: '离线缓存', hint: queuedCount > 0 ? `有 ${queuedCount} 篇待同步日记，关闭开关将丢弃` : '断网时仍可解锁并新建和查看日记', enabled: offlineCache, setEnabled: setOfflineCache },
   ]

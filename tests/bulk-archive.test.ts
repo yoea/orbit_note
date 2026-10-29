@@ -218,3 +218,65 @@ describe('BD · 批量删除', () => {
     expect(code(LIST), '批量删除没有独立函数').toContain('async function submitBulkDelete')
   })
 })
+
+// ============================================================================
+// 2026-10-29 第二轮调整（用户六条要求）
+// ============================================================================
+describe('BE · 归档交互与统计口径', () => {
+  it('BE1 详情页归档先确认，成功后给 toast', () => {
+    const src = code('components/EntryView.tsx')
+    // 点图标不能直接发请求：先弹确认（用户要求"小小的提示"）
+    expect(src, '详情页的归档按钮没有先弹确认').toContain('onClick={() => setConfirmArchive(true)}')
+    expect(src, '没有确认弹窗').toMatch(/<ConfirmDialog[\s>]/)
+    // 确认后走原来的 toggleArchive
+    expect(src, '确认后没有执行归档').toContain('void toggleArchive()')
+    // 成功后必须有明显提示（否则只能靠信息行末尾那两个字判断成没成）
+    expect(src, '归档成功后没有 toast').toContain('setArchiveFlash(')
+    expect(src, '没有把 toast 渲染出来').toMatch(/\{archiveFlash && <Toast/)
+  })
+
+  it('BE2 归档页的「彻底删除」走两段确认', () => {
+    const src = code(ARCHIVE_VIEW)
+    expect(src, '删除没有走分步确认').toContain('deleteStep')
+    // 两段：第一问 setDeleteStep(2)，第二问才真删
+    expect(src, '第一问之后没有进第二问').toContain('onConfirm={() => setDeleteStep(2)}')
+    expect(src, '第二问没有执行删除').toContain('void submitBulkDelete()')
+    // 第二问的拒绝词要弱化（「我再想想」比「取消」更让人停下来）
+    expect(src, '第二问的取消文案太顺手了').toContain('我再想想')
+    // 操作条上的文案是「彻底删除」，与列表页的「删除」区分开
+    expect(src, '操作条没有「彻底删除」').toContain('dangerLabel="彻底删除"')
+  })
+
+  it('BE3 两个列表页的操作条都有全选', () => {
+    for (const rel of [LIST, ARCHIVE_VIEW]) {
+      const src = code(rel)
+      expect(src, `${rel} 没有全选逻辑`).toContain('function toggleSelectAll')
+      expect(src, `${rel} 没有把 total 传给操作条`).toContain('total={items.length}')
+      expect(src, `${rel} 没有接上全选回调`).toContain('onToggleAll={toggleSelectAll}')
+    }
+    expect(code(BAR), '操作条里没有全选按钮').toContain("allSelected ? '取消全选' : '全选'")
+  })
+
+  it('BE4 「归档计入统计」偏好：三处登记 + 默认关 + 接口按参数走', () => {
+    const prefs = code('lib/client/prefs.ts')
+    expect(prefs, '没有这个键').toContain("COUNT_ARCHIVED_KEY = 'qo-count-archived'")
+    // ★ 默认关 ⇒ 必须是 === '1'；写成 !== '0' 会让所有人一打开偏好就看到"开"
+    expect(prefs, '默认值读反了（应该 === 1 才是开）').toMatch(/isCountArchivedEnabled\(\)[\s\S]{0,160}=== '1'/)
+    expect(prefs, '没进 ALL_KEYS（登录后拉不回来）').toMatch(/ALL_KEYS = \[[^\]]*COUNT_ARCHIVED_KEY/)
+    expect(code('app/api/prefs/route.ts'), '没进 PREF_KEYS（PUT 会 400）').toContain("'qo-count-archived'")
+    expect(code('components/PrefsDialog.tsx'), '偏好弹窗里没有这一行').toContain('COUNT_ARCHIVED_KEY')
+    // 服务端按查询参数走，不猜偏好。
+    // ★ 必须断到 `searchParams.get(...) === '1'` —— 只断言"出现过 includeArchived"
+    //   在把它改成 `= false` 时照样通过（非空转验证抓到的）。
+    for (const api of ['app/api/diary/stats/route.ts', 'app/api/diary/on-this-day/route.ts']) {
+      expect(code(api), `${api} 没有真的从查询参数取 includeArchived`)
+        .toMatch(/searchParams\.get\('includeArchived'\) === '1'/)
+      // 而且必须真的进了 SQL（否则参数取了也没用）
+      expect(code(api), `${api} 取到参数但没用进 SQL`).toContain('::boolean OR archived_at IS NULL')
+    }
+    // 客户端五个调用点都要带上（漏一处 = 那个页面的统计口径与开关不一致）
+    expect(code(LIST), '列表页的 stats 没带参数').toContain('statsScopeQuery()')
+    expect(code('components/DiaryEditor.tsx'), '写页的 stats 没带参数').toContain('statsScopeQuery()')
+    expect(code('lib/client/diary-overview.ts'), '概览的 stats 没带参数').toContain('statsScopeQuery()')
+  })
+})

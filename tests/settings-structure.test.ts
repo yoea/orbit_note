@@ -155,6 +155,8 @@ describe('设置页信息架构', () => {
 // 容易悄悄退回去的性质各钉一条（P9~P17）。
 // ============================================================================
 const WIPE = 'components/WipeDataAction.tsx'
+// 2026-10-29：连点 LOGO 8 次打开的不再是删除流程，而是「隐藏入口」面板（已归档 / 删除所有数据）
+const HIDDEN = 'components/HiddenPanel.tsx'
 
 describe('删除所有数据的隐藏入口与四步流程', () => {
   it('P9 解析自检：四步流程与隐藏入口的锚点都能读到（防空转）', () => {
@@ -183,7 +185,10 @@ describe('删除所有数据的隐藏入口与四步流程', () => {
     // ★ 「连续」必须有界定：否则用户在几天里零散点 LOGO 也会凑够 8 次
     expect(about, '没有按间隔重置计数').toContain('if (now - lastTapRef.current > WIPE_TAP_GAP_MS) wipeTapsRef.current = 0')
     expect(about, '没有按阈值判断是否达到 8 次').toContain('if (wipeTapsRef.current >= WIPE_TAP_TARGET) {')
-    expect(about, '达到阈值后没有打开流程').toContain('setWipeOpen(true)')
+    // 2026-10-29：达到阈值后打开的是**隐藏面板**（里面才有「删除所有数据」这一行），
+    // 不再直接进删除流程 —— 用户要求把「已归档」也收进同一扇门。
+    expect(about, '达到阈值后没有打开隐藏面板').toContain('setHiddenOpen(true)')
+    expect(about, '隐藏面板没有条件渲染').toContain('{hiddenOpen && (')
     // LOGO 必须真的可点（语义化 button），且绑的是计数处理器
     expect(about, 'LOGO 没有包成可点击的 button').toMatch(/<button type="button" onClick=\{onLogoTap\}/)
     expect(about, 'LOGO 不是这个 button 的内容').toMatch(/onClick=\{onLogoTap\}[^>]*>\s*<OrbitLogo/)
@@ -241,16 +246,17 @@ describe('删除所有数据的隐藏入口与四步流程', () => {
   })
 
   it('P16 流程由调用方**条件渲染**（每次挂载都是干净的 state）', () => {
-    const about = code(ABOUT)
-    expect(about, '没有条件渲染流程 —— 每次触发必须从第一步重来').toContain('{wipeOpen && (')
+    // 2026-10-29 起 WipeDataAction 挂在 HiddenPanel 里（AboutDialog 只负责打开面板）。
+    const hidden = code(HIDDEN)
+    expect(hidden, '没有条件渲染流程 —— 每次触发必须从第一步重来').toContain('{wipeOpen && (')
     // ⚠️ 逗号分隔的 props 里有箭头函数（`{() => …}`）⇒ 正则**不能用 `[^>]*`**（会在 `=>` 的 `>`
     //    处截断，断言永远匹配不到 = 空转）。用 `[\s\S]{0,300}?` 限定在这一次组件调用内。
-    expect(about, '没有把离线禁用传下去').toMatch(/<WipeDataAction[\s\S]{0,300}?disabled=\{wipeDisabled\}/)
-    expect(about, '关闭时没有复位（下次点 8 次会直接又弹出来）').toMatch(
+    expect(hidden, '没有把离线禁用传下去').toMatch(/<WipeDataAction[\s\S]{0,300}?disabled=\{wipeDisabled\}/)
+    expect(hidden, '关闭时没有复位（下次点 8 次会直接又弹出来）').toMatch(
       /<WipeDataAction[\s\S]{0,300}?onClose=\{\(\) => setWipeOpen\(false\)\}/,
     )
     // 反面：不要再加一个 `open` 属性（那会要求组件自己在 effect 里重置 state）
-    expect(about, '不要再传 open 属性 —— 用条件渲染').not.toMatch(/<WipeDataAction[\s\S]{0,300}?\bopen=/)
+    expect(hidden, '不要再传 open 属性 —— 用条件渲染').not.toMatch(/<WipeDataAction[\s\S]{0,300}?\bopen=/)
     // ★ 流程层必须拦住冒泡：它挂在关于弹窗的遮罩内部，点流程遮罩的空白（= 取消流程）
     //   不该继续冒泡到关于弹窗的 onClick 把整个弹窗也关掉。
     const wipe = code(WIPE)

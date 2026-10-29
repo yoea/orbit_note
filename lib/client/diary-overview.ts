@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { statsScopeQuery } from './prefs'
 
 export interface DiaryOverview {
   count: number
@@ -18,7 +19,7 @@ export async function loadDiaryOverview(): Promise<DiaryOverview | null> {
   if (inflight) return inflight
   inflight = (async () => {
     try {
-      const res = await fetch('/api/diary/stats')
+      const res = await fetch(`/api/diary/stats${statsScopeQuery()}`)
       if (!res.ok) return null
       const data = await res.json() as {
         count: number

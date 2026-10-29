@@ -17,6 +17,7 @@ const PREF_KEYS = new Set([
   'qo-save-sound',
   'qo-show-views',
   'qo-show-heatmap',
+  'qo-count-archived',
 ])
 
 // 用户偏好（设置页开关）读写：多端同步，替代 localStorage

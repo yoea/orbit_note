@@ -19,6 +19,8 @@ import { projectRoot } from './class-attrs'
 const PAGE = 'app/(app)/settings/archive/page.tsx'
 const VIEW = 'components/ArchiveListView.tsx'
 const SETTINGS = 'components/SettingsView.tsx'
+// 2026-10-29：归档入口从设置页移到了「连点 LOGO 8 次」打开的隐藏面板里
+const HIDDEN = 'components/HiddenPanel.tsx'
 const ENTRY_VIEW = 'components/EntryView.tsx'
 const ARCHIVE_LIB = 'lib/client/archive.ts'
 const PROXY = 'proxy.ts'
@@ -45,7 +47,7 @@ describe('AR · 归档页（/settings/archive）', () => {
     for (const [rel, needle] of [
       [PAGE, 'ArchiveListView'],
       [VIEW, 'archived=only'],
-      [SETTINGS, '/settings/archive'],
+      [HIDDEN, '/settings/archive'],
       [ARCHIVE_LIB, 'daysAgoLabel'],
     ] as const) {
       const src = code(rel)
@@ -82,14 +84,14 @@ describe('AR · 归档页（/settings/archive）', () => {
     expect(src, '归档页的条目链接没带 ?from=archive').toMatch(/href=\{`\/entry\/\$\{item\.id\}\?from=archive`\}/)
   })
 
-  it('AR5 设置页有「已归档」入口，指向归档页', () => {
-    const src = code(SETTINGS)
-    expect(src, '设置页没有通往归档页的入口').toMatch(/href="\/settings\/archive"/)
+  it('AR5 归档入口在隐藏面板里，设置页不再有它', () => {
+    const src = code(HIDDEN)
+    expect(src, '隐藏面板里没有通往归档页的入口').toMatch(/href="\/settings\/archive"/)
     // 入口的可见文字必须是「已归档」——只改 href 不留标签等于藏起来了
-    const block = slice(SETTINGS, 'href="/settings/archive"', '</Link>')
+    const block = slice(HIDDEN, 'href="/settings/archive"', '</Link>')
     expect(block, '归档入口的标题不是「已归档」').toContain('已归档')
-    // 离线**不**禁用：归档列表有本地缓存兜底，禁掉会让离线用户以为功能没了
-    expect(block, '归档入口在离线时被禁用了（它只读本地缓存，不该禁）').not.toContain('disabledClass')
+    // ★ 反向：设置页不许再长出一个归档入口（2026-10-29 用户要求收进彩蛋，两处会变成两个入口）
+    expect(code(SETTINGS), '设置页又出现了归档入口 —— 它只该在隐藏面板里').not.toContain('/settings/archive')
   })
 
   it('AR6 详情页的返回箭头 / 删除后跳转都用 backHref，不再写死 /diary', () => {
@@ -126,13 +128,20 @@ describe('AR · 归档页（/settings/archive）', () => {
     expect(src, '空标题没有兜底文案').toContain("'(无标题)'")
   })
 
-  it('AR11 设置页的归档入口排在「导入与导出」之后（2026-10-29：入口可以深一点）', () => {
-    const src = code(SETTINGS)
-    const backup = src.indexOf('href="/settings/backup"')
-    const archive = src.indexOf('href="/settings/archive"')
-    expect(backup, '找不到导入与导出入口').toBeGreaterThanOrEqual(0)
-    expect(archive, '找不到归档入口').toBeGreaterThanOrEqual(0)
-    expect(archive, '归档入口又跑到「导入与导出」前面去了（不该抢在迁移操作前面）').toBeGreaterThan(backup)
+  it('AR12 归档页不再有「归档的日记不计入…」那句提示（2026-10-29 用户要求去掉）', () => {
+    expect(code(VIEW), '那句话还在').not.toContain('不计入热力图')
+    // 口径改成可配置后，它也不再是"必然"的了（见偏好「归档计入统计」）
+    expect(code(VIEW), '提示行又回来了').not.toContain('连续写作天数与日常列表')
+  })
+
+  it('AR11 隐藏面板同时收着「已归档」与「删除所有数据」两扇门', () => {
+    const hidden = code(HIDDEN)
+    expect(hidden, '隐藏面板里没有归档入口').toContain('/settings/archive')
+    expect(hidden, '隐藏面板里没有删除所有数据的入口').toContain('删除所有数据')
+    // 两扇门挂在同一个面板里才符合"降级可发现性"的初衷；分两处 = 又多了一个要记的位置
+    const archiveAt = hidden.indexOf('/settings/archive')
+    const wipeAt = hidden.indexOf('删除所有数据')
+    expect(archiveAt).toBeLessThan(wipeAt)
   })
 
   it('AR9 新路由已被 proxy 覆盖（matcher + protectedPaths 都不用改）', () => {

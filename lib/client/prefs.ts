@@ -18,11 +18,18 @@ export const HEATMAP_KEY = 'qo-show-heatmap'
 // 刻意不加入 ALL_KEYS（不与服务器同步）：缓存是设备本地属性——
 // 手机可能开着、电脑可能关着，跨端同步开关反而会互相覆盖出错误状态。
 export const OFFLINE_KEY = 'qo-offline-cache'
+// 归档的日记是否计入统计（热力图 / 连续写作天数 / 篇数 / 字数）。
+//
+// ★ **默认关**，与其它布尔偏好相反。理由：归档上线以来的既定行为就是「归档 = 退出日常统计」，
+//   默认开会让已经归档的日记突然回到热力图里，等于替用户改了既有数据。
+// ⇒ 读取必须用 `=== '1'`，**不能用 get()**（那个默认 true，会把默认值读反）。
+export const COUNT_ARCHIVED_KEY = 'qo-count-archived'
+
 // 已删除的键（2026-10-01 用户拍板，勿加回来）：
 //   qo-theme（主题外观三档）——应用恒跟随系统 prefers-color-scheme，不再提供切换；
 //   qo-prompt-timing（每日提示出现时机）——「显示每日提示」回归纯开关。
 
-const ALL_KEYS = [LOCATION_KEY, WEATHER_KEY, STREAK_KEY, PROMPT_KEY, OTD_KEY, GEOCODE_KEY, SAVE_SOUND_KEY, SHOW_VIEWS_KEY, HEATMAP_KEY]
+const ALL_KEYS = [LOCATION_KEY, WEATHER_KEY, STREAK_KEY, PROMPT_KEY, OTD_KEY, GEOCODE_KEY, SAVE_SOUND_KEY, SHOW_VIEWS_KEY, HEATMAP_KEY, COUNT_ARCHIVED_KEY]
 
 function get(key: string): boolean {
   if (typeof window === 'undefined') return true
@@ -83,6 +90,15 @@ export function isShowViewsEnabled(): boolean {
 // 日记页显示贡献热力图（默认开）
 export function isHeatmapEnabled(): boolean {
   return get(HEATMAP_KEY)
+}
+// 归档的日记是否计入统计（默认**关**，见 COUNT_ARCHIVED_KEY 的注释）
+export function isCountArchivedEnabled(): boolean {
+  if (typeof window === 'undefined') return false
+  return localStorage.getItem(COUNT_ARCHIVED_KEY) === '1'
+}
+/** 统计类接口（stats / on-this-day）的查询串：把「归档是否计入」这个口径带给服务端 */
+export function statsScopeQuery(): string {
+  return isCountArchivedEnabled() ? '?includeArchived=1' : ''
 }
 // 离线缓存开关（设备本地，默认开启——与其它偏好相反：这是能力开关而非隐私外发开关，
 // 默认给能力；不想要的用户可在偏好里关掉并一键清除本地数据）

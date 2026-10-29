@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
-import { cacheEntriesPage, getCachedEntries, getQueuedEntries, patchCachedEntries, unionWithPending } from '@/lib/client/offline'
-import { bulkErrorText, postBulkArchive } from '@/lib/client/bulk-ops'
+import { cacheEntriesPage, getCachedEntries, getQueuedEntries, patchCachedEntries, removeCachedEntries, removeQueuedEntry, unionWithPending } from '@/lib/client/offline'
+import { bulkErrorText, postBulkArchive, postBulkDelete } from '@/lib/client/bulk-ops'
 import { displayLocationName } from '@/lib/client/location'
 import { deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
 import { daysAgoLabel } from '@/lib/client/archive'
@@ -101,6 +101,9 @@ export default function ArchiveListView() {
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
   const [confirmBulk, setConfirmBulk] = useState(false)
+  // 彻底删除走**两段**确认（2026-10-29 用户要求「多次确认」）：0=没弹 / 1=第一问 / 2=最后一问。
+  // 归档页是「回收站」语义，在这里删 = 彻底清掉，所以比列表页的删除多一道。
+  const [deleteStep, setDeleteStep] = useState<0 | 1 | 2>(0)
 
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [sentinelEl, setSentinelEl] = useState<HTMLDivElement | null>(null)
@@ -120,6 +123,10 @@ export default function ArchiveListView() {
   function exitSelect() {
     setSelectMode(false)
     setSelected(new Set())
+  }
+
+  function toggleSelectAll() {
+    setSelected((prev) => (prev.size === items.length ? new Set() : new Set(items.map((i) => i.id))))
   }
 
   function toggleItem(id: string) {
@@ -150,6 +157,29 @@ export default function ArchiveListView() {
       exitSelect()
     } catch (e) {
       setToast(bulkErrorText(e, '取消归档'))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  // 彻底删除。删除后这一屏与本地缓存、离线队列都要清 —— 少清任何一处，
+  // 断网再进来它们都还在（列表读缓存、徽标读队列）。
+  async function submitBulkDelete() {
+    if (bulkBusy || selected.size === 0) return
+    setBulkBusy(true)
+    const ids = [...selected]
+    try {
+      const res = await postBulkDelete(ids)
+      const gone = new Set(ids)
+      setItems((prev) => prev.filter((i) => !gone.has(i.id)))
+      await removeCachedEntries(ids)
+      await Promise.all(ids.map((id) => removeQueuedEntry(id))).catch(() => {})
+      if (res.missing.length) setToast(`已删除 ${res.deleted} 篇，另有 ${res.missing.length} 篇本就不存在`)
+      else setToast(`已彻底删除 ${res.deleted} 篇`)
+      setDeleteStep(0)
+      exitSelect()
+    } catch (e) {
+      setToast(bulkErrorText(e, '删除'))
     } finally {
       setBulkBusy(false)
     }
@@ -340,9 +370,6 @@ export default function ArchiveListView() {
       </header>
       {/* 口径说明常驻一行：用户把某天唯一一篇归档后，连续写作天数会断
           （统计全部排除是该功能的既定取舍）。不写这一行，那会被当成 bug 报回来。 */}
-      <p className="shrink-0 px-5 pb-3 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-        归档的日记不计入热力图、连续写作天数与日常列表。
-      </p>
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5">
         <div className="flex flex-col gap-6 pb-4">
           <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -397,11 +424,14 @@ export default function ArchiveListView() {
       {selectMode && (
         <BulkActionBar
           count={selected.size}
+          total={items.length}
           busy={bulkBusy}
           label="取消归档"
           busyLabel="处理中…"
+          dangerLabel="彻底删除"
+          onToggleAll={toggleSelectAll}
           onAction={() => setConfirmBulk(true)}
-          onCancel={exitSelect}
+          onDanger={() => setDeleteStep(1)}
         />
       )}
 
@@ -414,6 +444,30 @@ export default function ArchiveListView() {
           cancelText="取消"
           onConfirm={() => void submitBulkUnarchive()}
           onCancel={() => setConfirmBulk(false)}
+        />
+      )}
+      {/* 第一问：说清"删的是什么、能不能恢复" */}
+      {deleteStep === 1 && (
+        <ConfirmDialog
+          title={`彻底删除这 ${selected.size} 篇日记？`}
+          message="删除后无法恢复，也会从「已归档」里消失。"
+          confirmText="继续"
+          cancelText="取消"
+          destructive
+          onConfirm={() => setDeleteStep(2)}
+          onCancel={() => setDeleteStep(0)}
+        />
+      )}
+      {/* 第二问：把"不可撤销"再说一遍，并给一个不像按钮的拒绝词 */}
+      {deleteStep === 2 && (
+        <ConfirmDialog
+          title="确定吗？这一步不可撤销"
+          message={`这 ${selected.size} 篇日记的密文会从服务器上删掉，你自己也恢复不了。`}
+          confirmText="永久删除"
+          cancelText="我再想想"
+          destructive
+          onConfirm={() => void submitBulkDelete()}
+          onCancel={() => setDeleteStep(0)}
         />
       )}
     </main>

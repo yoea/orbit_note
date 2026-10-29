@@ -10,13 +10,15 @@ import { rateLimit } from '@/lib/server/ratelimit'
 //   把它又翻出来摆在写页顶上会与这个语义直接冲突。
 export async function GET(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
+  // 与 stats 同一口径（偏好「归档计入统计」时，往年今日也会翻出已归档的日记）
+  const includeArchived = new URL(req.url).searchParams.get('includeArchived') === '1'
   if (!rateLimit('on-this-day', 30, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
   const today = new Date()
   const rows = await db.execute(sql`
     SELECT id, ciphertext, iv, created_at, latitude,
            location_province, location_city, location_district, location_name
     FROM diary_entries
-    WHERE archived_at IS NULL
+    WHERE (${includeArchived}::boolean OR archived_at IS NULL)
       AND EXTRACT(MONTH FROM created_at AT TIME ZONE COALESCE(timezone, 'UTC')) = ${today.getMonth() + 1}
       AND EXTRACT(DAY FROM created_at AT TIME ZONE COALESCE(timezone, 'UTC')) = ${today.getDate()}
       AND EXTRACT(YEAR FROM created_at AT TIME ZONE COALESCE(timezone, 'UTC')) < ${today.getFullYear()}

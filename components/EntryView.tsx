@@ -461,6 +461,13 @@ export default function EntryView({ id }: { id: string }) {
   // 详情页不会因此多出一行「编辑于」（与定位改动同一条约定）。
   const [starBusy, setStarBusy] = useState(false)
   const [archiveBusy, setArchiveBusy] = useState(false)
+  // 归档前先问一句（2026-10-29 用户要求）。它是一次"元数据"改动、可逆，
+  // 但对用户来说"这篇从列表里消失了"，值得先确认一次。
+  const [confirmArchive, setConfirmArchive] = useState(false)
+  // 归档/取消归档成功后的一次性提示。与 savedFlash 分开：两者不会同时发生，
+  // 但语义不同（一个是"存了"，一个是"收起来了"），共用会写出更难读的条件。
+  const [archiveFlash, setArchiveFlash] = useState<string | null>(null)
+  const archiveFlashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   async function toggleStar() {
     if (!entry || starBusy) return
@@ -486,6 +493,10 @@ export default function EntryView({ id }: { id: string }) {
         void cacheEntriesPage([data.entry])
         setEntry((prev) => (prev ? { ...prev, ...data.entry } : prev))
       }
+      // 提示文案跟着方向走：没有它，用户只能靠信息行末尾那个「· 已归档」判断成没成
+      if (archiveFlashTimerRef.current) clearTimeout(archiveFlashTimerRef.current)
+      setArchiveFlash(next == null ? '已取消归档' : '已归档')
+      archiveFlashTimerRef.current = setTimeout(() => setArchiveFlash(null), 2000)
     } catch {
       setEntry((prev) => (prev ? { ...prev, starred: !next } : prev)) // 失败回滚，不留假状态
       setError('收藏失败，请重试')
@@ -938,7 +949,7 @@ export default function EntryView({ id }: { id: string }) {
                 <StarIcon filled={entry.starred} className="h-[18px] w-[18px]" />
               </button>
               <button
-                onClick={() => void toggleArchive()}
+                onClick={() => setConfirmArchive(true)}
                 disabled={archiveBusy || (localReadonly && !pendingSync)}
                 aria-pressed={entry.archivedAt != null}
                 aria-label={entry.archivedAt != null ? '取消归档' : '归档'}
@@ -995,6 +1006,19 @@ export default function EntryView({ id }: { id: string }) {
       )}
       {/* 编辑保存成功通知（小型弹窗，自动消失） */}
       {savedFlash && <Toast message="✓ 已保存" />}
+      {archiveFlash && <Toast message={`✓ ${archiveFlash}`} />}
+      {confirmArchive && (
+        <ConfirmDialog
+          title={entry?.archivedAt != null ? '取消归档这篇日记？' : '归档这篇日记？'}
+          message={entry?.archivedAt != null
+            ? '它会回到列表、搜索与统计里。'
+            : '归档后它不再出现在列表、搜索与统计里，可以在「设置 → 已归档」找回。'}
+          confirmText={entry?.archivedAt != null ? '取消归档' : '归档'}
+          cancelText="取消"
+          onConfirm={() => { setConfirmArchive(false); void toggleArchive() }}
+          onCancel={() => setConfirmArchive(false)}
+        />
+      )}
       {confirmCancelEdit && (
         <ConfirmDialog
           title="确定不保存所做修改吗？"

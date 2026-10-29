@@ -12,7 +12,7 @@ import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
-import { isAutoPlaceNameEnabled, isLocationEnabled, isOfflineCacheEnabled, isOnThisDayEnabled, isPromptEnabled, isStreakEnabled, isWeatherEnabled } from '@/lib/client/prefs'
+import { isAutoPlaceNameEnabled, isLocationEnabled, isOfflineCacheEnabled, isOnThisDayEnabled, isPromptEnabled, isStreakEnabled, isWeatherEnabled, statsScopeQuery } from '@/lib/client/prefs'
 import { clientReverseGeocode } from '@/lib/client/geocode'
 import { locationPatch } from '@/lib/client/location'
 import { fetchWeather } from '@/lib/client/weather'
@@ -233,8 +233,8 @@ export default function DiaryEditor() {
     void (async () => {
       try {
         const [statsRes, otdRes] = await Promise.all([
-          fetch('/api/diary/stats').then((r) => (r.ok ? r.json() : null)).catch(() => null),
-          fetch('/api/diary/on-this-day').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch(`/api/diary/stats${statsScopeQuery()}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch(`/api/diary/on-this-day${statsScopeQuery()}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
         ])
         const stats = (statsRes as { count: number; byDay: Record<string, { count: number; words: number }> } | null)
           ?? (await getCachedStats())
