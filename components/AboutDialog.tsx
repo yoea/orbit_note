@@ -204,112 +204,118 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={onClose}>
-      <div
-        className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-neutral-800"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-label="关于 Orbit"
-      >
-        {/* 品牌渐变态（与 TabBar 选中态 / 主按钮 / 头像底同一条）。放在滚动区之外，
-            滚动时始终留在卡片顶边。 */}
-        <div className="h-[3px] w-full bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500" />
+    <>
+      {/* 关于弹窗与隐藏面板**互斥渲染**（2026-10-29 用户反馈「背景的关于窗口还开着」）：
+          之前面板只是叠在关于之上，40% 遮罩压不住浅色白卡，肉眼仍能看见它。
+          用条件渲染而不是给卡片加 `hidden` 类 —— 不渲染 = 布局与无障碍树里都没有它。 */}
+      {!hiddenOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={onClose}>
+          <div
+            className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-neutral-800"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="关于 Orbit"
+          >
+            {/* 品牌渐变态（与 TabBar 选中态 / 主按钮 / 头像底同一条）。放在滚动区之外，
+                滚动时始终留在卡片顶边。 */}
+            <div className="h-[3px] w-full bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500" />
 
-        <div className="thin-scrollbar max-h-[70dvh] overflow-y-auto">
-          {/* Hero：品牌字标 + 一句话定位，底下垫一层**极浅的品牌色晕**（橙→玫红→透明）。
-              它只是背景色，不含任何模糊属性；作用是把卡片顶部和下面几节分开，
-              让「这是谁」与「他有什么」在观感上是两段。高度 96px，滚动时随内容一起走。
-              ★ 这里不再放版本胶囊：版本号在页脚，而且**必须是一个可点击的胶囊**（用户要求显眼）。 */}
-          <div className="relative px-6 pb-3 pt-3 text-center">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-orange-50 via-rose-50 to-transparent dark:from-violet-500/10 dark:via-rose-500/5 dark:to-transparent"
-            />
-            <div className="relative">
-              {/* ★ 隐藏入口：连点这里 8 次进入删除流程（见文件头常量）。
-                  用 <button> 而不是给 LOGO 挂 onClick：可点击元素该是语义化按钮（键盘/读屏可达）。
-                  Tailwind preflight 已把 button 的背景/边框/内边距清零 ⇒ 观感与纯文本完全一致。 */}
-              <button ref={logoRef} type="button" onClick={onLogoTap} className="inline-block" aria-label="Orbit">
-                <OrbitLogo size="lg" />
-              </button>
-              <p className="mt-1.5 text-sm text-neutral-500 dark:text-neutral-400">端到端加密的私人日记</p>
-            </div>
-          </div>
-
-          <SectionLabel>核心优势</SectionLabel>
-          {/* 三行强调项：图标底**各用一色**（品牌渐变的三段：紫 / 玫红 / 橙），
-              与下方「更多特色」的裸描边图标拉开层级。
-              divide 分隔线内缩在 px-6 之内（行自身不加左右 padding），视觉上更收敛。 */}
-          <ul className="divide-y divide-neutral-100 px-6 dark:divide-neutral-800">
-            {HIGHLIGHTS.map(({ Icon, title, desc, tile }) => (
-              <li key={title} className="flex items-center gap-3 py-1.5">
-                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white ${tile}`}>
-                  <Icon className="h-4 w-4" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-neutral-800 dark:text-neutral-100">{title}</p>
-                  <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{desc}</p>
+            <div className="thin-scrollbar max-h-[70dvh] overflow-y-auto">
+              {/* Hero：品牌字标 + 一句话定位，底下垫一层**极浅的品牌色晕**（橙→玫红→透明）。
+                  它只是背景色，不含任何模糊属性；作用是把卡片顶部和下面几节分开，
+                  让「这是谁」与「他有什么」在观感上是两段。高度 96px，滚动时随内容一起走。
+                  ★ 这里不再放版本胶囊：版本号在页脚，而且**必须是一个可点击的胶囊**（用户要求显眼）。 */}
+              <div className="relative px-6 pb-3 pt-3 text-center">
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-orange-50 via-rose-50 to-transparent dark:from-violet-500/10 dark:via-rose-500/5 dark:to-transparent"
+                />
+                <div className="relative">
+                  {/* ★ 隐藏入口：连点这里 8 次进入删除流程（见文件头常量）。
+                      用 <button> 而不是给 LOGO 挂 onClick：可点击元素该是语义化按钮（键盘/读屏可达）。
+                      Tailwind preflight 已把 button 的背景/边框/内边距清零 ⇒ 观感与纯文本完全一致。 */}
+                  <button ref={logoRef} type="button" onClick={onLogoTap} className="inline-block" aria-label="Orbit">
+                    <OrbitLogo size="lg" />
+                  </button>
+                  <p className="mt-1.5 text-sm text-neutral-500 dark:text-neutral-400">端到端加密的私人日记</p>
                 </div>
-              </li>
-            ))}
-          </ul>
+              </div>
 
-          <div className="pt-2.5">
-            <SectionLabel>更多特色</SectionLabel>
-          </div>
-          {/* 两列网格：图标与文字同色（继承 li 的 currentColor），比逐个上色更干净。
-              这一节刻意**不加图标底**——次级内容不该跟上面三条抢注意力。 */}
-          <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-6">
-            {MORE.map(({ Icon, label }) => (
-              <li key={label} className="flex items-center gap-2 text-neutral-600 dark:text-neutral-300">
-                <Icon className="h-4 w-4 shrink-0" />
-                <span className="text-xs">{label}</span>
-              </li>
-            ))}
-          </ul>
+              <SectionLabel>核心优势</SectionLabel>
+              {/* 三行强调项：图标底**各用一色**（品牌渐变的三段：紫 / 玫红 / 橙），
+                  与下方「更多特色」的裸描边图标拉开层级。
+                  divide 分隔线内缩在 px-6 之内（行自身不加左右 padding），视觉上更收敛。 */}
+              <ul className="divide-y divide-neutral-100 px-6 dark:divide-neutral-800">
+                {HIGHLIGHTS.map(({ Icon, title, desc, tile }) => (
+                  <li key={title} className="flex items-center gap-3 py-1.5">
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-white ${tile}`}>
+                      <Icon className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-neutral-800 dark:text-neutral-100">{title}</p>
+                      <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{desc}</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
 
-          {/* 页脚：GitHub 胶囊 + 版权 / 开源 + 数据流向透明。
-               · **GitHub + 版本号是一个可点击的胶囊**（用户 2026-10-02 要求：「应该保持是一个可点击
-                 胶囊，让它显眼」）——所以它用 rounded-full + 实色底 + 偏实的文字色（不是次级灰），
-                 是整个弹窗里唯一带底色的行内元素，一眼就能看出「这里能点」；
-               · 版权与开源说明各占一行、更小更淡：它们不需要被注意，只需要在那里。
-               · 颜色沿用 AA 配对——neutral-300/600 那一对是**反向**的（浅色底用浅灰 ≈1.5:1），
-                 10px 小字在手机上等于看不见。 */}
-          <div className="mt-2.5 border-t border-neutral-100 px-6 pb-2.5 pt-2.5 dark:border-neutral-800">
-            <div className="flex justify-center">
-              <a
-                href="https://github.com/yoea/orbit_note"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="GitHub 项目地址"
-                className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3.5 py-1.5 text-xs font-medium text-violet-700 active:opacity-60 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-200"
-              >
-                <GitHubIcon className="h-3.5 w-3.5 shrink-0" />
-                GitHub
-                {/* 分隔点用元素级透明度（不得写 text-neutral-NN/xx，会被 footnote-contrast 的 R3 拦下） */}
-                <span aria-hidden className="mx-0.5 opacity-40">·</span>
-                {/* 版本号本身**已带 "v" 前缀**（来自 git tag，如 v1.18.1）——模板里不能再补一个 v，
-                    否则渲染成 "vv1.18.1"（2026-09-30 用户反馈）。 */}
-                <span className="tabular-nums">{process.env.NEXT_PUBLIC_VERSION ?? 'dev'}</span>
-              </a>
+              <div className="pt-2.5">
+                <SectionLabel>更多特色</SectionLabel>
+              </div>
+              {/* 两列网格：图标与文字同色（继承 li 的 currentColor），比逐个上色更干净。
+                  这一节刻意**不加图标底**——次级内容不该跟上面三条抢注意力。 */}
+              <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-6">
+                {MORE.map(({ Icon, label }) => (
+                  <li key={label} className="flex items-center gap-2 text-neutral-600 dark:text-neutral-300">
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="text-xs">{label}</span>
+                  </li>
+                ))}
+              </ul>
+
+              {/* 页脚：GitHub 胶囊 + 版权 / 开源 + 数据流向透明。
+                   · **GitHub + 版本号是一个可点击的胶囊**（用户 2026-10-02 要求：「应该保持是一个可点击
+                     胶囊，让它显眼」）——所以它用 rounded-full + 实色底 + 偏实的文字色（不是次级灰），
+                     是整个弹窗里唯一带底色的行内元素，一眼就能看出「这里能点」；
+                   · 版权与开源说明各占一行、更小更淡：它们不需要被注意，只需要在那里。
+                   · 颜色沿用 AA 配对——neutral-300/600 那一对是**反向**的（浅色底用浅灰 ≈1.5:1），
+                     10px 小字在手机上等于看不见。 */}
+              <div className="mt-2.5 border-t border-neutral-100 px-6 pb-2.5 pt-2.5 dark:border-neutral-800">
+                <div className="flex justify-center">
+                  <a
+                    href="https://github.com/yoea/orbit_note"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="GitHub 项目地址"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-3.5 py-1.5 text-xs font-medium text-violet-700 active:opacity-60 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-200"
+                  >
+                    <GitHubIcon className="h-3.5 w-3.5 shrink-0" />
+                    GitHub
+                    {/* 分隔点用元素级透明度（不得写 text-neutral-NN/xx，会被 footnote-contrast 的 R3 拦下） */}
+                    <span aria-hidden className="mx-0.5 opacity-40">·</span>
+                    {/* 版本号本身**已带 "v" 前缀**（来自 git tag，如 v1.18.1）——模板里不能再补一个 v，
+                        否则渲染成 "vv1.18.1"（2026-09-30 用户反馈）。 */}
+                    <span className="tabular-nums">{process.env.NEXT_PUBLIC_VERSION ?? 'dev'}</span>
+                  </a>
+                </div>
+                <p className="mt-1.5 text-center text-[10px] text-neutral-500 dark:text-neutral-400">
+                  © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'} · MIT 开源
+                </p>
+                <p className="mt-0.5 text-center text-[10px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+                  地名与天气来自第三方服务，查询时会发送坐标。
+                </p>
+              </div>
             </div>
-            <p className="mt-1.5 text-center text-[10px] text-neutral-500 dark:text-neutral-400">
-              © 2026 {process.env.NEXT_PUBLIC_COPYRIGHT_NAME ?? 'Orbit'} · MIT 开源
-            </p>
-            <p className="mt-0.5 text-center text-[10px] leading-relaxed text-neutral-500 dark:text-neutral-400">
-              地名与天气来自第三方服务，查询时会发送坐标。
-            </p>
+
+            <button onClick={onClose} className={DIALOG_FOOTER_BUTTON_CLASS}>
+              完成
+            </button>
           </div>
         </div>
+      )}
 
-        <button onClick={onClose} className={DIALOG_FOOTER_BUTTON_CLASS}>
-          完成
-        </button>
-      </div>
-
-      {/* 隐藏面板挂在**卡片之外**：它是 `fixed inset-0 z-50` 的一层，
-          放在卡片内虽然也能正常铺满（fixed 的包含块是视口，卡片又零 transform），
-          但它不该参与卡片的滚动与裁剪 —— 放外层最省心。条件渲染 ⇒ 每次都是干净的 state。 */}
+      {/* 隐藏面板自带 `fixed inset-0` 与遮罩，**单独成层**：
+          不再套在关于弹窗的遮罩里，否则两层 40% 黑会叠成 64%，比全站其它弹窗暗一档。 */}
       {hiddenOpen && (
         <HiddenPanel
           onClose={() => setHiddenOpen(false)}
@@ -317,6 +323,6 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
           onWipeBlocked={onWipeBlocked}
         />
       )}
-    </div>
+    </>
   )
 }

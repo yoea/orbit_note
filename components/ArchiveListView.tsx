@@ -86,6 +86,9 @@ function fmtDateTime(d: Date): string {
 
 export default function ArchiveListView() {
   const [items, setItems] = useState<DecryptedItem[]>([])
+  // 这一档的总篇数（服务端 `total`，与游标/offset 无关）。
+  // null = 还不知道（离线 / 首帧未到）——此时候口只显示「已加载 N 篇」，不编一个总数。
+  const [total, setTotal] = useState<number | null>(null)
   const [cursor, setCursor] = useState<Cursor | null>(null)
   const [hasMore, setHasMore] = useState(true)
   const [loading, setLoading] = useState(true)
@@ -110,6 +113,13 @@ export default function ArchiveListView() {
   const cursorRef = useRef<Cursor | null>(null)
   const hasMoreRef = useRef(true)
   const fetchingRef = useRef(false)
+  // —— 长按进选择态（2026-10-29 用户反馈「归档列表长按还是打开而不是多选」）——
+  // 上一版只给列表页加了长按，归档页整行还是裸 <Link>，所以长按只会导航。
+  // 两个 ref 的作用与列表页逐字同理（见 DiaryListView 里那段注释）：
+  //   · longPressTimerRef：500ms 计时器
+  //   · suppressNavRef：长按已经进入选择态后，**压掉随后那一次 click**，否则人会同时被带走
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const suppressNavRef = useRef(false)
 
   useEffect(() => { cursorRef.current = cursor }, [cursor])
   useEffect(() => { hasMoreRef.current = hasMore }, [hasMore])
@@ -127,6 +137,27 @@ export default function ArchiveListView() {
 
   function toggleSelectAll() {
     setSelected((prev) => (prev.size === items.length ? new Set() : new Set(items.map((i) => i.id))))
+  }
+
+  function cancelLongPress() {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }
+
+  // 长按 500ms：进入选择态并选中这一条。与列表页同一个阈值（iOS 系统长按菜单约 500ms，
+  // 再长手指会先被系统抢走；再短则正常滑动容易误触）。
+  function startLongPress(id: string) {
+    if (selectMode) return
+    cancelLongPress()
+    suppressNavRef.current = false
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null
+      suppressNavRef.current = true
+      setSelectMode(true)
+      setSelected(new Set([id]))
+    }, 500)
   }
 
   function toggleItem(id: string) {
@@ -187,11 +218,13 @@ export default function ArchiveListView() {
 
   // 取一页并解密。数据源：在线 = 服务器(archived=only) ∪ 队列里已归档的未同步笔记；
   // 离线 = 本地缓存里 archivedAt 非空的 ∪ 队列里已归档的。
-  const fetchPage = useCallback(async (from: Cursor | null): Promise<{ items: DecryptedItem[]; serverCount: number; cursor: Cursor | null }> => {
+  const fetchPage = useCallback(async (from: Cursor | null): Promise<{ items: DecryptedItem[]; serverCount: number; total: number | null; cursor: Cursor | null }> => {
     const dek = getDek()
-    if (!dek) return { items: [], serverCount: 0, cursor: null }
+    if (!dek) return { items: [], serverCount: 0, total: null, cursor: null }
     let entries: Entry[]
     let serverCount: number
+    // 服务端给的这一档总数；离线时保持 null（详见 total state 的注释）
+    let total: number | null = null
     let nextCursor: Cursor | null = null
     const queued = await getQueuedEntries()
     // 离线归档过的笔记（队列里带 archivedAt）也属于「已归档」——不并进来，
@@ -205,8 +238,10 @@ export default function ArchiveListView() {
     const res = await fetch(`/api/diary?archived=only&limit=${PAGE_SIZE}${qs}`).catch(() => null)
     if (res) {
       if (!res.ok) throw new Error('加载失败')
-      const server = ((await res.json()) as { entries: Entry[] }).entries
+      const payload = (await res.json()) as { entries: Entry[]; total?: number }
+      const server = payload.entries
       serverCount = server.length
+      total = typeof payload.total === 'number' ? payload.total : null
       // await：与列表页同一条不变量——**列表里出现过的，本地必须已有密文**（离线可读性）
       await cacheEntriesPage(server)
       // ★ 这里**没有** pruneCachedEntries，而且不能加（见文件头第 1 条）
@@ -232,7 +267,8 @@ export default function ArchiveListView() {
       const slice = union.slice(startIdx, startIdx + PAGE_SIZE)
       entries = slice
       serverCount = slice.length
-      if (!slice.length && from === null) return { items: [], serverCount: 0, cursor: null }
+      // 离线：不知道服务器上有多少，别编数字（total 保持 null）
+      if (!slice.length && from === null) return { items: [], serverCount: 0, total: null, cursor: null }
       pendingIds = new Set(queuedArchived.map((q) => q.id))
       const last = slice[slice.length - 1]
       nextCursor = slice.length && startIdx + slice.length < union.length
@@ -259,7 +295,7 @@ export default function ArchiveListView() {
         // 单条解密失败跳过（数据损坏不阻塞整页）
       }
     }
-    return { items: decrypted, serverCount, cursor: nextCursor }
+    return { items: decrypted, serverCount, total, cursor: nextCursor }
   }, [])
 
   useEffect(() => {
@@ -267,6 +303,7 @@ export default function ArchiveListView() {
       try {
         const first = await fetchPage(null)
         setItems(first.items)
+        setTotal(first.total)
         setCursor(first.cursor)
         setHasMore(first.serverCount === PAGE_SIZE)
       } catch {
@@ -349,9 +386,13 @@ export default function ArchiveListView() {
     )
   }
 
+  // 未同步的归档条目（离线归档、还没上服务器）：它们不在服务端 total 里，
+  // 单独加进「共 N 篇」才对得上眼前看到的行数。
+  const pendingCount = items.filter((i) => i.pending).length
+
   return (
-    /* 布局与列表页同构（固定页头 + 内部滚动区），但**没有**统计行与热力图：
-       归档条目不参与统计（stats 与 on-this-day 都已排除），在这里再显示一遍会自相矛盾。 */
+    /* 布局与列表页同构（固定页头 + 总数行 + 内部滚动区），但**没有**热力图：
+       归档条目不参与统计（stats 与 on-this-day 默认都已排除），热力图放这里会自相矛盾。 */
     <main className="mx-auto flex h-full w-full max-w-md flex-col">
       <header className="page-header relative flex shrink-0 items-center justify-between px-5 py-3">
         {/* 返回设置页（本页从设置页进）。标题绝对居中、右侧留等宽占位保持行高 */}
@@ -368,8 +409,18 @@ export default function ArchiveListView() {
           <span className="w-8" aria-hidden />
         )}
       </header>
-      {/* 口径说明常驻一行：用户把某天唯一一篇归档后，连续写作天数会断
-          （统计全部排除是该功能的既定取舍）。不写这一行，那会被当成 bug 报回来。 */}
+      {/* 总数行（2026-10-29 用户要求「顶部显示一个共多少篇之类的信息」）：
+          本页原先只有页头 + 列表，空得像没加载完。这一行与列表页的统计行同构
+          （`shrink-0` 固定、`text-xs tabular-nums`），但**只有篇数**——归档条目不参与
+          热力图/连续天数，这里再摆一堆统计会自相矛盾。
+          ★ 数字来自服务端 `total`（与游标无关的总量），不是已加载条数；
+            离线时 total 为 null，退化成「已加载 N 篇」，不编造总数。 */}
+      {items.length > 0 && (
+        <p className="shrink-0 px-5 pb-2 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+          {total !== null ? `共 ${total + pendingCount} 篇` : `已加载 ${items.length} 篇`}
+          {pendingCount > 0 && <span className="opacity-70">（含 {pendingCount} 篇未同步）</span>}
+        </p>
+      )}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5">
         <div className="flex flex-col gap-6 pb-4">
           <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
@@ -386,8 +437,25 @@ export default function ArchiveListView() {
                   </button>
                 ) : (
                   /* ?from=archive：详情页据此把返回箭头与「删除后跳转」指回本页
-                     （不带的话会一律回 /diary，用户从归档页点开一篇就回不来了） */
-                  <Link href={`/entry/${item.id}?from=archive`} className="flex flex-col gap-1 py-3 active:opacity-60">
+                     （不带的话会一律回 /diary，用户从归档页点开一篇就回不来了）。
+                     ★ 长按 500ms 进选择态（2026-10-29 用户反馈「长按还是打开」）：
+                       `qo-hold-select` 带 -webkit-touch-callout: none，挡掉 iOS 的链接预览浮层
+                       （光 user-select 不够，它只管文字选择）；suppressNavRef 压掉长按后那一次 click。 */
+                  <Link
+                    href={`/entry/${item.id}?from=archive`}
+                    className="qo-hold-select flex flex-col gap-1 py-3 active:opacity-60"
+                    onPointerDown={() => startLongPress(item.id)}
+                    onPointerUp={cancelLongPress}
+                    onPointerMove={cancelLongPress}
+                    onPointerCancel={cancelLongPress}
+                    onContextMenu={(e) => { if (suppressNavRef.current) e.preventDefault() }}
+                    onClick={(e) => {
+                      if (suppressNavRef.current) {
+                        e.preventDefault()
+                        suppressNavRef.current = false
+                      }
+                    }}
+                  >
                     {rowBody(item)}
                   </Link>
                 )}

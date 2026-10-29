@@ -129,7 +129,9 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
     { group: '写作页', key: OTD_KEY, label: '显示去年的今天', hint: '首页顶部往年今日回忆卡片', enabled: showOtd, setEnabled: setShowOtd },
     { group: '日记列表与详情', key: HEATMAP_KEY, label: '显示写作热力图', hint: '日记页顶部固定的写作热力图', enabled: heatmap, setEnabled: setHeatmap },
     { group: '日记列表与详情', key: SHOW_VIEWS_KEY, label: '显示打开次数', hint: '详情页底部的打开次数', enabled: showViews, setEnabled: setShowViews },
-    { group: '日记列表与详情', key: COUNT_ARCHIVED_KEY, label: '归档计入统计', hint: '热力图、连续天数、篇数与字数都包含已归档的日记', enabled: countArchived, setEnabled: setCountArchived },
+    // hint 控制在 10 字上下（2026-10-29 用户要求）：同一张列表里其它 hint 都是 12~14 字、
+    // 单行显示；这条原来 21 字会换行，整行高度比相邻项高一截，看着像断开了。
+    { group: '日记列表与详情', key: COUNT_ARCHIVED_KEY, label: '归档计入统计', hint: '归档的日记也计入统计', enabled: countArchived, setEnabled: setCountArchived },
     { group: '其他', key: SAVE_SOUND_KEY, label: '保存音效', hint: '保存成功时播放提示音', enabled: saveSound, setEnabled: setSaveSound },
     { group: '其他', key: OFFLINE_KEY, label: '离线缓存', hint: queuedCount > 0 ? `有 ${queuedCount} 篇待同步日记，关闭开关将丢弃` : '断网时仍可解锁并新建和查看日记', enabled: offlineCache, setEnabled: setOfflineCache },
   ]

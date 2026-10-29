@@ -280,3 +280,64 @@ describe('BE · 归档交互与统计口径', () => {
     expect(code('lib/client/diary-overview.ts'), '概览的 stats 没带参数').toContain('statsScopeQuery()')
   })
 })
+
+// ============================================================================
+// 2026-10-29 第三轮反馈（四条）
+//
+// 其中 BG1 是**同一个问题被报两次**：多选按钮"还在右边"。
+// 根因不在按钮本身，而在页头的 `justify-end` —— 标题是 absolute 定位、不参与 flex 排布，
+// 所以流内只剩「按钮 + 搜索」两个子元素，`justify-end` 会把它们一起推到右边。
+// 这条断言直接钉 header 的排布，而不是钉按钮的类名（钉按钮是钉不住的：按钮类名完全正确）。
+// ============================================================================
+describe('BG · 第三轮反馈', () => {
+  it('BG1 列表页页头用 justify-between（多选按钮必须在最左）', () => {
+    const src = code(LIST)
+    expect(src, '页头不是 justify-between —— 多选按钮会被推到右边')
+      .toContain('page-header relative flex shrink-0 items-center justify-between')
+    // 反向：整页不许再出现 justify-end（标题是 absolute，任何 justify-end 都只影响左右两个按钮）
+    expect(src, '又出现了 justify-end（标题绝对居中不需要它）').not.toContain('items-center justify-end')
+  })
+
+  it('BG2 隐藏面板打开时关于弹窗整块不渲染', () => {
+    const about = code('components/AboutDialog.tsx')
+    const hideAt = at(about, '{!hiddenOpen && (')
+    const panelAt = at(about, '{hiddenOpen && (')
+    expect(hideAt, '关于卡片没有被条件隐藏 —— 面板打开时白卡会透在遮罩下面').toBeLessThan(panelAt)
+    // 面板自带遮罩、单独成层：不能再套进 about 的遮罩里（两层 40% 会叠成 64%）
+    expect(about, '隐藏面板没有用 shared 常量/独立成层').toContain('<HiddenPanel')
+  })
+
+  it('BG3 归档页长按也能进选择态（不能只加在列表页）', () => {
+    const src = code(ARCHIVE_VIEW)
+    // 上一版只有列表页有长按，归档页整行是裸 <Link> ⇒ 长按只会导航
+    expect(src, '归档页没有长按计时器').toContain('longPressTimerRef')
+    expect(src, '归档页没有 startLongPress').toContain('function startLongPress')
+    expect(src, '归档页的行没有挂长按').toContain('onPointerDown={() => startLongPress(item.id)}')
+    // 挡 iOS 链接预览：只有 -webkit-touch-callout 管用（user-select 管不了）
+    expect(src, '归档页的行没挂 qo-hold-select').toContain('qo-hold-select')
+    // 长按进选择态后必须压掉那一次 click
+    expect(src, '长按后没有把 suppressNavRef 置 true').toContain('suppressNavRef.current = true')
+    expect(src, '那一次 click 没有检查标记').toMatch(/if \(suppressNavRef\.current\) \{\s*\n\s*e\.preventDefault\(\)/)
+  })
+
+  it('BG4 归档页顶部的总篇数来自服务端 total（不是已加载条数）', () => {
+    const api = code('app/api/diary/route.ts')
+    expect(api, '列表接口没有返回 total').toContain('total: totalRows[0]?.n ?? 0')
+    // ★ 口径：archived 过滤之内、**不含游标**（游标是"还剩多少没翻"，不是"一共多少"）
+    expect(api, 'total 的 where 用了含游标的 where（数字会随翻页变小）')
+      .toMatch(/count\(\*\)::int[\s\S]{0,120}?\.where\(archivedWhere\)/)
+    const view = code(ARCHIVE_VIEW)
+    expect(view, '归档页没有接收 total').toContain('setTotal(first.total)')
+    expect(view, '归档页没有显示总篇数').toContain('共 ${total + pendingCount} 篇')
+    // 离线时不能编数字
+    expect(view, '离线时也硬算总数了').toContain('已加载 ${items.length} 篇')
+  })
+
+  it('BG5 「归档计入统计」的说明文案压到一行（≤12 字）', () => {
+    const src = code('components/PrefsDialog.tsx')
+    const m = src.match(/COUNT_ARCHIVED_KEY,[^\n]*hint: '([^']*)'/)
+    expect(m, '找不到这条偏好的 hint').not.toBeNull()
+    expect(m![1].length, `说明文字 ${m![1].length} 字，在 320px 卡片里会换行（其余行都是 9~14 字）`)
+      .toBeLessThanOrEqual(12)
+  })
+})

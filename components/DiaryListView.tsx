@@ -676,7 +676,11 @@ export default function DiaryListView() {
        · 固定区里 stats 未就绪时也占位渲染（统计行留空行、热力图渲染空图）⇒ 数据到达时
          不会把列表整体推下去（布局不弹跳）。 */
     <main className="mx-auto flex h-full w-full max-w-md flex-col">
-      <header className="page-header relative flex shrink-0 items-center justify-end px-5 py-3">
+      {/* ★ `justify-between`，不是 `justify-end`（2026-10-29 用户两次反馈「多选按钮还在右边」）：
+          标题是 `absolute` 定位的、**不参与 flex 排布**，所以这里只有两个流内子元素
+          （左侧多选按钮 + 右侧搜索/完成）。写 `justify-end` 会把这两个一起推到右边，
+          于是多选图标就贴在搜索旁边 —— 看着像"两个右侧按钮"。 */}
+      <header className="page-header relative flex shrink-0 items-center justify-between px-5 py-3">
         {/* 标题恒定「全部日记」：选择态靠底部操作条的「已选 N 篇」表达，
             不在这里换字——一换字标题就会因长度变化左右平移，看着像抖了一下。 */}
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">全部日记</h1>

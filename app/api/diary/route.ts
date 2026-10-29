@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { diaryEntries } from '@/lib/server/db/schema'
-import { and, desc, eq, isNotNull, isNull, lt, or } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, lt, or, sql } from 'drizzle-orm'
 import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { diaryCreateSchema } from '@/lib/server/validation'
 import { rateLimit } from '@/lib/server/ratelimit'
@@ -73,12 +73,20 @@ export async function GET(req: Request) {
   const where = cursorWhere && archivedWhere
     ? and(cursorWhere, archivedWhere)
     : (cursorWhere ?? archivedWhere)
-  const entries = await db.select().from(diaryEntries)
-    .where(where)
-    .orderBy(desc(diaryEntries.createdAt), desc(diaryEntries.id))
-    // 游标已定位到内容，offset 必须归零（两者语义不能叠加）
-    .limit(limit).offset(cursor ? 0 : offset)
-  return NextResponse.json({ entries })
+  // ★ 同时给出**这一档的总量**（2026-10-29：归档页顶部要显示「共 N 篇」）。
+  //   口径是「archived 过滤之内、全部条目」，**不含游标/offset** —— 那是「还剩多少没翻」，
+  //   不是「一共有多少」。用户看到的是后者。
+  //   为什么不做成单独接口：归档页每次翻页都会调本接口，顺手带上总数省一次 RTT；
+  //   COUNT(*) 走 `archived_at` 上的条件，147 行量级可忽略（单用户应用）。
+  const [entries, totalRows] = await Promise.all([
+    db.select().from(diaryEntries)
+      .where(where)
+      .orderBy(desc(diaryEntries.createdAt), desc(diaryEntries.id))
+      // 游标已定位到内容，offset 必须归零（两者语义不能叠加）
+      .limit(limit).offset(cursor ? 0 : offset),
+    db.select({ n: sql<number>`count(*)::int` }).from(diaryEntries).where(archivedWhere),
+  ])
+  return NextResponse.json({ entries, total: totalRows[0]?.n ?? 0 })
 }
 
 export async function POST(req: Request) {

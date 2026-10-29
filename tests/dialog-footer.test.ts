@@ -32,10 +32,14 @@ const DIALOGS = [
   'components/AboutDialog.tsx',
   'components/PasskeysDialog.tsx',
   'components/RecoveryRegenerateDialog.tsx',
+  // 2026-10-29：隐藏入口面板（连点 LOGO 8 次）也是「iOS Alert 风格、底部一排按钮」的弹窗，
+  // 它的「完成」与上面几个逐字同源（DIALOG_FOOTER_BUTTON_CLASS），必须一起守
+  'components/HiddenPanel.tsx',
 ]
 
 // 底部只有一个按钮、样式已收敛到共享常量的四个弹窗
 const SOLO_FOOTER_DIALOGS = [
+  'components/HiddenPanel.tsx',
   'components/PrefsDialog.tsx',
   'components/AboutDialog.tsx',
   'components/PasskeysDialog.tsx',

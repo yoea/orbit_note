@@ -130,7 +130,8 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
 - `GET|POST /api/diary`、`GET|PATCH|DELETE /api/diary/[id]`
   （列表支持两套分页：`offset` 与 **`before`/`beforeId` 游标**（(created_at,id) 元组比较，
   供「滑到底自动加载」与「按某天取一页」）；反方向的 `after` 已于 2026-10-02 随列表页日期功能一并移除。
-  列表另有 **`archived=exclude|only|all`**，**默认 `exclude`**（旧客户端不传也看不见归档）。）
+  列表另有 **`archived=exclude|only|all`**，**默认 `exclude`**（旧客户端不传也看不见归档）；
+  响应恒带 **`total`**（该档总条数，**不含游标/offset** —— 归档页的「共 N 篇」用它）。）
 - `POST /api/diary/[id]/view`（打开次数 +1，服务器原子自增；只写 `view_count` 一列，不碰 `updatedAt`）
 - `POST /api/diary/import`（批量导入，允许客户端指定 createdAt/updatedAt 以保留原始时间）
 - `POST /api/diary/archive`（**批量**归档/取消归档：`{ids, archived}` → `{updated, missing}`，
