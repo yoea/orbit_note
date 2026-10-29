@@ -71,12 +71,35 @@ describe('设置页信息架构', () => {
     expect(logout).toBeLessThan(pos(src, '>通用</p>'))
   })
 
-  it('P3 导入与导出是单一入口，设置页不再直接暴露导出 / 导入两项', () => {
+  it('P3 导入与导出是单一入口（2026-10-29 起是**底部抽屉**，不再跳整页）', () => {
     const src = code(SETTINGS)
-    expect(src).toContain('href="/settings/backup"')
+    expect(src, '设置页没有打开抽屉的入口').toContain('setShowBackup(true)')
+    expect(src, '没有渲染抽屉').toContain('<BackupSheet')
+    // 反向：整页路由还留着（书签/PWA 深链要用），但设置页**不许**再指过去
+    expect(src, '设置页又直接跳到 /settings/backup 整页了').not.toContain('href="/settings/backup"')
     expect(src).toContain('>导入与导出</p>')
     expect(src).not.toContain('href="/settings/export"')
     expect(src).not.toContain('href="/settings/import"')
+  })
+
+  it('P19 抽屉复用同一批面板：导入在前、导出在后，内部可滚 + 底部安全区', () => {
+    const src = code('components/BackupSheet.tsx')
+    expect(src, '抽屉没有渲染导出面板').toContain('<ExportView ')
+    expect(src, '抽屉没有渲染导入面板').toContain('<ImportView ')
+    // 顺序与设置项名同源：「导入与导出」。★ 看**分段数组**的顺序，不看 JSX 三元里的书写顺序——
+    //   三元写的是 `mode === 'export' ? 导出 : 导入`，源码里导出在前，但用户看到的顺序由数组决定。
+    const tabs = src.indexOf("['import', '导入']")
+    expect(tabs, '找不到分段定义').toBeGreaterThanOrEqual(0)
+    expect(tabs, '分段顺序反了（导入必须在导出前，与设置项名一致）')
+      .toBeLessThan(src.indexOf("['export', '导出']"))
+    // 抽屉高度有限 ⇒ 内容必须自己能滚，并躲开 Home 指示条
+    expect(src, '抽屉内容区不可滚').toContain('overflow-y-auto')
+    expect(src, '抽屉没做底部安全区').toContain('pb-safe')
+    // 两个面板都要走精简文案（说明文字少一点），否则按钮会被挤到需要滚动
+    expect(src, '导出面板没走精简模式').toContain('<ExportView compact')
+    expect(src, '导入面板没走精简模式').toContain('<ImportView compact')
+    // 分段默认落在「导入」（与整页版同一理由）
+    expect(src).toContain("useState<'export' | 'import'>('import')")
   })
 
   it('P4 删除数据不在导出面板里（危险操作不得与「备份」同页）', () => {

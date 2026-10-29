@@ -189,4 +189,30 @@ describe('F · 查看页信息行 + 底部 4 图标操作栏', () => {
       '正文滚动区与操作栏之间又夹了元素 ⇒ 正文滚到底也够不到分割线，中间会空出一块',
     ).not.toMatch(/<\/?div/)
   })
+
+  // ── 2026-10-29（用户要求「按逻辑重排」+「改气泡确认」）──────────────────────
+  it('F9 右组顺序：编辑 → 归档 → 删除（归档必须夹在编辑与删除之间）', () => {
+    const iconGroup = indexOrFail('-mr-2')
+    const edit = indexOrFail('aria-label="编辑"')
+    const archive = indexOrFail("entry.archivedAt != null ? '取消归档' : '归档'")
+    const del = indexOrFail('aria-label="删除"')
+    // 归档原先在**左组**（收藏后面），会被读成"第三种状态"。
+    expect(archive, '归档还在左组（状态区）里 —— 它是对内容的操作，不是状态').toBeGreaterThan(iconGroup)
+    expect(edit, '编辑不在右组第一位').toBeGreaterThan(iconGroup)
+    expect(edit, '编辑没有排在归档之前').toBeLessThan(archive)
+    expect(archive, '归档没有排在删除之前（用户要求：归档夹在编辑与删除之间）').toBeLessThan(del)
+  })
+
+  it('F10 归档 / 删除用气泡确认（Popconfirm），不再是整块模态', () => {
+    const bar = src.slice(indexOrFail(BAR))
+    expect(bar, '归档没有接气泡确认').toMatch(/<Popconfirm[\s\S]{0,300}?open=\{confirmArchive\}/)
+    expect(bar, '删除没有接气泡确认').toMatch(/<Popconfirm[\s\S]{0,300}?open=\{confirmingDelete\}/)
+    expect(bar, '删除的确认键没标 destructive（不可撤销的动作必须是红的）')
+      .toMatch(/<Popconfirm[\s\S]{0,400}?destructive/)
+    // 气泡是 `absolute`，必须有自己的定位容器；漏了就在最近的定位祖先上乱飘
+    expect(bar, '气泡没有 relative 定位容器').toContain('className="relative"')
+    // 反向：这两个动作不许再出现模态确认（对象明确到不需要指认，模态只会把人拽走）
+    expect(src, '归档的模态确认又被加回来了').not.toContain('归档这篇日记？')
+    expect(src, '删除的模态确认又被加回来了').not.toContain('确定删除这篇日记吗')
+  })
 })

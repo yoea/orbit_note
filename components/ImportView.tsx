@@ -39,7 +39,10 @@ const PHASE_LABEL: Record<ImportProgress['phase'], string> = {
 //
 // 幂等：同一份文件导入两次不会翻倍——条目 id 由源标识确定性派生（UUIDv5），
 // 服务端 ON CONFLICT DO NOTHING 直接跳过已存在的，报告里体现为「已存在，跳过」。
-export default function ImportView() {
+export default function ImportView({ compact = false }: {
+  /** 抽屉模式（BackupSheet）：只留"能导什么"一句，其余解释让给按钮 */
+  compact?: boolean
+} = {}) {
   const offline = useOffline()
   const router = useRouter()
   const fileRef = useRef<HTMLInputElement>(null)
@@ -99,20 +102,26 @@ export default function ImportView() {
         导入本应用导出的 <span className="font-medium">.zip / .json 文件</span>，
         以及 <span className="font-medium">Day One、Journey</span> 导出的日记文件。
       </p>
-      <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-        导入是<span className="font-medium">合并</span>而不是覆盖：已有的日记不受影响；同一条重复导入会被跳过（按条目内容确定性识别）。
-        文件在你设备上解密并重新加密后才上传，服务器拿到的仍是密文。
-      </p>
-      {/* 解释与导出侧的不对称：导出要再验一次身份、导入不用。用户合并入口后一定会注意到，
-          与其让人猜，不如直接说明——否则会显得像是漏做了 */}
-      <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-        导入不需要再次验证身份：你已经在解锁状态，写入的是你自己的账号（导出方向相反，
-        是把明文带出设备，所以那一侧要再验一次）。
-      </p>
-      {/* 说的是数据库字段的恢复。本机数据（打开次数）不进备份，也别在这里暗示用户它会恢复 */}
-      <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-        正文、时间、地点、天气、字数、收藏状态等<span className="font-medium">全部字段</span>都会一并恢复。
-      </p>
+      {/* 抽屉模式只留上面那一句：三行解释会把「选择文件」按钮推到需要滚动才看得见。
+          整页版（/settings/backup）保留全部说明。 */}
+      {!compact && (
+        <>
+          <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+            导入是<span className="font-medium">合并</span>而不是覆盖：已有的日记不受影响；同一条重复导入会被跳过（按条目内容确定性识别）。
+            文件在你设备上解密并重新加密后才上传，服务器拿到的仍是密文。
+          </p>
+          {/* 解释与导出侧的不对称：导出要再验一次身份、导入不用。用户合并入口后一定会注意到，
+              与其让人猜，不如直接说明——否则会显得像是漏做了 */}
+          <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+            导入不需要再次验证身份：你已经在解锁状态，写入的是你自己的账号（导出方向相反，
+            是把明文带出设备，所以那一侧要再验一次）。
+          </p>
+          {/* 说的是数据库字段的恢复。本机数据（打开次数）不进备份，也别在这里暗示用户它会恢复 */}
+          <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+            正文、时间、地点、天气、字数、收藏状态等<span className="font-medium">全部字段</span>都会一并恢复。
+          </p>
+        </>
+      )}
 
       {offline && (
         <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">

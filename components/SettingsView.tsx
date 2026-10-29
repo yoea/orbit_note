@@ -1,13 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import AboutDialog from '@/components/AboutDialog'
 import PrefsDialog from '@/components/PrefsDialog'
 import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
 import RecoveryRegenerateDialog from '@/components/RecoveryRegenerateDialog'
+import BackupSheet from '@/components/BackupSheet'
 import NameEditDialog from '@/components/NameEditDialog'
 import ProfileCard from '@/components/ProfileCard'
 import Toast from '@/components/Toast'
@@ -62,6 +62,8 @@ export default function SettingsView() {
   const [showPasskeys, setShowPasskeys] = useState(false)
   const [showRecovery, setShowRecovery] = useState(false)
   const [showNameEdit, setShowNameEdit] = useState(false)
+  // 导入与导出改从底部弹出（2026-10-29 用户要求）——不再跳 /settings/backup 整页
+  const [showBackup, setShowBackup] = useState(false)
   // 离线禁用提示：offlineToastAt 是触发计数器（>0 即显示）。连点自增 →
   // 下面的 effect 重启 2s 计时器（toast 动画重放）；比手写 setTimeout+ref 简单且无 lint 争议
   const [offlineToastAt, setOfflineToastAt] = useState(0)
@@ -194,7 +196,10 @@ export default function SettingsView() {
       <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">数据</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
-          {/* 导入与导出：两者本来就是同一件事的两端，合并为单一入口（页面内分段切换），
+          {/* 导入与导出（2026-10-29 改成**底部抽屉**，不再跳整页）：它是设置里的一件事，
+              不该抬到与「关于」「偏好」同级的位置，也不想让用户多走两次"返回"。
+              ★ /settings/backup 整页路由保留（书签 / PWA 深链），两者共用同一批组件。
+              两者本来就是同一件事的两端，合并为单一入口（抽屉内分段切换），
               数据层毫无改动——分成两行会让它们看起来无关。
               命名与顺序（2026-10-10 用户要求）：设置项名称与页内分段**同名同序** ——
               「导入与导出」，分段里**导入在前、导出在后**。原先入口叫「导出与导入」、
@@ -202,9 +207,8 @@ export default function SettingsView() {
               （CSV 明确不能导回本应用、从 Day One 迁入属于「导入」而非「恢复」）。
               守卫 tests/export-terms.test.ts。
               离线禁用：导出要拉服务器全量密文（本地缓存不保证完整）、导入必须写服务器。 */}
-          <Link
-            href="/settings/backup"
-            onClick={(e) => { if (offline) { e.preventDefault(); notifyOffline() } }}
+          <button
+            onClick={() => { if (offline) { notifyOffline(); return } setShowBackup(true) }}
             className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}
           >
             <div>
@@ -212,7 +216,7 @@ export default function SettingsView() {
               <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">把日记从文件导入，或导出为文件</p>
             </div>
             <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
-          </Link>
+          </button>
         </li>
       </ul>
       {/* 「删除所有数据」**不在本页**（2026-10-10）：入口已挪进「关于 Orbit」弹窗的最底部。
@@ -234,6 +238,7 @@ export default function SettingsView() {
           onCancel={() => setConfirmLogout(false)}
         />
       )}
+      {showBackup && <BackupSheet onClose={() => setShowBackup(false)} />}
       {showAbout && (
         <AboutDialog
           onClose={() => setShowAbout(false)}

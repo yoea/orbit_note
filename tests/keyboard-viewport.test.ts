@@ -225,4 +225,19 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
     expect(scrollerAt, '找不到详情页正文滚动容器').toBeGreaterThan(-1)
     expect(headerAt, '页眉排在正文滚动容器之后 ⇒ 会显示在输入框下方').toBeLessThan(scrollerAt)
   })
+
+  // ── 2026-10-29 用户反馈：解锁后第一次点输入框，键盘延迟 0.5~1 秒，第二次立刻弹出 ──
+  it('K12 触屏设备不在挂载时程序化聚焦（否则 iOS 留下假输入会话，首次点击键盘要等 0.5~1s）', () => {
+    const src = readFileSync(join(projectRoot, AUTO), 'utf8')
+    // 必须按指针粗细分流：桌面照常聚焦（键盘是硬件的，focus 即生效）
+    expect(src, '没有按 pointer: coarse 分流').toContain("matchMedia('(pointer: coarse)')")
+    expect(src, '触屏分支没有提前 return（还是会抢焦点）').toMatch(/isCoarsePointer\(\)\) \{[\s\S]{0,300}?return/)
+    // 触屏上仍要做「接着上次写」的两件事：光标放文末 + 滚到文末
+    expect(src, '触屏分支没把光标放到文末').toMatch(/isCoarsePointer\(\)\) \{[\s\S]{0,200}?setSelectionRange\(end, end\)/)
+    expect(src, '触屏分支没把视图滚到文末').toMatch(/isCoarsePointer\(\)\) \{[\s\S]{0,300}?scrollTo\(\{ top: el\.scrollHeight \}\)/)
+    // ★ 反向：不许再把 autoFocus 传给 <textarea> —— React 会在挂载时自己 focus 一次，
+    //   等于绕过上面的判断，白改
+    expect(src, '又把 autoFocus 属性传给 textarea 了（React 会自己聚焦，分流失效）')
+      .not.toMatch(/autoFocus=\{autoFocus\}/)
+  })
 })

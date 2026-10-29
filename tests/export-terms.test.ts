@@ -86,6 +86,17 @@ describe('导入与导出 · 术语统一', () => {
     }
   })
 
+  it('T7 导出文件名带上导出范围（同一天导两份时必须能分清）', () => {
+    const src = code('components/ExportView.tsx')
+    // 三档各一个 slug，缺一档就会退化成同一串文件名
+    for (const slug of ['all', 'active', 'archived']) {
+      expect(src, `文件名缺少 ${slug} 档`).toContain(`${slug}: '${slug}'`)
+    }
+    expect(src, '文件名没有拼上范围').toContain('${SCOPE_SLUG[scope]}')
+    // 日期仍在（同一个范围导两次要靠它区分）
+    expect(src).toContain('orbit-export-${stamp}')
+  })
+
   it('T5 设置项的副标题与标题同源，且顺序一致（先导入后导出）', () => {
     // 两者必须**相邻**：只断言「都在文件里」会漏掉"标题改回来了、副标题没跟着改"这种情况
     expect(code('components/SettingsView.tsx')).toMatch(

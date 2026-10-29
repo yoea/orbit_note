@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import Popconfirm from '@/components/Popconfirm'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { copyText } from '@/lib/client/clipboard'
@@ -902,16 +903,20 @@ export default function EntryView({ id }: { id: string }) {
       {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
       {!editing && (
         <>
-          {/* 底部操作栏：一行 **4 个图标**（用户指定的布局）——
-              左组 = 这一篇的**状态**（打开次数 → 收藏），右组 = 对这个**页面**的操作（编辑 / 删除）。
-              · 打开次数从内容尾行搬到这里、排在收藏**前面**（用户要求「排在最前」）；
-                眼睛图标由 14px 提到 18px、strokeWidth 2，与星 / 编辑 / 删除**同一套图标语言**
-                （原先它 14px 且配 12px 数字，视觉上属于另一档）。
-              · 收藏**去掉了文字标签**（用户要求）：状态只由星形本身表达（实心 = 已收藏，
-                描边 = 未收藏）。可访问性由 aria-pressed / aria-label / title 保住，
-                桌面端仍有 tooltip（移动端无 hover，图标状态就是唯一信号）。
+          {/* 底部操作栏：一行 **5 个图标**，按「状态 → 编辑 → 收起来 → 销毁」的逻辑排，
+              从左到右风险递增、动作越来越重（2026-10-29 用户要求重排）：
+                · 左组 = 这一篇的**状态**（打开次数 → 收藏），只读 / 可逆、随手点；
+                · 右组 = 对这篇**内容**的动作：编辑 → 归档 → 删除。
+                  ★ 归档必须夹在编辑与删除之间：三者是「改 → 收 → 毁」的递进。放在左组
+                    （原来在收藏后面）会被读成"第三种状态"，跟"操作"混在一起。
+              · 打开次数排最前、与收藏同组（用户要求「排在最前」）；眼睛 18px / strokeWidth 2，
+                与星、编辑、归档、删除同一套图标语言。
+              · 收藏**无文字标签**：状态只由星形表达（实心 = 已收藏），
+                可访问性由 aria-pressed / aria-label / title 保住。
               · 左组 `-ml-2` / 右组 `-mr-2`：各自抵消子项的 p-2，让首尾图标与正文左右边缘对齐。
-              · 收藏 / 编辑 / 删除在「断网且条目来自云端缓存」时禁用（请求发不出去）；
+              · 归档 / 删除点下去弹**气泡确认**（Popconfirm），不再是整块模态：
+                对象明确到不需要指认，模态只会把用户从"这一篇"里拽出来。
+              · 收藏 / 编辑 / 归档 / 删除在「断网且条目来自云端缓存」时禁用（请求发不出去）；
                 打开次数不是操作，永远只读。未同步笔记走本地写队列，不受此限。 */}
           <div className="flex items-center justify-between border-t border-neutral-100 py-4 dark:border-neutral-800">
             <div className="-ml-2 flex items-center gap-1">
@@ -928,7 +933,7 @@ export default function EntryView({ id }: { id: string }) {
                   title={`打开过 ${entry.viewCount} 次`}
                   className="flex items-center gap-1.5 p-2 text-sm tabular-nums text-neutral-500 dark:text-neutral-400"
                 >
-                  {/* 眼睛图标：18px + strokeWidth 2，与星、编辑、删除统一 */}
+                  {/* 眼睛图标：18px + strokeWidth 2，与星、编辑、归档、删除统一 */}
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px] shrink-0" aria-hidden>
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                     <circle cx="12" cy="12" r="3" />
@@ -948,33 +953,15 @@ export default function EntryView({ id }: { id: string }) {
                     刻意**不带文字**——用户要求「仅通过图标状态变化表示收藏状态」。 */}
                 <StarIcon filled={entry.starred} className="h-[18px] w-[18px]" />
               </button>
-              <button
-                onClick={() => setConfirmArchive(true)}
-                disabled={archiveBusy || (localReadonly && !pendingSync)}
-                aria-pressed={entry.archivedAt != null}
-                aria-label={entry.archivedAt != null ? '取消归档' : '归档'}
-                title={entry.archivedAt != null ? '取消归档' : '归档'}
-                className="rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
-              >
-                {/* 收纳盒：18px + strokeWidth 2，与眼睛 / 编辑 / 删除同规格。
-                    状态**不用**实心/描边区分（那要再画一套图形），而由上方信息行的
-                    「· 已归档」承担——一处状态、一处动作，不重复两套表达。 */}
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]" aria-hidden>
-                  <rect x="2" y="3" width="20" height="5" rx="1" />
-                  <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
-                  <path d="M10 12h4" />
-                </svg>
-              </button>
             </div>
             <div className="-mr-2 flex items-center gap-1">
-              {/* 编辑 / 删除：**图标按钮**（原先是「编辑」「删除」两段文字，删除还用了 text-red-500，
-                  在查看页底部过于抢眼）。降权三招：去文字、改图标、删除不再用红色
-                  ——破坏性由点击后的 ConfirmDialog 二次确认承担，不必靠颜色预警。
+              {/* 编辑 / 归档 / 删除：**图标按钮**（原先是「编辑」「删除」两段文字，删除还用了
+                  text-red-500，在查看页底部过于抢眼）。降权三招：去文字、改图标、不用红色
+                  ——破坏性由点击后的气泡二次确认承担，不必靠颜色预警。
                   图标 18px + 中性色，与页面其它次级元素同级；aria-label/title 保住
                   可访问性与桌面端 tooltip（移动端无 hover）。
-                  离线只读：云端缓存条目在断网时不可编辑/删除（PATCH/DELETE 发不出去，
-                  硬点只会「保存失败」）。未同步笔记（pendingSync）不受限——编辑/删除
-                  都在本地队列完成。 */}
+                  离线只读：云端缓存条目在断网时不可编辑 / 归档 / 删除（请求发不出去）。
+                  未同步笔记（pendingSync）不受限——这些都在本地队列完成。 */}
               <button
                 onClick={() => { editSnapshotRef.current = plain; closeAddLocation(); resetPreview(); setEditing(true) }}
                 disabled={decryptFailed || (localReadonly && !pendingSync)}
@@ -987,19 +974,59 @@ export default function EntryView({ id }: { id: string }) {
                   <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
                 </svg>
               </button>
-              <button
-                onClick={() => setConfirmingDelete(true)}
-                disabled={localReadonly && !pendingSync}
-                aria-label="删除"
-                title="删除"
-                className="rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]" aria-hidden>
-                  <path d="M3 6h18" />
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                </svg>
-              </button>
+              {/* 归档：套一层 relative 给气泡定位（Popconfirm 是 `absolute bottom-full`）。
+                  ★ 状态**不用**实心 / 描边区分（那要再画一套图形），由上方信息行的「· 已归档」承担
+                  —— 一处状态、一处动作，不重复两套表达。 */}
+              <div className="relative">
+                <button
+                  onClick={() => setConfirmArchive(true)}
+                  disabled={archiveBusy || (localReadonly && !pendingSync)}
+                  aria-pressed={entry.archivedAt != null}
+                  aria-label={entry.archivedAt != null ? '取消归档' : '归档'}
+                  title={entry.archivedAt != null ? '取消归档' : '归档'}
+                  className="rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
+                >
+                  {/* 收纳盒：18px + strokeWidth 2，与眼睛 / 编辑 / 删除同规格 */}
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]" aria-hidden>
+                    <rect x="2" y="3" width="20" height="5" rx="1" />
+                    <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+                    <path d="M10 12h4" />
+                  </svg>
+                </button>
+                <Popconfirm
+                  open={confirmArchive}
+                  message={entry.archivedAt != null
+                    ? '取消归档后，它会回到列表、搜索与统计里。'
+                    : '归档后不再出现在列表、搜索与统计里，可在「设置 → 已归档」找回。'}
+                  confirmText={entry.archivedAt != null ? '取消归档' : '归档'}
+                  onConfirm={() => { setConfirmArchive(false); void toggleArchive() }}
+                  onCancel={() => setConfirmArchive(false)}
+                />
+              </div>
+              {/* 删除：红色确认键由 Popconfirm 的 destructive 承担 */}
+              <div className="relative">
+                <button
+                  onClick={() => setConfirmingDelete(true)}
+                  disabled={localReadonly && !pendingSync}
+                  aria-label="删除"
+                  title="删除"
+                  className="rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]" aria-hidden>
+                    <path d="M3 6h18" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                </button>
+                <Popconfirm
+                  open={confirmingDelete}
+                  message="永久删除，无法恢复，也不能从「已归档」找回。"
+                  confirmText="删除"
+                  destructive
+                  onConfirm={() => { setConfirmingDelete(false); void remove() }}
+                  onCancel={() => setConfirmingDelete(false)}
+                />
+              </div>
             </div>
           </div>
         </>
@@ -1007,18 +1034,6 @@ export default function EntryView({ id }: { id: string }) {
       {/* 编辑保存成功通知（小型弹窗，自动消失） */}
       {savedFlash && <Toast message="✓ 已保存" />}
       {archiveFlash && <Toast message={`✓ ${archiveFlash}`} />}
-      {confirmArchive && (
-        <ConfirmDialog
-          title={entry?.archivedAt != null ? '取消归档这篇日记？' : '归档这篇日记？'}
-          message={entry?.archivedAt != null
-            ? '它会回到列表、搜索与统计里。'
-            : '归档后它不再出现在列表、搜索与统计里，可以在「设置 → 已归档」找回。'}
-          confirmText={entry?.archivedAt != null ? '取消归档' : '归档'}
-          cancelText="取消"
-          onConfirm={() => { setConfirmArchive(false); void toggleArchive() }}
-          onCancel={() => setConfirmArchive(false)}
-        />
-      )}
       {confirmCancelEdit && (
         <ConfirmDialog
           title="确定不保存所做修改吗？"
@@ -1045,17 +1060,6 @@ export default function EntryView({ id }: { id: string }) {
           destructive
           onConfirm={() => void removeLocationNow()}
           onCancel={() => setConfirmRemoveLocation(false)}
-        />
-      )}
-      {confirmingDelete && (
-        <ConfirmDialog
-          title="确定删除这篇日记吗？"
-          message="删除后无法恢复。"
-          confirmText="删除"
-          cancelText="取消"
-          destructive
-          onConfirm={() => { setConfirmingDelete(false); void remove() }}
-          onCancel={() => setConfirmingDelete(false)}
         />
       )}
     </main>

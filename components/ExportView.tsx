@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getDek } from '@/lib/client/session'
 import { decryptEntries, fetchAllEntries } from '@/lib/client/entries'
@@ -70,7 +70,12 @@ const EXPORT_SCOPES: { id: ExportScope; label: string; hint: string }[] = [
 // ★ 字段承诺：导出的是数据库里的**全部笔记字段**——每一条的每一列都要在文件里，导入后能完整恢复。
 //   字段台账见 journal-format.ts 的 ENTRY_COLUMN_COVERAGE，由 tests/journal-fields.test.ts
 //   拿 schema.ts 的真实列名对账（新增列忘了导出会直接红）。本机数据（打开次数）不进文件。
-export default function ExportView() {
+export default function ExportView({ compact = false, onDone }: {
+  /** 抽屉模式（BackupSheet）：说明文字压到一两句，别把按钮挤出可视区 */
+  compact?: boolean
+  /** 导出成功后的收尾动作。整页版不传 ⇒ 行为不变（10 秒倒计时回设置页） */
+  onDone?: () => void
+} = {}) {
   const router = useRouter()
   const [verified, setVerified] = useState(false)
   const [recoveryKey, setRecoveryKey] = useState('')
@@ -80,6 +85,10 @@ export default function ExportView() {
   const [error, setError] = useState<string | null>(null)
   const [format, setFormat] = useState<ExportFormat>(readExportFormat)
   const [scope, setScope] = useState<ExportScope>('all')
+  // ★ 用 ref 存 onDone：调用方通常传内联箭头（每次渲染换身份），
+  //   直接进 effect 依赖会让倒计时每秒被清掉重建一次。
+  const onDoneRef = useRef(onDone)
+  useEffect(() => { onDoneRef.current = onDone })
 
   // 切换格式：立即生效 + 记住（下次打开本页自动选中）
   function pickFormat(id: ExportFormat) {
@@ -94,7 +103,12 @@ export default function ExportView() {
   const now = new Date()
   const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const ext = EXPORT_FORMATS.find((f) => f.id === format)!.ext
-  const fileName = `orbit-export-${stamp}.${ext}`
+  // ★ 文件名必须带上**导出范围**（2026-10-29 用户要求）：同一天导了「全部」又导了「仅已归档」时，
+  //   两份文件在下载目录里长得一模一样，只剩日期 —— 而"删掉一份留一份"正是备份时会做的事。
+  //   用 ASCII 短词（all / active / archived）而不是中文：跨平台、跨工具链最省心
+  //   （解压工具、脚本、云盘同步列表都不会把文件名变成问号）。
+  const SCOPE_SLUG: Record<ExportScope, string> = { all: 'all', active: 'active', archived: 'archived' }
+  const fileName = `orbit-export-${stamp}-${SCOPE_SLUG[scope]}.${ext}`
 
   async function verifyPasskey() {
     setBusy(true); setError(null)
@@ -132,7 +146,9 @@ export default function ExportView() {
       setCountdown((c) => {
         if (c <= 1) {
           clearInterval(t)
-          router.replace('/settings')
+          // 抽屉里没有"设置页"可回 —— 关掉抽屉就是那个动作
+          if (onDoneRef.current) onDoneRef.current()
+          else router.replace('/settings')
           return 0
         }
         return c - 1
@@ -195,17 +211,25 @@ export default function ExportView() {
 
   return (
     <div>
+      {/* 抽屉模式只留一句"导出成什么"，长解释（本地解密、全部字段）留给整页版：
+          抽屉里多三行就会把下面的格式列表推到需要滚动才看得见。 */}
       <p className="mt-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
-        将{userName ? `${userName}的` : ''}日记导出为 <span className="font-medium">JSON 压缩包</span>（推荐）或 CSV 表格。
-        JSON 采用标准 Day One 结构，<span className="font-medium">Day One、Journey 都能直接导入</span>，也能重新导回本应用。
+        {compact
+          ? <>导出为 <span className="font-medium">JSON 压缩包</span>（Day One / Journey 可直接导入）或 CSV 表格。</>
+          : <>将{userName ? `${userName}的` : ''}日记导出为 <span className="font-medium">JSON 压缩包</span>（推荐）或 CSV 表格。
+            JSON 采用标准 Day One 结构，<span className="font-medium">Day One、Journey 都能直接导入</span>，也能重新导回本应用。</>}
       </p>
-      <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-        正文以加密状态存储，导出时在本地解密——明文只在你设备上生成下载，不会上传服务器。
-      </p>
-      {/* 「全部字段」是承诺，得让用户看得见（否则恢复时才发现少了东西） */}
-      <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-        含每条日记在数据库里的<span className="font-medium">全部字段</span>：正文、创建与修改时间、坐标与结构化地名（省/市/区）、定位精度、天气、时区、字数与收藏状态；重新导入即完整恢复。
-      </p>
+      {!compact && (
+        <>
+          <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+            正文以加密状态存储，导出时在本地解密——明文只在你设备上生成下载，不会上传服务器。
+          </p>
+          {/* 「全部字段」是承诺，得让用户看得见（否则恢复时才发现少了东西） */}
+          <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+            含每条日记在数据库里的<span className="font-medium">全部字段</span>：正文、创建与修改时间、坐标与结构化地名（省/市/区）、定位精度、天气、时区、字数与收藏状态；重新导入即完整恢复。
+          </p>
+        </>
+      )}
       {/* 坐标不模糊是刻意的决策（模糊会损失数据），但必须显式告知后果 */}
       <p className="mt-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400">
         ⚠️ 导出文件含<span className="font-medium">未经模糊的原始坐标与地名</span>（精确到米）。
@@ -309,17 +333,22 @@ export default function ExportView() {
               <p className="mt-1 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
                 文件为解密后的明文，且含未经模糊的坐标。请谨慎保存，避免留在公共设备上。
               </p>
+              {/* 文件名必须露出来（2026-10-29）：现在文件名里带导出范围
+                  （orbit-export-2026-10-29-all.zip），用户得知道去下载目录里找哪一个。 */}
+              <p className="mt-1 break-all text-xs tabular-nums text-amber-700 dark:text-amber-300">
+                {fileName}
+              </p>
               <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">
-                {countdown} 秒后自动返回设置页
+                {onDone ? `${countdown} 秒后自动关闭` : `${countdown} 秒后自动返回设置页`}
               </p>
             </div>
           )}
           {exported != null && (
             <button
-              onClick={() => router.replace('/settings')}
+              onClick={() => { if (onDone) onDone(); else router.replace('/settings') }}
               className="mt-3 w-full rounded-2xl border border-neutral-200 py-3.5 text-sm font-medium text-neutral-600 dark:border-neutral-700 dark:text-neutral-300"
             >
-              立即返回设置
+              {onDone ? '完成' : '立即返回设置'}
             </button>
           )}
           {error && <p className="mt-2 text-center text-sm text-red-500">{error}</p>}

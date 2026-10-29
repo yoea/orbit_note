@@ -225,9 +225,11 @@ describe('BD · 批量删除', () => {
 describe('BE · 归档交互与统计口径', () => {
   it('BE1 详情页归档先确认，成功后给 toast', () => {
     const src = code('components/EntryView.tsx')
-    // 点图标不能直接发请求：先弹确认（用户要求"小小的提示"）
+    // 点图标不能直接发请求：先弹确认。2026-10-29 起这个"小提示"是**气泡**（Popconfirm），
+    // 不再是整块模态 —— 所以断言必须指向 Popconfirm；写成 `<ConfirmDialog` 会被同一个文件里
+    // 「确定不保存所做修改吗」那个模态喂成假通过（它一直在那儿）。
     expect(src, '详情页的归档按钮没有先弹确认').toContain('onClick={() => setConfirmArchive(true)}')
-    expect(src, '没有确认弹窗').toMatch(/<ConfirmDialog[\s>]/)
+    expect(src, '归档没有接气泡确认').toMatch(/<Popconfirm[\s\S]{0,300}?open=\{confirmArchive\}/)
     // 确认后走原来的 toggleArchive
     expect(src, '确认后没有执行归档').toContain('void toggleArchive()')
     // 成功后必须有明显提示（否则只能靠信息行末尾那两个字判断成没成）
