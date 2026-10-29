@@ -108,10 +108,22 @@ describe('弹窗统一行为（Esc 栈 + 焦点管理）', () => {
 describe('桌面端无障碍基线', () => {
   it('A1 全局键盘焦点可见 + 尊重「减少动态效果」', () => {
     const css = code('app/globals.css')
-    // ★ 断到「选择器 + 花括号」：光断 ':focus-visible' 会被 ':focus-visible-disabled' 兜住
-    expect(css, '没有全局 :focus-visible 焦点样式（键盘用户看不到焦点在哪）').toContain(':focus-visible {')
+    // ★ 断到「按钮那条规则」本体：光断 ':focus-visible' 会被 ':focus-visible-disabled' 兜住，
+    //   断 ':focus-visible {' 又会被另外两条（input / textarea）兜住 ⇒ 用正则钉住整条规则。
+    expect(css, '没有全局 :focus-visible 焦点样式（键盘用户看不到焦点在哪）').toMatch(
+      /:focus-visible\s*\{\s*outline: 2px solid #8b5cf6;/,
+    )
     expect(css, '没有 outline（焦点环要真的画出来）').toContain('outline: 2px solid')
     expect(css, '没有 prefers-reduced-motion（前庭敏感用户）').toContain('prefers-reduced-motion: reduce')
+
+    // ★ 分层（2026-10-29 用户反馈「写页输入框突然多了个紫色边框」）：
+    //   品牌紫只留给按钮 / 链接 / 开关 / 标签页；输入框走 1px 中性描边；
+    //   正文文本域（无边框编辑器）完全不画描边 —— 光标本身就是焦点指示。
+    const focusRules = css.split('}').filter((r) => r.includes(':focus-visible'))
+    const purpleOnInput = focusRules.some((r) => /input/.test(r) && r.includes('#8b5cf6'))
+    expect(purpleOnInput, '输入框仍在用品牌紫焦点环（写页正文会突兀）').toBe(false)
+    const textareaNone = focusRules.some((r) => r.includes('textarea') && /outline:\s*none/.test(r))
+    expect(textareaNone, '正文文本域应去掉焦点描边（光标即是焦点指示）').toBe(true)
   })
 
   it('A2 输入框都要有可读名称（placeholder 不是标签）', () => {

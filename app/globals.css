@@ -244,17 +244,31 @@ body {
    全站此前**零** :focus-visible 样式：按钮与链接靠浏览器默认焦点环（Tailwind
    preflight 没有重置 outline），而输入框 / 文本域多处写了 `outline-none`
    ⇒ 聚焦后完全看不到焦点在哪（桌面端键盘操作等于盲操作）。
-   这里给一份全局兜底：
-   · `:is()` 的参数里带属性选择器（[role="switch"] 等）⇒ 优先级 (0,2,0)，
-     高于 Tailwind 工具类 `.outline-none` (0,1,0)；且本规则**未放进 @layer**，
-     未分层样式在层叠里优先于 @layer utilities ⇒ 写了 outline-none 的输入框
-     也能拿到焦点环（否则这条规则会被它们盖掉）。
-   · 只在**键盘**聚焦时出现（:focus-visible）：鼠标点击不显示，不干扰现有观感。
-   · 颜色取品牌紫 #8b5cf6：白底约 3.9:1、深底约 3.4:1，均过 WCAG 非文本对比度 3:1；
-     outline-offset 2px 让焦点环与元素之间留出背景色，渐变按钮上也能分清。 */
-:is(button, a, input, textarea, select, [role="switch"], [role="tab"], [tabindex]):focus-visible {
+   这里给一份全局兜底，但**按元素类型分层**（2026-10-29 用户反馈「写页输入框
+   突然多了个紫色边框」——原先一版把 2px 品牌紫铺给了所有 input/textarea，
+   而写页正文是**无边框编辑器**，一圈紫描边直接破坏了它的观感）：
+   · 按钮 / 链接 / 开关 / 标签页：2px 品牌紫 —— 这些元素本身没有边框，
+     必须有一圈醒目的指示才看得出焦点在哪。
+   · 输入框 / 下拉：1px 中性描边 —— 有边框的输入框几乎看不出变化，
+     无边框的搜索框仍保留一道可见指示。
+   · 正文文本域（写页 / 详情页编辑态，都是无边框编辑器）：**不画描边** ——
+     那里光标本身就是焦点指示（WCAG 2.4.7 满足），加描边只会破坏观感。
+   ★ 优先级说明：`:is()` 的参数里带属性选择器（[role="switch"] 等）⇒ (0,2,0)，
+     高于 Tailwind 工具类 `.outline-none` (0,1,0)；且这些规则**未放进 @layer**，
+     未分层样式在层叠里优先于 @layer utilities ⇒ 写了 outline-none 的元素
+     也会被这里接管（所以每条都要显式写清「要不要描边」）。
+   ★ 颜色：品牌紫 #8b5cf6 白底约 3.9:1、深底约 3.4:1，均过 WCAG 非文本对比度 3:1；
+     outline-offset 让焦点环与元素之间留出背景色，渐变按钮上也能分清。 */
+:is(button, a, [role="switch"], [role="tab"], [tabindex]):focus-visible {
   outline: 2px solid #8b5cf6;
   outline-offset: 2px;
+}
+:is(input, select):focus-visible {
+  outline: 1px solid var(--color-neutral-400);
+  outline-offset: 1px;
+}
+textarea:focus-visible {
+  outline: none;
 }
 
 /* ── 「减少动态效果」偏好（2026-10-29）────────────────────────────────────
