@@ -5,8 +5,12 @@ import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
 import { useUserName } from '@/lib/client/use-user-name'
-import { cacheEntriesPage, cacheStats, getCachedEntries, getCachedStats, getQueuedEntries, pruneCachedEntries, QUEUE_EVENT, unionWithPending } from '@/lib/client/offline'
+import { cacheEntriesPage, cacheStats, getCachedEntries, getCachedStats, getQueuedEntries, patchCachedEntries, pruneCachedEntries, QUEUE_EVENT, unionWithPending } from '@/lib/client/offline'
+import { bulkArchiveErrorText, postBulkArchive } from '@/lib/client/bulk-archive'
 import SearchDialog from './SearchDialog'
+import ConfirmDialog from './ConfirmDialog'
+import BulkActionBar from './BulkActionBar'
+import SelectDot from './SelectDot'
 import SearchIcon from './SearchIcon'
 import ContributionHeatmap from './ContributionHeatmap'
 import StarIcon from './StarIcon'
@@ -141,6 +145,19 @@ export default function DiaryListView() {
   //   而且滑下去就看不见了。见 components/Toast.tsx。
   const [toast, setToast] = useState<string | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
+
+  // —— 批量选择（2026-10-29，阶段 4）——
+  // 两个入口：页头「选择」按钮（可靠、桌面可用）+ 行长按（触屏快）。
+  // 只做长按是不行的：iOS 上长按会先弹系统的文本选择/分享菜单，而且发现性极差
+  // （用户不看书不知道能长按）。按钮是"一定能用"的那条路，长按只是加速。
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [confirmBulk, setConfirmBulk] = useState(false)
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 长按触发后浏览器仍会派发一次 click —— 那一次不能让 <Link> 导航走，
+  // 否则"进入选择态"的同时人已经跳到详情页了。
+  const suppressNavRef = useRef(false)
   // 挂载时的既有深度：重取时至少要补齐到这里，否则后台刷新一回来列表会「缩水」、
   // 滚动位置跟着跳（快照深度可能大于 sessionStorage 里记的上次浏览深度）。
   const seededDepthRef = useRef(snapshot ? snapshot.items.length : 0)
@@ -180,6 +197,74 @@ export default function DiaryListView() {
   // 记下当前滚动位置（滚动回调里实时调用；同时写入内存快照与 sessionStorage）
   function rememberScroll(y: number) {
     if (snapshot) snapshot.scrollTop = y
+  }
+
+  function cancelLongPress() {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
+    }
+  }
+
+  function exitSelect() {
+    setSelectMode(false)
+    setSelected(new Set())
+  }
+
+  function enterSelect(id?: string) {
+    setSelectMode(true)
+    setSelected(id ? new Set([id]) : new Set())
+  }
+
+  function toggleItem(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // 长按 500ms：进入选择态并选中这一条。500ms 是 iOS 长按菜单的触发阈值附近，
+  // 再长用户手指会先被系统菜单抢走；再短则正常滑动时容易误触。
+  function startLongPress(id: string) {
+    cancelLongPress()
+    suppressNavRef.current = false
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null
+      suppressNavRef.current = true
+      enterSelect(id)
+    }, 500)
+  }
+
+  // 批量归档。当前视图恒为「未归档」（服务端 archived=exclude），
+  // ⇒ 归档成功的必须从列表里移除，同时改写本地缓存（否则离线再进来它们又"复活"）。
+  async function submitBulkArchive() {
+    if (bulkBusy || selected.size === 0) return
+    setBulkBusy(true)
+    const ids = [...selected]
+    try {
+      const res = await postBulkArchive(ids, true)
+      const gone = new Set(ids)
+      setItems((prev) => prev.filter((i) => !gone.has(i.id)))
+      const stillThere = ids.filter((id) => !res.missing.includes(id))
+      await patchCachedEntries(stillThere, { archivedAt: new Date().toISOString() })
+      // 顶部统计要跟着变：stats 是挂载时拉的，不重拉会一直显示归档前的篇数。
+      // 失败静默——它只是行概览，不影响刚做完的这件事。
+      void fetch('/api/diary/stats')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d) { setStats(d); void cacheStats(d) } })
+        .catch(() => {})
+      if (res.missing.length) setToast(`已归档 ${res.updated} 篇，另有 ${res.missing.length} 篇已不存在`)
+      else if (res.updated === 0) setToast('选中的日记已经是归档状态')
+      else setToast(`已归档 ${res.updated} 篇`)
+      setConfirmBulk(false)
+      exitSelect()
+    } catch (e) {
+      setToast(bulkArchiveErrorText(e))
+    } finally {
+      setBulkBusy(false)
+    }
   }
 
   // Toast 自动消失（与 SettingsView 的离线提示同一套做法：外层控制移除）
@@ -449,6 +534,56 @@ export default function DiaryListView() {
     return () => io.disconnect()
   }, [sentinelEl, hasMore, loadOlder])
 
+  // 列表行内容（浏览态与选择态共用一份）：两处各写一遍必然漂移，
+  // 而且守卫（entry-tail-row 的图标数量、footnote 对比度）都只认这一份。
+  function rowBody(item: Group['items'][number]) {
+    return (
+      <>
+<span className="flex items-baseline gap-2">
+              <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">{item.time}</span>
+              {/* 标题 = 首行加粗 */}
+              <span className="line-clamp-1 font-medium text-neutral-800 dark:text-neutral-200">{item.title}</span>
+              {/* 收藏：暖色 Q 版五角星（**纯展示**，点击收藏只在查看页——列表行整体是一个链接） */}
+              {item.starred && (
+                <span
+                  role="img"
+                  aria-label="已收藏"
+                  title="已收藏"
+                  className="inline-flex shrink-0 translate-y-[1px]"
+                >
+                  <StarIcon filled className="h-3.5 w-3.5" />
+                </span>
+              )}
+              {/* 未同步徽标：离线新增、尚未上传服务器的笔记（断网图标，同步后消失） */}
+              {item.pending && (
+                <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden>
+                    <path d="M17.5 19a4.5 4.5 0 1 0 0-9h-1.8A7 7 0 1 0 4 14.7" />
+                    <line x1="2" y1="2" x2="22" y2="22" />
+                  </svg>
+                  未同步
+                </span>
+              )}
+            </span>
+            {/* 剩余正文预览（单行截断；标题已单行截断） */}
+            {item.preview && (
+              <span className="line-clamp-1 whitespace-pre-wrap text-sm text-neutral-500 dark:text-neutral-400">
+                {item.preview}
+              </span>
+            )}
+            {/* 元信息：定位图标 + 地点名（左），字数右对齐 */}
+            <div className="mt-0.5 flex items-baseline justify-between gap-2 text-[10px] text-neutral-500 dark:text-neutral-400">
+              <span className="flex min-w-0 items-center gap-1">
+                {item.lat != null && <span>📍</span>}
+                {item.locationName && <span className="truncate">{item.locationName}</span>}
+              </span>
+              <span className="shrink-0">{item.wordCount} 字</span>
+            </div>
+          
+      </>
+    )
+  }
+
   // 按本地日期分组（基于已加载条目）；组头统计取服务端全量聚合
   // （byDay 按笔记时区归日，与列表本地时区分组在跨时区边缘可能差一天——单用户场景忽略）。
   const groups: Group[] = (() => {
@@ -505,12 +640,23 @@ export default function DiaryListView() {
          不会把列表整体推下去（布局不弹跳）。 */
     <main className="mx-auto flex h-full w-full max-w-md flex-col">
       <header className="page-header relative flex shrink-0 items-center justify-end px-5 py-3">
+        {/* 标题恒定「全部日记」：选择态靠底部操作条的「已选 N 篇」表达，
+            不在这里换字——一换字标题就会因长度变化左右平移，看着像抖了一下。 */}
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">全部日记</h1>
-        {/* 搜索：点击后弹出全屏搜索层（正文加密，检索只能在客户端解密后完成）。
-            「找某一天」也在里面——时间档的「具体日期」日历（2026-10-02 从列表页搬过去）。 */}
-        <button onClick={() => setSearchOpen(true)} aria-label="搜索日记" className="-mr-1 px-1 text-neutral-500 dark:text-neutral-400 active:opacity-60">
-          <SearchIcon />
-        </button>
+        {selectMode ? (
+          <button onClick={exitSelect} className="px-1 text-sm font-medium text-neutral-500 active:opacity-60 dark:text-neutral-400">完成</button>
+        ) : (
+          <>
+            {/* 批量选择的**可靠入口**：长按是加速路径，但它发现性差、且 iOS 上很容易被系统菜单吃掉。
+                有了这个按钮，"能不能批量"就不依赖用户猜到长按。 */}
+            <button onClick={() => enterSelect()} className="px-1 text-sm text-neutral-500 active:opacity-60 dark:text-neutral-400">选择</button>
+            {/* 搜索：点击后弹出全屏搜索层（正文加密，检索只能在客户端解密后完成）。
+                「找某一天」也在里面——时间档的「具体日期」日历（2026-10-02 从列表页搬过去）。 */}
+            <button onClick={() => setSearchOpen(true)} aria-label="搜索日记" className="-mr-1 px-1 text-neutral-500 dark:text-neutral-400 active:opacity-60">
+              <SearchIcon />
+            </button>
+          </>
+        )}
       </header>
 
       {/* 固定区之二：统计行 + 热力图（含占位，保证高度稳定） */}
@@ -551,48 +697,41 @@ export default function DiaryListView() {
               <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
                 {g.items.map((item) => (
                   <li key={item.id}>
-                    <Link href={`/entry/${item.id}`} className="flex flex-col gap-1 py-3 active:opacity-60">
-                      <span className="flex items-baseline gap-2">
-                        <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">{item.time}</span>
-                        {/* 标题 = 首行加粗 */}
-                        <span className="line-clamp-1 font-medium text-neutral-800 dark:text-neutral-200">{item.title}</span>
-                        {/* 收藏：暖色 Q 版五角星（**纯展示**，点击收藏只在查看页——列表行整体是一个链接） */}
-                        {item.starred && (
-                          <span
-                            role="img"
-                            aria-label="已收藏"
-                            title="已收藏"
-                            className="inline-flex shrink-0 translate-y-[1px]"
-                          >
-                            <StarIcon filled className="h-3.5 w-3.5" />
-                          </span>
-                        )}
-                        {/* 未同步徽标：离线新增、尚未上传服务器的笔记（断网图标，同步后消失） */}
-                        {item.pending && (
-                          <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden>
-                              <path d="M17.5 19a4.5 4.5 0 1 0 0-9h-1.8A7 7 0 1 0 4 14.7" />
-                              <line x1="2" y1="2" x2="22" y2="22" />
-                            </svg>
-                            未同步
-                          </span>
-                        )}
-                      </span>
-                      {/* 剩余正文预览（单行截断；标题已单行截断） */}
-                      {item.preview && (
-                        <span className="line-clamp-1 whitespace-pre-wrap text-sm text-neutral-500 dark:text-neutral-400">
-                          {item.preview}
-                        </span>
-                      )}
-                      {/* 元信息：定位图标 + 地点名（左），字数右对齐 */}
-                      <div className="mt-0.5 flex items-baseline justify-between gap-2 text-[10px] text-neutral-500 dark:text-neutral-400">
-                        <span className="flex min-w-0 items-center gap-1">
-                          {item.lat != null && <span>📍</span>}
-                          {item.locationName && <span className="truncate">{item.locationName}</span>}
-                        </span>
-                        <span className="shrink-0">{item.wordCount} 字</span>
-                      </div>
-                    </Link>
+                    {selectMode ? (
+                      /* 选择态：整行变成按钮（不是 <Link>），点一下切换选中。
+                         aria-pressed 让读屏能报出"已选中"。 */
+                      <button
+                        onClick={() => toggleItem(item.id)}
+                        aria-pressed={selected.has(item.id)}
+                        className="flex w-full items-start gap-2.5 py-3 text-left active:opacity-60"
+                      >
+                        <SelectDot checked={selected.has(item.id)} />
+                        <span className="flex min-w-0 flex-1 flex-col gap-1">{rowBody(item)}</span>
+                      </button>
+                    ) : (
+                      /* 浏览态：整行是 <Link>。select-none 是长按进选择态的必要条件 ——
+                         没有它，iOS 长按会先弹系统的"选择文本 / 拷贝 / 分享"菜单，
+                         那个菜单会吃掉我们的 500ms 计时；桌面端则会把整行文字刷蓝。 */
+                      <Link
+                        href={`/entry/${item.id}`}
+                        className="flex select-none flex-col gap-1 py-3 active:opacity-60"
+                        onPointerDown={() => startLongPress(item.id)}
+                        onPointerUp={cancelLongPress}
+                        onPointerMove={cancelLongPress}
+                        onPointerCancel={cancelLongPress}
+                        /* 系统长按菜单兜底（Android / 桌面右键） */
+                        onContextMenu={(e) => { if (suppressNavRef.current) e.preventDefault() }}
+                        /* 长按已经进入选择态，这一次 click 不能把用户带去详情页 */
+                        onClick={(e) => {
+                          if (suppressNavRef.current) {
+                            e.preventDefault()
+                            suppressNavRef.current = false
+                          }
+                        }}
+                      >
+                        {rowBody(item)}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -623,8 +762,33 @@ export default function DiaryListView() {
         </div>
       </div>
 
+      {/* 批量操作条：在滚动容器**之外**（shrink-0）。不用 fixed —— TabBar 在文档流内，
+          fixed 会把它盖住，而 TabBar 是离开这个页面的唯一出口（见 BulkActionBar 的注释）。 */}
+      {selectMode && (
+        <BulkActionBar
+          count={selected.size}
+          busy={bulkBusy}
+          label="归档"
+          busyLabel="归档中…"
+          onAction={() => setConfirmBulk(true)}
+          onCancel={exitSelect}
+        />
+      )}
+
       {toast && <Toast message={toast} />}
       {searchOpen && <SearchDialog onClose={() => setSearchOpen(false)} />}
+      {/* 批量才弹确认（单条归档不弹：可逆、入口就在详情页）。
+          文案里给出「去哪找回」，否则用户会以为归档=删除。 */}
+      {confirmBulk && (
+        <ConfirmDialog
+          title={`归档这 ${selected.size} 篇日记？`}
+          message="归档后它们不再出现在列表、搜索与统计里，可以在「设置 → 已归档」找回。"
+          confirmText="归档"
+          cancelText="取消"
+          onConfirm={() => void submitBulkArchive()}
+          onCancel={() => setConfirmBulk(false)}
+        />
+      )}
     </main>
   )
 }

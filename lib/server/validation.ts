@@ -115,6 +115,19 @@ export const diaryImportEntrySchema = z.strictObject({
   updatedAt: isoDate,
 })
 
+// 批量归档 / 取消归档（2026-10-29，阶段 4）。
+//
+// ★ 为什么必须有这个接口（而不是客户端循环调 PATCH /api/diary/[id]）：
+//   限流是**单实例内存滑动窗口**，50 条会撞出 429 —— 用户看到「选了 12 条只成功 7 条」，
+//   而且不知道是哪 7 条。一次 UPDATE 全部落库，成功/失败都是确定的。
+// ★ ids 上限与导入批同量级：正常使用远到不了，这里只是防呆（也防一次 UPDATE 锁太多行）。
+export const MAX_BULK_ARCHIVE = 200
+export const bulkArchiveSchema = z.strictObject({
+  ids: z.array(z.string().uuid()).min(1).max(MAX_BULK_ARCHIVE),
+  /** true = 归档（写当前时间）；false = 取消归档（写 null）。与 PATCH 的 archivedAt 语义一致 */
+  archived: z.boolean(),
+})
+
 // 单批上限：客户端按体积自适应分批（约 50 条/请求），这里只是防呆上限。
 export const MAX_IMPORT_BATCH = 200
 export const draftPutSchema = z.strictObject({ ...encryptedPayload, updatedAt: z.number().int().positive().optional() })

@@ -259,6 +259,34 @@ export async function cacheEntriesPage(entries: EncryptedEntry[]): Promise<void>
   })
 }
 
+/**
+ * 批量改缓存里的元数据（目前只有 archivedAt）。
+ *
+ * 为什么必须有：批量归档成功后这些条目要从「未归档」列表消失，但列表页**离线时读的是本地缓存**——
+ * 只从内存 items 里移除、不改缓存，用户一断网就看见它们全回来了
+ * （与「收藏成功必须回写本地密文缓存」是同一条一致性要求）。
+ *
+ * 必须在 `withEntriesLock` 里做：三个写缓存函数都是读-改-写，并发会互相覆盖。
+ */
+export async function patchCachedEntries(
+  ids: string[],
+  patch: Partial<Pick<import('./entries').EncryptedEntry, 'archivedAt'>>,
+): Promise<void> {
+  if (!isOfflineCacheEnabled() || !ids.length) return
+  const want = new Set(ids)
+  return withEntriesLock(async () => {
+    const existing = await idbGet<import('./entries').EncryptedEntry[]>(ENTRIES_KEY)
+    if (!existing?.length) return
+    let touched = false
+    const next = existing.map((e) => {
+      if (!want.has(e.id)) return e
+      touched = true
+      return { ...e, ...patch }
+    })
+    if (touched) await idbSet(ENTRIES_KEY, next)
+  })
+}
+
 // 读取时按 createdAt 倒序（与 GET /api/diary 的排序一致——缓存来自多条路径的合并，顺序不可信）
 export async function getCachedEntries(): Promise<EncryptedEntry[]> {
   const cached = (await idbGet<EncryptedEntry[]>(ENTRIES_KEY)) ?? []

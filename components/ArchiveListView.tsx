@@ -4,13 +4,17 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
-import { cacheEntriesPage, getCachedEntries, getQueuedEntries, unionWithPending } from '@/lib/client/offline'
+import { cacheEntriesPage, getCachedEntries, getQueuedEntries, patchCachedEntries, unionWithPending } from '@/lib/client/offline'
+import { bulkArchiveErrorText, postBulkArchive } from '@/lib/client/bulk-archive'
 import { displayLocationName } from '@/lib/client/location'
 import { deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
 import { dayKeyOf } from '@/lib/client/date-jump'
 import { archiveDayLabel, daysAgoLabel } from '@/lib/client/archive'
 import { useOffline } from '@/lib/client/use-offline'
 import Toast from './Toast'
+import ConfirmDialog from './ConfirmDialog'
+import BulkActionBar from './BulkActionBar'
+import SelectDot from './SelectDot'
 
 // 归档列表（/settings/archive）。
 //
@@ -88,6 +92,14 @@ export default function ArchiveListView() {
   const [toast, setToast] = useState<string | null>(null)
   const offline = useOffline()
 
+  // —— 批量取消归档（2026-10-29，阶段 4）——
+  // 与列表页的批量归档对称：那边收进去，这边放出来。
+  // 没有它的话，用户要把几十篇从归档里放回日常，只能一篇篇点进去再点取消。
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [confirmBulk, setConfirmBulk] = useState(false)
+
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [sentinelEl, setSentinelEl] = useState<HTMLDivElement | null>(null)
   const cursorRef = useRef<Cursor | null>(null)
@@ -102,6 +114,44 @@ export default function ArchiveListView() {
     const t = setTimeout(() => setToast(null), 2500)
     return () => clearTimeout(t)
   }, [toast])
+
+  function exitSelect() {
+    setSelectMode(false)
+    setSelected(new Set())
+  }
+
+  function toggleItem(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // 批量取消归档：当前视图是「已归档」⇒ 成功的要从本页移除，
+  // 同时把本地缓存里的 archivedAt 改回 null（否则离线进归档页它们还在）。
+  async function submitBulkUnarchive() {
+    if (bulkBusy || selected.size === 0) return
+    setBulkBusy(true)
+    const ids = [...selected]
+    try {
+      const res = await postBulkArchive(ids, false)
+      const gone = new Set(ids)
+      setItems((prev) => prev.filter((i) => !gone.has(i.id)))
+      const stillThere = ids.filter((id) => !res.missing.includes(id))
+      await patchCachedEntries(stillThere, { archivedAt: null })
+      if (res.missing.length) setToast(`已取消归档 ${res.updated} 篇，另有 ${res.missing.length} 篇已不存在`)
+      else if (res.updated === 0) setToast('选中的日记没有归档状态')
+      else setToast(`已取消归档 ${res.updated} 篇`)
+      setConfirmBulk(false)
+      exitSelect()
+    } catch (e) {
+      setToast(bulkArchiveErrorText(e))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
 
   // 取一页并解密。数据源：在线 = 服务器(archived=only) ∪ 队列里已归档的未同步笔记；
   // 离线 = 本地缓存里 archivedAt 非空的 ∪ 队列里已归档的。
@@ -227,6 +277,40 @@ export default function ArchiveListView() {
     return () => io.disconnect()
   }, [sentinelEl, hasMore, loadOlder])
 
+  // 行内容（浏览态与选择态共用）
+  function rowBody(item: Group['items'][number]) {
+    return (
+      <>
+<span className="flex items-baseline gap-2">
+              <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">{item.time}</span>
+              <span className="line-clamp-1 font-medium text-neutral-800 dark:text-neutral-200">{item.title}</span>
+              {item.pending && (
+                <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden>
+                    <path d="M17.5 19a4.5 4.5 0 1 0 0-9h-1.8A7 7 0 1 0 4 14.7" />
+                    <line x1="2" y1="2" x2="22" y2="22" />
+                  </svg>
+                  未同步
+                </span>
+              )}
+            </span>
+            {item.preview && (
+              <span className="line-clamp-1 whitespace-pre-wrap text-sm text-neutral-500 dark:text-neutral-400">
+                {item.preview}
+              </span>
+            )}
+            {/* 元信息行：左地点、右**归档于 X 天前**（不是字数——回溯场景要的是这个） */}
+            <div className="mt-0.5 flex items-baseline justify-between gap-2 text-[10px] text-neutral-500 dark:text-neutral-400">
+              <span className="flex min-w-0 items-center gap-1">
+                {item.locationName && <span className="truncate">{item.locationName}</span>}
+              </span>
+              <span className="shrink-0">归档于 {item.archivedLabel}</span>
+            </div>
+          
+      </>
+    )
+  }
+
   // 按写作日期分组（服务端已按 createdAt 倒序，这里只做分组，不再排序，
   // 保证「游标顺序」与「显示顺序」永远一致——两套排序会在同秒条目上打架）
   const groups: Group[] = (() => {
@@ -271,7 +355,14 @@ export default function ArchiveListView() {
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">已归档</h1>
-        <span className="w-8" aria-hidden />
+        {selectMode ? (
+          <button onClick={exitSelect} className="px-1 text-sm font-medium text-neutral-500 active:opacity-60 dark:text-neutral-400">完成</button>
+        ) : items.length > 0 ? (
+          /* 有内容才给「选择」入口：空列表上放一个点了没反应的按钮没有意义 */
+          <button onClick={() => setSelectMode(true)} className="px-1 text-sm text-neutral-500 active:opacity-60 dark:text-neutral-400">选择</button>
+        ) : (
+          <span className="w-8" aria-hidden />
+        )}
       </header>
       {/* 口径说明常驻一行：用户把某天唯一一篇归档后，连续写作天数会断
           （统计全部排除是该功能的既定取舍）。不写这一行，那会被当成 bug 报回来。 */}
@@ -287,36 +378,23 @@ export default function ArchiveListView() {
               </h2>
               <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
                 {g.items.map((item) => (
-                  /* ?from=archive：详情页据此把返回箭头与「删除后跳转」指回本页
-                     （不带的话会一律回 /diary，用户从归档页点开一篇就回不来了） */
                   <li key={item.id}>
-                    <Link href={`/entry/${item.id}?from=archive`} className="flex flex-col gap-1 py-3 active:opacity-60">
-                      <span className="flex items-baseline gap-2">
-                        <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">{item.time}</span>
-                        <span className="line-clamp-1 font-medium text-neutral-800 dark:text-neutral-200">{item.title}</span>
-                        {item.pending && (
-                          <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden>
-                              <path d="M17.5 19a4.5 4.5 0 1 0 0-9h-1.8A7 7 0 1 0 4 14.7" />
-                              <line x1="2" y1="2" x2="22" y2="22" />
-                            </svg>
-                            未同步
-                          </span>
-                        )}
-                      </span>
-                      {item.preview && (
-                        <span className="line-clamp-1 whitespace-pre-wrap text-sm text-neutral-500 dark:text-neutral-400">
-                          {item.preview}
-                        </span>
-                      )}
-                      {/* 元信息行：左地点、右**归档于 X 天前**（不是字数——回溯场景要的是这个） */}
-                      <div className="mt-0.5 flex items-baseline justify-between gap-2 text-[10px] text-neutral-500 dark:text-neutral-400">
-                        <span className="flex min-w-0 items-center gap-1">
-                          {item.locationName && <span className="truncate">{item.locationName}</span>}
-                        </span>
-                        <span className="shrink-0">归档于 {item.archivedLabel}</span>
-                      </div>
-                    </Link>
+                    {selectMode ? (
+                      <button
+                        onClick={() => toggleItem(item.id)}
+                        aria-pressed={selected.has(item.id)}
+                        className="flex w-full items-start gap-2.5 py-3 text-left active:opacity-60"
+                      >
+                        <SelectDot checked={selected.has(item.id)} />
+                        <span className="flex min-w-0 flex-1 flex-col gap-1">{rowBody(item)}</span>
+                      </button>
+                    ) : (
+                      /* ?from=archive：详情页据此把返回箭头与「删除后跳转」指回本页
+                         （不带的话会一律回 /diary，用户从归档页点开一篇就回不来了） */
+                      <Link href={`/entry/${item.id}?from=archive`} className="flex flex-col gap-1 py-3 active:opacity-60">
+                        {rowBody(item)}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -349,7 +427,28 @@ export default function ArchiveListView() {
           )}
         </div>
       </div>
+      {selectMode && (
+        <BulkActionBar
+          count={selected.size}
+          busy={bulkBusy}
+          label="取消归档"
+          busyLabel="处理中…"
+          onAction={() => setConfirmBulk(true)}
+          onCancel={exitSelect}
+        />
+      )}
+
       {toast && <Toast message={toast} />}
+      {confirmBulk && (
+        <ConfirmDialog
+          title={`取消归档这 ${selected.size} 篇日记？`}
+          message="它们会回到列表、搜索与统计里。"
+          confirmText="取消归档"
+          cancelText="取消"
+          onConfirm={() => void submitBulkUnarchive()}
+          onCancel={() => setConfirmBulk(false)}
+        />
+      )}
     </main>
   )
 }

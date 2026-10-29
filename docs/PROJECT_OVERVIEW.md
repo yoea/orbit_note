@@ -79,7 +79,8 @@ DEK（256-bit CSPRNG，首次初始化生成，仅存浏览器内存，sessionSt
 app/                    Next.js 路由与页面
   api/                  服务端接口（auth / diary / draft / keys / prefs / profile / prompts / weather / admin）
   (app)/                登录后区（route group，不产生 URL 段）：共享 layout 统一做解锁守卫 +
-                        渲染底部 TabBar；组内页面 = 首页 / diary / entry/[id] / settings 及其子页
+                        渲染底部 TabBar；组内页面 = 首页 / diary / entry/[id] / settings
+                        （含子页 settings/backup 导入导出、settings/archive 已归档）
   login|setup|history   组外：认证流程与旧路由重定向（/history → /diary）
 components/             React 组件（编辑器、列表、热力图、TabBar、各种弹窗）
 lib/client/             客户端逻辑：crypto/（加密/KDF/PRF/恢复密钥/包装）、webauthn、session、
@@ -131,6 +132,9 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
   列表另有 **`archived=exclude|only|all`**，**默认 `exclude`**（旧客户端不传也看不见归档）。）
 - `POST /api/diary/[id]/view`（打开次数 +1，服务器原子自增；只写 `view_count` 一列，不碰 `updatedAt`）
 - `POST /api/diary/import`（批量导入，允许客户端指定 createdAt/updatedAt 以保留原始时间）
+- `POST /api/diary/archive`（**批量**归档/取消归档：`{ids, archived}` → `{updated, missing}`，
+  一次 UPDATE 全部落库。刻意不循环调 `PATCH /api/diary/[id]` —— 单实例内存限流下 50 条就撞 429；
+  只写 `archived_at` 一列、跳过已达标行、如实返回服务器上已不存在的 id）
 - `GET /api/diary/stats`、`GET /api/diary/on-this-day`
 - `GET|PUT|DELETE /api/draft`
 - `GET|POST /api/keys/wrappers`、`PUT /api/keys/wrappers/recovery`
