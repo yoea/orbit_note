@@ -128,6 +128,12 @@ export const bulkArchiveSchema = z.strictObject({
   archived: z.boolean(),
 })
 
+// 批量**删除**（2026-10-29 阶段 4 的第二步）。与归档共用同一个上限，
+// 但注意：删除**不可逆**，所以接口侧限流更严（10 次/分钟），客户端也要二次确认。
+export const bulkDeleteSchema = z.strictObject({
+  ids: z.array(z.string().uuid()).min(1).max(MAX_BULK_ARCHIVE),
+})
+
 // 单批上限：客户端按体积自适应分批（约 50 条/请求），这里只是防呆上限。
 export const MAX_IMPORT_BATCH = 200
 export const draftPutSchema = z.strictObject({ ...encryptedPayload, updatedAt: z.number().int().positive().optional() })

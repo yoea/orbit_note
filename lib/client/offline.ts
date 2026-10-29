@@ -155,6 +155,24 @@ export async function removeCachedEntry(id: string): Promise<void> {
   })
 }
 
+/**
+ * 批量删缓存（2026-10-29，批量删除用）。
+ *
+ * 逐条调 removeCachedEntry 会做 N 次「读整表 → 过滤 → 写回」，100 条就是 100 次全量重写；
+ * 更要紧的是它虽然也有锁，但 N 次往返之间会给其它写操作留出窗口。
+ * 这里一次读、一次写，语义与单个版本完全相同。
+ */
+export async function removeCachedEntries(ids: string[]): Promise<void> {
+  if (!ids.length) return
+  const want = new Set(ids)
+  return withEntriesLock(async () => {
+    const cached = await idbGet<EncryptedEntry[]>(ENTRIES_KEY)
+    if (!cached?.length) return
+    const next = cached.filter((e) => !want.has(e.id))
+    if (next.length !== cached.length) await idbSet(ENTRIES_KEY, next)
+  })
+}
+
 // 列表数据源 = 服务器真值 ∪ 未同步队列（两端一致：离线刚写的笔记在在线列表也可见，
 // 带「未同步」徽标）。同 id 以服务器行为准——冲刷已成功、队列尚未清空的竞态下，
 // 服务器那份才是权威内容。返回按 createdAt 倒序（与 GET /api/diary 排序一致）。

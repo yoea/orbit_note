@@ -16,14 +16,3 @@ export function daysAgoLabel(iso: string, now: Date = new Date()): string {
   if (days <= 0) return '今天'
   return `${days} 天前`
 }
-
-/**
- * 归档页是按「写作日期」（created_at）从新到旧翻的，组头就显示那个日期。
- * 刻意不做列表页那套「今天 / 昨天」：归档是回溯场景，用户找的是「哪一天写的那篇」，
- * 「今天」在这里反而要再换算一次。
- */
-export function archiveDayLabel(dayKey: string): string {
-  const d = new Date(`${dayKey}T00:00:00`)
-  if (Number.isNaN(d.getTime())) return dayKey
-  return `${d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })} · ${d.toLocaleDateString('zh-CN', { weekday: 'long' })}`
-}

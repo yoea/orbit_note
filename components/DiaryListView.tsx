@@ -5,8 +5,8 @@ import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
 import { useUserName } from '@/lib/client/use-user-name'
-import { cacheEntriesPage, cacheStats, getCachedEntries, getCachedStats, getQueuedEntries, patchCachedEntries, pruneCachedEntries, QUEUE_EVENT, unionWithPending } from '@/lib/client/offline'
-import { bulkArchiveErrorText, postBulkArchive } from '@/lib/client/bulk-archive'
+import { cacheEntriesPage, cacheStats, getCachedEntries, getCachedStats, getQueuedEntries, patchCachedEntries, pruneCachedEntries, QUEUE_EVENT, removeCachedEntries, removeQueuedEntry, unionWithPending } from '@/lib/client/offline'
+import { bulkErrorText, postBulkArchive, postBulkDelete } from '@/lib/client/bulk-ops'
 import SearchDialog from './SearchDialog'
 import ConfirmDialog from './ConfirmDialog'
 import BulkActionBar from './BulkActionBar'
@@ -154,6 +154,7 @@ export default function DiaryListView() {
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
   const [confirmBulk, setConfirmBulk] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 长按触发后浏览器仍会派发一次 click —— 那一次不能让 <Link> 导航走，
   // 否则"进入选择态"的同时人已经跳到详情页了。
@@ -261,7 +262,37 @@ export default function DiaryListView() {
       setConfirmBulk(false)
       exitSelect()
     } catch (e) {
-      setToast(bulkArchiveErrorText(e))
+      setToast(bulkErrorText(e, '归档'))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  // 批量**永久删除**。与归档分开成两个函数而不是加一个 flag：
+  // 两者的收尾动作不同（归档改缓存里的 archivedAt，删除要把缓存条目整个摘掉），
+  // 合成一个会在里面写一堆 if，将来改其中一条一定误伤另一条。
+  async function submitBulkDelete() {
+    if (bulkBusy || selected.size === 0) return
+    setBulkBusy(true)
+    const ids = [...selected]
+    try {
+      const res = await postBulkDelete(ids)
+      const gone = new Set(ids)
+      setItems((prev) => prev.filter((i) => !gone.has(i.id)))
+      // 缓存与队列都要清：前者是离线列表的来源，后者是「未同步」徽标的来源。
+      // 少了队列这一半，离线新建的条目被删后仍会带着「未同步」躺在列表里。
+      await removeCachedEntries(ids)
+      await Promise.all(ids.map((id) => removeQueuedEntry(id))).catch(() => {})
+      void fetch('/api/diary/stats')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d) { setStats(d); void cacheStats(d) } })
+        .catch(() => {})
+      if (res.missing.length) setToast(`已删除 ${res.deleted} 篇，另有 ${res.missing.length} 篇本就不存在`)
+      else setToast(`已永久删除 ${res.deleted} 篇`)
+      setConfirmDelete(false)
+      exitSelect()
+    } catch (e) {
+      setToast(bulkErrorText(e, '删除'))
     } finally {
       setBulkBusy(false)
     }
@@ -643,20 +674,34 @@ export default function DiaryListView() {
         {/* 标题恒定「全部日记」：选择态靠底部操作条的「已选 N 篇」表达，
             不在这里换字——一换字标题就会因长度变化左右平移，看着像抖了一下。 */}
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">全部日记</h1>
-        {selectMode ? (
-          <button onClick={exitSelect} className="px-1 text-sm font-medium text-neutral-500 active:opacity-60 dark:text-neutral-400">完成</button>
-        ) : (
-          <>
-            {/* 批量选择的**可靠入口**：长按是加速路径，但它发现性差、且 iOS 上很容易被系统菜单吃掉。
-                有了这个按钮，"能不能批量"就不依赖用户猜到长按。 */}
-            <button onClick={() => enterSelect()} className="px-1 text-sm text-neutral-500 active:opacity-60 dark:text-neutral-400">选择</button>
-            {/* 搜索：点击后弹出全屏搜索层（正文加密，检索只能在客户端解密后完成）。
-                「找某一天」也在里面——时间档的「具体日期」日历（2026-10-02 从列表页搬过去）。 */}
+        {/* 批量选择（2026-10-29 用户要求：移到顶部**左侧**、改成图标）：
+            图标放在标题左边，右侧整块留给搜索/完成。点击即切换模式（进入 / 退出），
+            选择态下再点一次也能退出 —— 左上角这个位置比"右侧两个字"更像"一个开关"。
+            ★ 长按进选择态是**加速路径**，不是唯一入口：iOS 上长按很容易被系统菜单吃掉。 */}
+        <button
+          onClick={() => (selectMode ? exitSelect() : enterSelect())}
+          aria-label={selectMode ? '退出批量选择' : '批量选择'}
+          aria-pressed={selectMode}
+          className={`-ml-1 px-1 active:opacity-60 ${selectMode ? 'text-neutral-800 dark:text-neutral-200' : 'text-neutral-500 dark:text-neutral-400'}`}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5" aria-hidden>
+            <path d="M8 6h13M8 12h13M8 18h13" />
+            <path d="M3.5 6.5 4.5 7.5 6.5 5.5" />
+            <path d="M3.5 12.5 4.5 13.5 6.5 11.5" />
+            <path d="M3.5 18.5 4.5 19.5 6.5 17.5" />
+          </svg>
+        </button>
+        <div className="flex items-center">
+          {selectMode ? (
+            <button onClick={exitSelect} className="-mr-1 px-1 text-sm font-medium text-neutral-500 active:opacity-60 dark:text-neutral-400">完成</button>
+          ) : (
+            /* 搜索：点击后弹出全屏搜索层（正文加密，检索只能在客户端解密后完成）。
+               「找某一天」也在里面——时间档的「具体日期」日历（2026-10-02 从列表页搬过去）。 */
             <button onClick={() => setSearchOpen(true)} aria-label="搜索日记" className="-mr-1 px-1 text-neutral-500 dark:text-neutral-400 active:opacity-60">
               <SearchIcon />
             </button>
-          </>
-        )}
+          )}
+        </div>
       </header>
 
       {/* 固定区之二：统计行 + 热力图（含占位，保证高度稳定） */}
@@ -769,8 +814,10 @@ export default function DiaryListView() {
           count={selected.size}
           busy={bulkBusy}
           label="归档"
-          busyLabel="归档中…"
+          busyLabel="处理中…"
+          dangerLabel="删除"
           onAction={() => setConfirmBulk(true)}
+          onDanger={() => setConfirmDelete(true)}
           onCancel={exitSelect}
         />
       )}
@@ -787,6 +834,19 @@ export default function DiaryListView() {
           cancelText="取消"
           onConfirm={() => void submitBulkArchive()}
           onCancel={() => setConfirmBulk(false)}
+        />
+      )}
+      {/* 删除的确认必须比归档重得多：不可逆，也不能从「已归档」找回。
+          三句话分别回答"删了什么 / 能不能恢复 / 有没有别的办法"，少一句都会有人踩。 */}
+      {confirmDelete && (
+        <ConfirmDialog
+          title={`永久删除这 ${selected.size} 篇日记？`}
+          message="删除后无法恢复，也不能从「已归档」找回。如果只是不想让它在列表里出现，用「归档」就好。"
+          confirmText="永久删除"
+          cancelText="取消"
+          destructive
+          onConfirm={() => void submitBulkDelete()}
+          onCancel={() => setConfirmDelete(false)}
         />
       )}
     </main>

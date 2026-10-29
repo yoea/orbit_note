@@ -23,7 +23,7 @@ import { useOffline } from '@/lib/client/use-offline'
 // 分组与排序（每次改动都要同步 tests/settings-structure.test.ts）：
 //   1) 账号与安全 —— 通行密钥 / 恢复密钥 / 退出登录
 //   2) 通用       —— 偏好设置 / 关于 Orbit
-//   3) 数据       —— 已归档 / 导入与导出（两个入口，顺序：先浏览、后迁移）
+//   3) 数据       —— 导入与导出 / 已归档（后者刻意排最后：浏览入口，不该抢在迁移操作前面）
 //   页面末尾      —— 空（「删除所有数据」已移进「关于 Orbit」弹窗最底部，见下）
 //
 // 两条纠错记录（都是"归位"，不是审美）：
@@ -193,23 +193,6 @@ export default function SettingsView() {
       <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">数据</p>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
-          {/* 已归档（2026-10-29 归档功能阶段 2）：这是个**浏览**入口，不是操作。
-              放「数据」组的第一行——归档是「我的日记的另一种形态」，与「导入与导出」同一族。
-              离线**不禁用**：归档列表有本地缓存兜底（ArchiveListView 的离线分支读 IndexedDB），
-              空着时页面会自己说明「离线只显示本机已缓存的归档日记」。
-              守卫 tests/archive-page.test.ts 钉住这个入口存在且指向 /settings/archive。 */}
-          <Link
-            href="/settings/archive"
-            className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60"
-          >
-            <div>
-              <p className="text-neutral-800 dark:text-neutral-200">已归档</p>
-              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">收进归档的日记，不计入统计与日常列表</p>
-            </div>
-            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
-          </Link>
-        </li>
-        <li>
           {/* 导入与导出：两者本来就是同一件事的两端，合并为单一入口（页面内分段切换），
               数据层毫无改动——分成两行会让它们看起来无关。
               命名与顺序（2026-10-10 用户要求）：设置项名称与页内分段**同名同序** ——
@@ -226,6 +209,24 @@ export default function SettingsView() {
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">导入与导出</p>
               <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">把日记从文件导入，或导出为文件</p>
+            </div>
+            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
+          </Link>
+        </li>
+        <li>
+          {/* 已归档（2026-10-29 归档功能阶段 2）：这是个**浏览**入口，不是操作。
+              放在「数据」组的**最后**（2026-10-29 用户要求：入口可以深一点、不要在最外面）——
+              归档是「我的日记的另一种形态」，与「导入与导出」同一族，但它是浏览入口不是迁移操作。
+              离线**不禁用**：归档列表有本地缓存兜底（ArchiveListView 的离线分支读 IndexedDB），
+              空着时页面会自己说明「离线只显示本机已缓存的归档日记」。
+              守卫 tests/archive-page.test.ts 钉住这个入口存在且指向 /settings/archive。 */}
+          <Link
+            href="/settings/archive"
+            className="flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60"
+          >
+            <div>
+              <p className="text-neutral-800 dark:text-neutral-200">已归档</p>
+              <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">收进归档的日记，不计入统计与日常列表</p>
             </div>
             <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </Link>

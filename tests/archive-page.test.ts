@@ -115,6 +115,26 @@ describe('AR · 归档页（/settings/archive）', () => {
     expect(src, '空态没有区分离线（离线只显示本机缓存，必须说明）').toContain('useOffline')
   })
 
+  it('AR10 行内只有标题 + 创建日期 + 归档日期（2026-10-29 用户要求：不显示正文预览）', () => {
+    const src = code(VIEW)
+    expect(src, '归档页还在渲染正文预览').not.toContain('item.preview')
+    expect(src, '行内没有创建日期').toContain('fmtDateTime(item.createdAt)')
+    expect(src, '行内没有归档日期').toContain('归档于')
+    // 按天分组已取消：每行都带完整日期了，组头只是把它再写一遍
+    expect(src, '按天分组又回来了（每行已有日期，组头是重复）').not.toContain('groups.map')
+    // 标题为空时要有兜底，否则那一行会塌成一条纯日期
+    expect(src, '空标题没有兜底文案').toContain("'(无标题)'")
+  })
+
+  it('AR11 设置页的归档入口排在「导入与导出」之后（2026-10-29：入口可以深一点）', () => {
+    const src = code(SETTINGS)
+    const backup = src.indexOf('href="/settings/backup"')
+    const archive = src.indexOf('href="/settings/archive"')
+    expect(backup, '找不到导入与导出入口').toBeGreaterThanOrEqual(0)
+    expect(archive, '找不到归档入口').toBeGreaterThanOrEqual(0)
+    expect(archive, '归档入口又跑到「导入与导出」前面去了（不该抢在迁移操作前面）').toBeGreaterThan(backup)
+  })
+
   it('AR9 新路由已被 proxy 覆盖（matcher + protectedPaths 都不用改）', () => {
     // 本页放在 /settings/ 子目录下 ⇒ 天然被这两条覆盖。
     // 断言覆盖仍然成立，防止以后有人把 /settings/:path* 收窄成只匹配 /settings。

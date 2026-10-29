@@ -5,11 +5,10 @@ import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
 import { cacheEntriesPage, getCachedEntries, getQueuedEntries, patchCachedEntries, unionWithPending } from '@/lib/client/offline'
-import { bulkArchiveErrorText, postBulkArchive } from '@/lib/client/bulk-archive'
+import { bulkErrorText, postBulkArchive } from '@/lib/client/bulk-ops'
 import { displayLocationName } from '@/lib/client/location'
 import { deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
-import { dayKeyOf } from '@/lib/client/date-jump'
-import { archiveDayLabel, daysAgoLabel } from '@/lib/client/archive'
+import { daysAgoLabel } from '@/lib/client/archive'
 import { useOffline } from '@/lib/client/use-offline'
 import Toast from './Toast'
 import ConfirmDialog from './ConfirmDialog'
@@ -76,10 +75,13 @@ interface Cursor {
   id: string
 }
 
-interface Group {
-  key: string
-  label: string
-  items: { id: string; time: string; title: string; preview: string; locationName: string | null; pending: boolean; archivedLabel: string }[]
+
+// 行内的「创建日期 + 时刻」：`2026年10月12日 17:26`。
+// 只用 toLocaleDateString 会丢掉时刻，而归档列表里同一天可能有好几篇。
+function fmtDateTime(d: Date): string {
+  const day = d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })
+  const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return `${day} ${time}`
 }
 
 export default function ArchiveListView() {
@@ -147,7 +149,7 @@ export default function ArchiveListView() {
       setConfirmBulk(false)
       exitSelect()
     } catch (e) {
-      setToast(bulkArchiveErrorText(e))
+      setToast(bulkErrorText(e, '取消归档'))
     } finally {
       setBulkBusy(false)
     }
@@ -277,62 +279,34 @@ export default function ArchiveListView() {
     return () => io.disconnect()
   }, [sentinelEl, hasMore, loadOlder])
 
-  // 行内容（浏览态与选择态共用）
-  function rowBody(item: Group['items'][number]) {
+  // 行内容：**标题 + 创建日期 + 归档日期**（2026-10-29 用户要求：不要正文预览）。
+  //
+  // 去掉预览后一行只有两段信息 —— 列表更短，也更能"数"清归档了多少篇。
+  // 按天分组同时取消：既然每行都带完整日期，组头就只是把同一串再写一遍。
+  function rowBody(item: DecryptedItem) {
     return (
       <>
-<span className="flex items-baseline gap-2">
-              <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">{item.time}</span>
-              <span className="line-clamp-1 font-medium text-neutral-800 dark:text-neutral-200">{item.title}</span>
-              {item.pending && (
-                <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden>
-                    <path d="M17.5 19a4.5 4.5 0 1 0 0-9h-1.8A7 7 0 1 0 4 14.7" />
-                    <line x1="2" y1="2" x2="22" y2="22" />
-                  </svg>
-                  未同步
-                </span>
-              )}
+        <span className="flex items-baseline gap-2">
+          <span className="line-clamp-1 font-medium text-neutral-800 dark:text-neutral-200">
+            {item.title || '(无标题)'}
+          </span>
+          {item.pending && (
+            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden>
+                <path d="M17.5 19a4.5 4.5 0 1 0 0-9h-1.8A7 7 0 1 0 4 14.7" />
+                <line x1="2" y1="2" x2="22" y2="22" />
+              </svg>
+              未同步
             </span>
-            {item.preview && (
-              <span className="line-clamp-1 whitespace-pre-wrap text-sm text-neutral-500 dark:text-neutral-400">
-                {item.preview}
-              </span>
-            )}
-            {/* 元信息行：左地点、右**归档于 X 天前**（不是字数——回溯场景要的是这个） */}
-            <div className="mt-0.5 flex items-baseline justify-between gap-2 text-[10px] text-neutral-500 dark:text-neutral-400">
-              <span className="flex min-w-0 items-center gap-1">
-                {item.locationName && <span className="truncate">{item.locationName}</span>}
-              </span>
-              <span className="shrink-0">归档于 {item.archivedLabel}</span>
-            </div>
-          
+          )}
+        </span>
+        <span className="text-[10px] tabular-nums text-neutral-500 dark:text-neutral-400">
+          {fmtDateTime(item.createdAt)} · 归档于 {daysAgoLabel(item.archivedAt ?? '') || '已归档'}
+        </span>
       </>
     )
   }
 
-  // 按写作日期分组（服务端已按 createdAt 倒序，这里只做分组，不再排序，
-  // 保证「游标顺序」与「显示顺序」永远一致——两套排序会在同秒条目上打架）
-  const groups: Group[] = (() => {
-    const grouped = new Map<string, DecryptedItem[]>()
-    for (const item of items) {
-      const key = dayKeyOf(item.createdAt)
-      grouped.set(key, [...(grouped.get(key) ?? []), item])
-    }
-    return [...grouped.entries()].map(([key, list]) => ({
-      key,
-      label: archiveDayLabel(key),
-      items: list.map((i) => ({
-        id: i.id,
-        time: i.createdAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }),
-        title: i.title,
-        preview: i.preview,
-        locationName: i.locationName,
-        pending: i.pending,
-        archivedLabel: daysAgoLabel(i.archivedAt ?? '') || '已归档',
-      })),
-    }))
-  })()
 
   if (error) {
     return (
@@ -371,35 +345,28 @@ export default function ArchiveListView() {
       </p>
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5">
         <div className="flex flex-col gap-6 pb-4">
-          {groups.map((g, gi) => (
-            <section key={g.key} className={gi > 0 ? 'border-t border-neutral-100 pt-4 dark:border-neutral-800' : ''}>
-              <h2 className="mb-2 bg-linear-to-r from-orange-500 via-rose-500 to-violet-500 bg-clip-text text-sm font-medium text-transparent">
-                {g.label} · {g.items.length} 篇
-              </h2>
-              <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
-                {g.items.map((item) => (
-                  <li key={item.id}>
-                    {selectMode ? (
-                      <button
-                        onClick={() => toggleItem(item.id)}
-                        aria-pressed={selected.has(item.id)}
-                        className="flex w-full items-start gap-2.5 py-3 text-left active:opacity-60"
-                      >
-                        <SelectDot checked={selected.has(item.id)} />
-                        <span className="flex min-w-0 flex-1 flex-col gap-1">{rowBody(item)}</span>
-                      </button>
-                    ) : (
-                      /* ?from=archive：详情页据此把返回箭头与「删除后跳转」指回本页
-                         （不带的话会一律回 /diary，用户从归档页点开一篇就回不来了） */
-                      <Link href={`/entry/${item.id}?from=archive`} className="flex flex-col gap-1 py-3 active:opacity-60">
-                        {rowBody(item)}
-                      </Link>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+          <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
+            {items.map((item) => (
+              <li key={item.id}>
+                {selectMode ? (
+                  <button
+                    onClick={() => toggleItem(item.id)}
+                    aria-pressed={selected.has(item.id)}
+                    className="flex w-full items-start gap-2.5 py-3 text-left active:opacity-60"
+                  >
+                    <SelectDot checked={selected.has(item.id)} />
+                    <span className="flex min-w-0 flex-1 flex-col gap-1">{rowBody(item)}</span>
+                  </button>
+                ) : (
+                  /* ?from=archive：详情页据此把返回箭头与「删除后跳转」指回本页
+                     （不带的话会一律回 /diary，用户从归档页点开一篇就回不来了） */
+                  <Link href={`/entry/${item.id}?from=archive`} className="flex flex-col gap-1 py-3 active:opacity-60">
+                    {rowBody(item)}
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
           {/* 空态。离线时要说清楚「这只是本机缓存」——否则用户会以为归档的日记丢了 */}
           {!loading && items.length === 0 && (
             <div className="pt-16 text-center">

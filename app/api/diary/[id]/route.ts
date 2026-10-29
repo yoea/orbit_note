@@ -31,6 +31,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!body.success) return NextResponse.json({ error: 'bad_request', details: body.error.issues }, { status: 400 })
   const patch = body.data
   const set: Record<string, unknown> = { ...patch }
+  // ★ archivedAt：校验层只保证它是「能 Date.parse 的字符串」（见 validation.ts 的 archivedAtField），
+  //   而 drizzle 的 timestamp 列（mode: 'date'）要的是 Date —— 直接把字符串塞进 .set()
+  //   会在构造 SQL 时调用 value.toISOString()，抛 TypeError ⇒ 500
+  //   ⇒ 客户端只看到「归档失败，请重试」，服务端日志里才是真话。
+  //   2026-10-29 真实事故：批量接口写了 new Date() 所以没事，只有这条单条 PATCH 漏了。
+  //   其余写入点（POST / import / 批量接口）都在落库前转换过，别只改这一处就以为全好了。
+  if (patch.archivedAt !== undefined) {
+    set.archivedAt = patch.archivedAt === null ? null : new Date(patch.archivedAt)
+  }
   // 仅内容编辑（ciphertext/iv 成对出现）才更新"编辑时间"；纯元数据更新
   // （补地点名、改收藏状态）不算编辑——详情页不会显示"编辑于"
   if (patch.ciphertext !== undefined) set.updatedAt = new Date()
