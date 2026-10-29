@@ -122,6 +122,51 @@ describe('设置页信息架构', () => {
     expect(code('components/SettingsView.tsx'), '设置页容器不是 max-w-md，抽屉宽度就对不齐了').toContain('max-w-md')
   })
 
+  it('P22 导入导出是**响应式两种形态**：<768 底部抽屉 / ≥768 居中模态窗，一棵 DOM', () => {
+    // 事故（2026-10-29）：桌面浏览器里 448px 的面板贴着屏幕底边、两侧各一大片暗区，
+    // 「从边缘抽出」的语义在宽屏上站不住，看着像另一个应用。
+    // ★ 定稿：同一组件、纯 CSS 断点切换，不拆两个组件、不引 JS 媒体查询
+    //   （SSR 首帧不知道视口宽度 ⇒ JS 方案必然先渲染一种形态再纠正，会闪）。
+    const src = code('components/BackupSheet.tsx')
+
+    // ① 外层：手机仍贴底（`justify-end`），桌面才居中 —— 两个 token 必须在**同一元素**上
+    const overlayAt = pos(src, 'bg-black/40')
+    const overlay = src.slice(Math.max(0, overlayAt - 200), overlayAt + 200)
+    expect(overlay, '外层少了 justify-end（手机上抽屉不贴底了）').toContain('justify-end')
+    expect(overlay, '桌面没有垂直居中').toContain('md:justify-center')
+    expect(overlay, '桌面没有水平居中').toContain('md:items-center')
+
+    // ② 面板：手机固定 70dvh + 顶部圆角，桌面高度随内容 + 四周圆角（同一元素）
+    const panelAt = pos(src, 'h-[70dvh]')
+    const panel = src.slice(Math.max(0, panelAt - 160), panelAt + 200)
+    expect(panel, '桌面没有改成高度随内容（会是一块固定高的空盒子）').toContain('md:h-auto')
+    expect(panel, '桌面没有改成四周圆角（还是抽屉的顶部圆角）').toContain('md:rounded-2xl')
+
+    // ③ 抓手只在抽屉形态出现：居中模态窗不是"从边缘抽出来的"，那根横条没有语义
+    const gripAt = pos(src, 'h-1 w-9')
+    const grip = src.slice(Math.max(0, gripAt - 120), gripAt + 120)
+    expect(grip, '抓手在桌面没有隐藏').toContain('md:hidden')
+
+    // ④ 内容区：手机撑满面板，桌面改由**内容自己限高**（与 PrefsDialog 同一路子）。
+    //    ★ 刻意不写「面板 md:max-h + 内容 flex-1」—— 面板高度为 auto 时 flex-1(basis 0)
+    //      能分到多少不确定，容易塌成 0 高。
+    const bodyAt = pos(src, 'ref={scrollRef}')
+    const body = src.slice(bodyAt, bodyAt + 220)
+    expect(body, '桌面内容区没有自己限高（过长会顶出屏幕）').toContain('md:max-h-[60dvh]')
+    expect(body, '桌面没有放开 flex-1（高度 auto 的容器里会塌）').toContain('md:flex-initial')
+    expect(body, '手机形态丢了 flex-1（抽屉里内容不再撑满）').toContain('flex-1')
+
+    // ⑤ Esc 关闭（桌面模态窗的基本预期）：监听、判断、退订三件齐全，缺退订就是泄漏
+    expect(src, '没有监听 keydown').toContain("window.addEventListener('keydown', onKey)")
+    expect(src, '没有退订 keydown（会泄漏）').toContain("window.removeEventListener('keydown', onKey)")
+    expect(src, 'Esc 没有真的关闭容器').toContain("if (e.key === 'Escape') onClose()")
+
+    // ⑥ 反向：形态切换必须是 **CSS 断点**，用 JS 媒体查询会首帧闪一下（SSR 不知道宽度）
+    expect(src, '又用 matchMedia 切形态了（首帧会闪，还要监听 resize）').not.toContain('matchMedia')
+    // ⑦ 断点钉在 md(768)：抽屉两侧暗区从这里开始显丑；改 lg(1024) 会让 768~1024 仍是别扭形态
+    expect(src, '断点不是 md（768px）').not.toContain('lg:')
+  })
+
   it('P4 删除数据不在导出面板里（危险操作不得与「备份」同页）', () => {
     const src = code('components/ExportView.tsx')
     expect(src).not.toMatch(/admin\/wipe/)
