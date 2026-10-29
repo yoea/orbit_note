@@ -25,6 +25,8 @@ export default function ProfileCard({ onEditName, disabled = false }: { onEditNa
   return (
     <button
       onClick={onEditName}
+      aria-label="修改名字"
+      aria-disabled={disabled}
       className={`mt-2 flex w-full items-center gap-3 rounded-2xl bg-neutral-50/60 px-4 py-3.5 text-left active:opacity-60 dark:bg-neutral-900/40 ${disabled ? 'opacity-50' : ''}`}
     >
       <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 via-rose-400 to-violet-500 text-lg font-semibold text-white">
@@ -36,7 +38,7 @@ export default function ProfileCard({ onEditName, disabled = false }: { onEditNa
         </span>
         {subtitle && <span className="mt-0.5 block truncate text-xs tabular-nums text-neutral-500 dark:text-neutral-400">{subtitle}</span>}
       </span>
-      <span className="shrink-0 text-lg text-neutral-500 dark:text-neutral-400">›</span>
+      <span aria-hidden className="shrink-0 text-lg text-neutral-500 dark:text-neutral-400">›</span>
     </button>
   )
 }

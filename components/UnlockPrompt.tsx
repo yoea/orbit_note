@@ -65,7 +65,7 @@ export default function UnlockPrompt({ onUnlock }: { onUnlock: () => Promise<str
           {/* 与登录页是同一个界面元素的两份拷贝：按钮下方那两行小字说明已一并删除，
               理由见 app/login/page.tsx 的注释。只改一处会立刻出现「同一次登录、
               两个页面文案不同」，以后要动这里记得两边同步。 */}
-          {error && <p className="mt-3 text-center text-sm text-red-500">{error}</p>}
+          {error && <p role="alert" className="mt-3 text-center text-sm text-red-500">{error}</p>}
         </div>
       </div>
       {/* 版本页脚与登录页同款（共享组件）：用户日常看到的「登录界面」其实是这里——

@@ -71,6 +71,9 @@ DEK（256-bit CSPRNG，首次初始化生成，仅存浏览器内存，sessionSt
 - **DEK**：数据加密密钥，只在客户端内存，服务器永远拿不到。
 - **S 不变量**：所有通行密钥共享同一个 PRF eval 输入 `S`（首个 wrapper 的 salt），保障多凭证一致；PRF 输出按凭证隔离——每把钥匙一个 wrapper。
 - **恢复密钥**：服务器只存 `SHA-256(recovery key)` 十六进制哈希，256-bit 熵不可离线爆破。
+  **完整哈希不再下发到浏览器**（`GET /api/keys/wrappers` 只给 8 位**指纹** + `createdAt`，
+  哈希本身也不会进 IndexedDB 离线缓存）；界面用它显示「当前密钥的指纹 + 创建时间」，
+  重新生成时刷新 `created_at`（= 当前这把密钥的创建时刻）。
 - wrapper 的 `encrypted_dek` 存储格式：`base64( iv(12B) + AES-GCM 密文 )`。
 
 ## 目录结构
@@ -168,6 +171,12 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
 - **proxy.ts（Next 16 middleware）**：为所有页面响应注入安全头，并对 `/`、`/diary`、`/history`、`/entry/*`、`/settings/*` 做单向粗粒度重定向。**不做**「已登录 → /login」跳转，因为 DEK 仅在内存、刷新即失，`/login` 必须恒可达（否则死循环）；已登录跳转由客户端守卫负责。
   > route group `(app)` 不改变 URL，因此新增组内页面时 matcher 与 `proxy-guard.ts` 的 `protectedPaths` 都不需要改；但**新增/改名的真实路径两处都必须登记**，`tests/proxy-matcher-coverage.test.ts` 会守住这条（它已能正确跳过 `(app)` 这类分组目录）。
 - **零日志**：全项目无 `console` 输出，请求体 / 密钥 / PRF 输出不落日志。
+- **弹窗与无障碍（2026-10-29）**：所有弹层统一走 `lib/client/dialog.ts` 的**全局 Esc 栈**
+  （window 上只有一个 keydown 监听，Esc 只关**栈顶**=最上层），并统一做「打开即聚焦 +
+  Tab 循环 + 关闭归还焦点」。桌面端另有一份全局 `:focus-visible` 焦点环
+  （`app/globals.css`，未分层 ⇒ 压过输入框的 `outline-none`）与 `prefers-reduced-motion`；
+  输入框有 `aria-label`、错误提示有 `role="alert"`、弹窗有 `role/aria-modal/aria-label`、
+  热力图有读屏文字摘要（不靠颜色单独传达信息）。守卫 `tests/dialog-behavior.test.ts`。
 - **第三方数据流向**：
 
 | 服务 | 用途 | 数据流向 | 调用方 |

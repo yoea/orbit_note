@@ -258,6 +258,7 @@ export default function ExportView({ compact = false, onDone }: {
               value={recoveryKey}
               onChange={(e) => setRecoveryKey(e.target.value)}
               placeholder="输入恢复密钥"
+                aria-label="恢复密钥"
               autoCapitalize="none" autoCorrect="off" spellCheck={false}
               className="w-full rounded-xl border border-neutral-200 bg-white px-4 py-3 text-base outline-none focus:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
             />
@@ -268,7 +269,7 @@ export default function ExportView({ compact = false, onDone }: {
             >
               {busy ? '正在验证…' : '使用恢复密钥验证'}
             </button>
-            {error && <p className="text-center text-sm text-red-500">{error}</p>}
+            {error && <p role="alert" className="text-center text-sm text-red-500">{error}</p>}
           </div>
         </>
       ) : (
@@ -351,7 +352,7 @@ export default function ExportView({ compact = false, onDone }: {
               {onDone ? '完成' : '立即返回设置'}
             </button>
           )}
-          {error && <p className="mt-2 text-center text-sm text-red-500">{error}</p>}
+          {error && <p role="alert" className="mt-2 text-center text-sm text-red-500">{error}</p>}
         </>
       )}
     </div>

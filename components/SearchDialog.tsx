@@ -23,6 +23,7 @@ import type { DecryptedEntry } from '@/lib/client/entries'
 import { displayLocationName } from '@/lib/client/location'
 import { toPlainText } from '@/lib/client/markdown'
 import { dayKeyOf, monthGrid, monthTitle, shiftMonth } from '@/lib/client/date-jump'
+import { useDialogBehavior } from '@/lib/client/dialog'
 
 // 每次渲染的批量——结果多时先给一批，「加载更多」再递增。
 // 上限的意义是避免上千条时一次性建 DOM，而不是「只显示这么多」。
@@ -51,15 +52,21 @@ function Caret() {
 
 // 筛选按钮：三类筛选（时间 / 收藏 / 地点）共用这一个外观。
 // children 一律包一层可截断的 span——地名可能很长，不能让按钮被撑破。
-function Chip({ active, caret = false, onClick, children }: {
+function Chip({ active, caret = false, expanded, onClick, children }: {
   active: boolean
   caret?: boolean
+  /** 该 chip 是否展开了一个面板（时间 / 地点）⇒ 供 aria-expanded 用；收藏开关没有面板 */
+  expanded?: boolean
   onClick: () => void
   children: React.ReactNode
 }) {
   return (
     <button
       onClick={onClick}
+      /* 选中态此前**只靠颜色**表达（渐变底 + 白字）⇒ 读屏与色弱用户读不出来。
+         aria-pressed 把「选中」变成可读状态；展开面板的 chip 再给 aria-expanded。 */
+      aria-pressed={active}
+      aria-expanded={expanded}
       className={`flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs transition-colors ${
         active
           ? 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 font-medium text-white'
@@ -81,7 +88,7 @@ function PanelRow({ label, meta, selected, onClick }: {
 }) {
   return (
     <li>
-      <button onClick={onClick} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left active:opacity-60">
+      <button onClick={onClick} aria-pressed={selected} className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left active:opacity-60">
         <span className="min-w-0 truncate text-sm text-neutral-700 dark:text-neutral-200">{label}</span>
         <span className="shrink-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
           {meta}
@@ -259,6 +266,10 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
   // 它原来先 setEntries(null) 再 ensureLoaded()，而后者读到旧的 entries 仍然非 null ⇒ 直接 return，
   // 也就是按了没反应。
   const loadingRef = useRef(false)
+  // Esc / Tab 循环 / 焦点归还（2026-10-29）。搜索层是**全屏实色**（没有遮罩），
+  //   但它同样是一个「盖住整个应用」的模态层 ⇒ Esc 关闭、焦点不许跑到底下的页面。
+  const layerRef = useRef<HTMLDivElement>(null)
+  useDialogBehavior(layerRef, onClose)
 
   // 打开即聚焦，省一次点击
   useEffect(() => { inputRef.current?.focus() }, [])
@@ -387,7 +398,13 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
   const trimmedQuery = query.trim()
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-neutral-950">
+    <div
+      ref={layerRef}
+      className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-neutral-950"
+      role="dialog"
+      aria-modal="true"
+      aria-label="搜索日记"
+    >
       <div className="mx-auto w-full max-w-md shrink-0 px-5 safe-pt">
         <div className="flex items-center gap-3 py-3">
           {/* 输入框：复用应用既有的圆角浅底样式 */}
@@ -398,6 +415,7 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
               value={query}
               onChange={(e) => { setQuery(e.target.value); resetPaging() }}
               placeholder="搜索日记内容"
+              aria-label="搜索日记内容"
               type="text"
               /* ★ autoComplete="off"（2026-10-02 用户反馈「会触发联系人填充」）：
                  iOS 键盘上方的「自动填充联系人」条是系统按输入框的 autocomplete 语义弹出的，
@@ -425,10 +443,10 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
             · 地点：「无位置」与「具体地点」是同一类里的两档，因此都收在地点面板内，
               不再单独占一个 chip（这就是从 7 个 chip 收敛成 3 个控件的原因）。 */}
         <div className="flex flex-wrap items-center gap-2 pb-3">
-          <Chip active={range !== 'all'} caret onClick={() => openFilterPanel('time')}>
+          <Chip active={range !== 'all'} caret expanded={openPanel === 'time'} onClick={() => openFilterPanel('time')}>
             {timeRangeLabel(range)}
           </Chip>
-          <Chip active={location !== null || noLocation} caret onClick={() => openFilterPanel('location')}>
+          <Chip active={location !== null || noLocation} caret expanded={openPanel === 'location'} onClick={() => openFilterPanel('location')}>
             {location ?? (noLocation ? '无位置' : '地点')}
           </Chip>
           {/* 收藏：文字**恒定**为「收藏」，选中与否只用颜色表达（2026-10-02 用户要求） */}
@@ -502,7 +520,7 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
 
         {active && !loading && error && (
           <div className="pt-16 text-center">
-            <p className="text-sm text-red-500">{error}</p>
+            <p role="alert" className="text-sm text-red-500">{error}</p>
             <button
               onClick={() => {
                 // force：清掉失败态并重新拉。不清的话 ensureLoaded 会认为「已经加载过」

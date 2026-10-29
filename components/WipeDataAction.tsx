@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import ConfirmDialog from './ConfirmDialog'
 import InputConfirmDialog from './InputConfirmDialog'
@@ -8,6 +8,7 @@ import { clearDek } from '@/lib/client/session'
 import { verifyWithPasskey } from '@/lib/client/verify'
 import { idbClearAll } from '@/lib/client/idb'
 import { useUserName } from '@/lib/client/use-user-name'
+import { useDialogBehavior } from '@/lib/client/dialog'
 
 // 删除所有数据：必须手动输入这段文字才能通过（防误触强确认）
 const WIPE_CONFIRM_TEXT = '永久删除'
@@ -48,6 +49,11 @@ export default function WipeDataAction({ onClose, disabled = false, onBlocked }:
   const router = useRouter()
   const userName = useUserName()
   const [step, setStep] = useState<WipeStep>('confirm')
+  // ③ 验证中：这一步**没有取消入口**（验证由系统弹窗负责）。在 Esc 栈里占住栈顶、
+  //   回调为空 ⇒ Esc 被吞掉，不会穿透去关掉下面的隐藏面板/关于弹窗。
+  //   ①②④ 三步的取消语义由各自弹窗（ConfirmDialog / InputConfirmDialog）在栈里接管。
+  const verifyingRef = useRef<HTMLDivElement>(null)
+  useDialogBehavior(verifyingRef, () => {}, { active: step === 'verifying' })
 
   // ① → ②：离线时在这里拦下。这一步本身不联网（只是本地状态机），但其后的写操作必然失败，
   // 直接放弃整个流程并提示 —— 与设置页其余写操作的处理一致。
@@ -122,8 +128,10 @@ export default function WipeDataAction({ onClose, disabled = false, onBlocked }:
       {step === 'verifying' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8">
           <div
+            ref={verifyingRef}
             className="w-full max-w-xs rounded-2xl bg-white px-5 py-6 text-center shadow-xl dark:bg-neutral-800"
             role="alertdialog"
+            aria-modal="true"
             aria-label="正在验证身份"
           >
             <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">正在验证身份…</p>

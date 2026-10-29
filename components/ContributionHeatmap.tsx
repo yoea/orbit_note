@@ -50,11 +50,18 @@ export default function ContributionHeatmap({ byDay }: { byDay: Record<string, {
   }
 
   const emptyCellClass = 'bg-neutral-100 dark:bg-neutral-800'
+  // 无障碍摘要（2026-10-29 桌面端无障碍）：热力图**只靠颜色深浅**表达「当天写了几篇」，
+  // 读屏软件完全读不到、键盘用户也拿不到数据。整张图给 role="img" + 一段文字摘要 ⇒
+  // 图内的格子随之对读屏隐藏（role="img" 是叶子节点），**视觉完全不变**。
+  const dayStats = Object.values(byDay)
+  const activeDays = dayStats.filter((d) => d.count > 0).length
+  const maxCount = dayStats.reduce((m, d) => Math.max(m, d.count), 0)
+  const heatmapSummary = `写作热力图：最近 26 周里有 ${activeDays} 天写过日记，最多的一天写了 ${maxCount} 篇。格子颜色越深表示当天写得越多。`
 
   return (
-    <div className="pb-4">
+    <div className="pb-4" role="img" aria-label={heatmapSummary}>
       {/* 26 周一屏放下，通常无需横滚；左对齐——半年图从左侧开始，视觉更自然 */}
-      <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div tabIndex={0} className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {/* pt-[3px]：为「今天」方块的 ring（向外 1px 的 box-shadow）留出空间——
             外层 overflow-x-auto 的 overflow-y 会被算作 auto 形成裁剪，顶部无内边距时
             最上面一行的描边会被裁掉。

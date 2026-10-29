@@ -515,9 +515,10 @@ export default function DiaryEditor() {
       {isPromptVisible && (
         <button
           onClick={() => setPromptIdx(nextPromptIndex(promptIdx))}
+          aria-label="换一条写作提示"
           className="mb-2 flex items-start gap-1.5 text-left text-xs leading-relaxed text-neutral-500 dark:text-neutral-400 active:opacity-60"
         >
-          <span className="shrink-0">💭</span>
+          <span aria-hidden className="shrink-0">💭</span>
           <span>{PROMPTS[promptIdx]}</span>
         </button>
       )}
@@ -585,7 +586,7 @@ export default function DiaryEditor() {
           relative：给 ConfettiBurst 当定位上下文（它按 footer 顶边锚定，不再用 fixed + 像素偏移） */}
       <footer className="relative shrink-0 pb-4 pt-2">
         {showConfetti && <ConfettiBurst />}
-        <p className="mb-3 text-center text-xs text-neutral-500 dark:text-neutral-400">
+        <p aria-live="polite" className="mb-3 text-center text-xs text-neutral-500 dark:text-neutral-400">
           {status === 'saving' && '正在保存…'}
           {status === 'saved' && (
             <span className="animate-pop inline-block text-sm font-semibold text-emerald-500">

@@ -1,8 +1,13 @@
 'use client'
 
+import { useRef } from 'react'
+import { useDialogBehavior } from '@/lib/client/dialog'
+
 // iOS 原生 Alert 风格确认弹窗：
 // 新版 iOS Safari 的 window.confirm 是纯文字按钮（不明显），自绘圆角卡片 + 双按钮还原原生观感。
 // 支持破坏性操作（确认按钮红色加粗，如删除）。
+// ★ Esc / Tab / 焦点归还由 useDialogBehavior 统一管（2026-10-29 桌面端无障碍）：
+//   Esc = onCancel，与点遮罩同一语义。
 export default function ConfirmDialog({ title, message, confirmText = '好', cancelText = '取消', destructive, onConfirm, onCancel }: {
   title: string
   message?: string
@@ -12,12 +17,18 @@ export default function ConfirmDialog({ title, message, confirmText = '好', can
   onConfirm: () => void
   onCancel: () => void
 }) {
+  const cardRef = useRef<HTMLDivElement>(null)
+  useDialogBehavior(cardRef, onCancel)
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={onCancel}>
       <div
+        ref={cardRef}
         className="w-full max-w-xs overflow-hidden rounded-2xl bg-white text-center shadow-xl dark:bg-neutral-800"
         onClick={(e) => e.stopPropagation()}
         role="alertdialog"
+        aria-modal="true"
+        aria-label={title}
       >
         <div className="px-5 pb-4 pt-5">
           <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{title}</p>

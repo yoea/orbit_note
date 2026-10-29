@@ -130,57 +130,57 @@ export default function SettingsView() {
       {/* 个人信息卡片：生成式头像 + 名字 + 一行统计；点开改名。
           不设分组标题——卡片本身已足够表意，省掉一个只配一行的标题 */}
       <ProfileCard onEditName={guard(() => setShowNameEdit(true))} disabled={offline} />
-      <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">账号与安全</p>
+      <h2 className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">账号与安全</h2>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
           {/* 点击查看各设备通行密钥，可禁用/启用指定设备、添加新设备（先预取数据再打开，无加载闪烁）。
               添加流程是弹窗内的子视图（原先跳 /settings/passkey 整页，返回时会落回设置页而不是弹窗，
               体感是断的）。离线禁用：列表与增删都依赖服务器 */}
-          <button onClick={guard(() => void openPasskeysDialog())} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
+          <button onClick={guard(() => void openPasskeysDialog())} aria-disabled={offline} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">{userName ? `${userName}的通行密钥` : '通行密钥'}</p>
               <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">指纹 / Face ID / Windows Hello 等</p>
             </div>
-            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
+            <span aria-hidden className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </button>
         </li>
         <li>
           {/* 恢复密钥：标目用名词短语（与「通行密钥」「偏好设置」一致），动作交给副标题——
               原先叫「重新生成恢复密钥」，是全页唯一的动词短语标题。弹窗里完成重生成。
               离线禁用：重生成是服务器写操作 */}
-          <button onClick={guard(() => setShowRecovery(true))} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
+          <button onClick={guard(() => setShowRecovery(true))} aria-disabled={offline} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">恢复密钥</p>
               <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">重新生成换新，旧密钥立即失效</p>
             </div>
-            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
+            <span aria-hidden className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </button>
         </li>
         <li>
           {/* 退出登录：从「数据」组移来（它是会话操作不是数据操作，且原先紧跟「导出笔记」易误触）。
               离线禁用原因见文件头注释 */}
-          <button onClick={guard(() => setConfirmLogout(true))} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
+          <button onClick={guard(() => setConfirmLogout(true))} aria-disabled={offline} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">退出登录</p>
               <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">退出后需重新验证通行密钥才能解锁</p>
             </div>
-            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
+            <span aria-hidden className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </button>
         </li>
       </ul>
       {/* 通用：偏好设置入口 + 关于。合并成一组——两者各自都只有一行，
           分开会各带一个「只配一行」的分组标题，白占两处页高 */}
-      <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">通用</p>
+      <h2 className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">通用</h2>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
           {/* 偏好设置：弹窗（原先是跳转独立页 /settings/prefs——那组开关只占约 40% 页高，
               跳页多一次导航与返回，改为弹窗后设置页一屏容纳）。离线禁用：开关写操作走服务器同步 */}
-          <button onClick={guard(() => setShowPrefs(true))} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
+          <button onClick={guard(() => setShowPrefs(true))} aria-disabled={offline} className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}>
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">偏好设置</p>
               <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">位置、天气、地点名与各项显示开关</p>
             </div>
-            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
+            <span aria-hidden className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </button>
         </li>
         <li>
@@ -189,11 +189,11 @@ export default function SettingsView() {
               <p className="text-neutral-800 dark:text-neutral-200">关于 Orbit</p>
               <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">端到端加密的私人日记</p>
             </div>
-            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
+            <span aria-hidden className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </button>
         </li>
       </ul>
-      <p className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">数据</p>
+      <h2 className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">数据</h2>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
           {/* 导入与导出（2026-10-29 改成**底部抽屉**，不再跳整页）：它是设置里的一件事，
@@ -209,13 +209,14 @@ export default function SettingsView() {
               离线禁用：导出要拉服务器全量密文（本地缓存不保证完整）、导入必须写服务器。 */}
           <button
             onClick={() => { if (offline) { notifyOffline(); return } setShowBackup(true) }}
+            aria-disabled={offline}
             className={`flex w-full items-center justify-between px-4 py-3.5 text-left active:opacity-60 ${disabledClass}`}
           >
             <div>
               <p className="text-neutral-800 dark:text-neutral-200">导入与导出</p>
               <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">把日记从文件导入，或导出为文件</p>
             </div>
-            <span className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
+            <span aria-hidden className="text-lg text-neutral-500 dark:text-neutral-400">›</span>
           </button>
         </li>
       </ul>

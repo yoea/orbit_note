@@ -44,6 +44,7 @@ export default function MarkdownToolbar({ preview, disabled, onAction, onToggleP
       <button
         type="button"
         onClick={onTogglePreview}
+        aria-pressed={preview}
         className="rounded-lg px-2 py-1 text-xs text-neutral-500 active:bg-neutral-100 dark:text-neutral-400 dark:active:bg-neutral-800"
       >
         {preview ? '编辑' : '预览'}

@@ -135,7 +135,7 @@ export default function AddPasskeyPanel({ onAdded }: {
       >
         {busy ? '添加中…' : '注册新的通行密钥'}
       </button>
-      {error && <p className="text-center text-sm text-red-500">{error}</p>}
+      {error && <p role="alert" className="text-center text-sm text-red-500">{error}</p>}
     </div>
   )
 }

@@ -179,6 +179,7 @@ export default function LoginPage() {
             value={recoveryKey}
             onChange={(e) => setRecoveryKey(e.target.value)}
             placeholder="粘贴恢复密钥"
+              aria-label="恢复密钥"
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}

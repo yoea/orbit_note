@@ -26,7 +26,10 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: 'not_found' }, { status: 404 })
   }
   await db.update(keyWrappers)
-    .set({ encryptedDek, salt, encryptionVersion, recoveryKeyHash })
+    // createdAt 一并刷新：换新后这行的 created_at 语义 = 「当前这把密钥的创建时刻」，
+    // 前端「恢复密钥」弹窗据此展示；不刷的话重生成后时间永远停在首次初始化（误导）。
+    // 只有 recovery 行会整行换内容，passkey 行不受本接口影响。
+    .set({ encryptedDek, salt, encryptionVersion, recoveryKeyHash, createdAt: new Date() })
     .where(eq(keyWrappers.id, existing.id))
   return NextResponse.json({ ok: true })
 }

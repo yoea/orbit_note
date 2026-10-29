@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useRef } from 'react'
+import { useDialogBehavior } from '@/lib/client/dialog'
 
 /**
  * 气泡确认框（2026-10-29 用户要求）。
@@ -34,13 +35,11 @@ export default function Popconfirm({ open, message, confirmText, cancelText = '�
   onConfirm: () => void
   onCancel: () => void
 }) {
-  // Esc 关闭：桌面端的基本预期（移动端靠点空白 / 点取消）
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onCancel])
+  // Esc 关闭 / Tab 循环 / 焦点归还：useDialogBehavior 统一管（2026-10-29 前是本组件
+  // 自己挂的 window keydown，叠层时会一次关掉多层；迁移后走全局 Esc 栈，只关最上层）。
+  // ★ 本组件常驻挂载、用 open prop 控制 ⇒ 传 { active: open }。
+  const bubbleRef = useRef<HTMLDivElement>(null)
+  useDialogBehavior(bubbleRef, onCancel, { active: open })
 
   if (!open) return null
 
@@ -48,6 +47,7 @@ export default function Popconfirm({ open, message, confirmText, cancelText = '�
     <>
       <div className="fixed inset-0 z-40" onClick={onCancel} aria-hidden />
       <div
+        ref={bubbleRef}
         role="dialog"
         aria-label={message}
         aria-modal="true"

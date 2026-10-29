@@ -361,11 +361,14 @@ describe('通行密钥就地改名', () => {
     expect(body, '没有回写本地列表').toContain('prev.map((p) => (p.id === pk.id ? { ...p, device: next } : p))')
   })
 
-  it('N22 可发现性：一行可见提示（触屏没有 hover，title 提示看不到）', () => {
+  it('N22 就地改名的入口仍可点（提示文案已按用户要求删除，功能不许消失）', () => {
     const src = code(DIALOG)
-    expect(src, '没有可见的改名提示 —— 没有任何图标的入口，不写出来没人知道可以点').toContain(
-      '点击设备名称即可修改',
-    )
+    // ★ 2026-10-29 用户要求删掉页脚那两行说明文案（其中一条就是「点击设备名称即可修改…」）。
+    //   提示删了，**入口本身必须还在**：设备名称仍然是一个可点的按钮，点它进入编辑态。
+    expect(src, '设备名称不再是可点的按钮（改名入口消失了）').toContain('startRename(pk)')
+    expect(src, '没有进入编辑态的点击处理').toContain('onClick={() => startRename(pk)}')
+    // 反面：那条提示文案不许被加回来
+    expect(src, '「点击设备名称即可修改」的提示被加回来了').not.toContain('点击设备名称即可修改')
     // 反面：不用 prompt —— iOS 上它会盖住整个弹窗，且无法与列表样式统一
     expect(src, '不该用 window.prompt 改名').not.toContain('window.prompt')
   })

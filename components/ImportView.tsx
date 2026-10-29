@@ -202,7 +202,14 @@ export default function ImportView({ compact = false }: {
             {progress.total > 0 && <span className="ml-2 tabular-nums text-neutral-500 dark:text-neutral-400">{progress.done}/{progress.total}</span>}
           </p>
           {percent != null && (
-            <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800">
+            <div
+              role="progressbar"
+              aria-valuenow={percent ?? 0}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="导入进度"
+              className="mt-2 h-1 w-full overflow-hidden rounded-full bg-neutral-200 dark:bg-neutral-800"
+            >
               <div className={`h-full ${BRAND_GRADIENT_CLASS}`} style={{ width: `${percent}%` }} />
             </div>
           )}
@@ -210,7 +217,7 @@ export default function ImportView({ compact = false }: {
       )}
 
       {report && (
-        <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-900 dark:bg-emerald-950">
+        <div role="status" className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 dark:border-emerald-900 dark:bg-emerald-950">
           <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">
             {report.aborted ? '导入已中断' : '导入完成'}
           </p>
@@ -257,7 +264,7 @@ export default function ImportView({ compact = false }: {
         </div>
       )}
 
-      {error && <p className="mt-3 text-center text-sm text-red-500">{error}</p>}
+      {error && <p role="alert" className="mt-3 text-center text-sm text-red-500">{error}</p>}
     </div>
   )
 }

@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { USER_NAME_MAX, saveUserName } from '@/lib/client/profile'
+import { useDialogBehavior } from '@/lib/client/dialog'
 
 // 改名弹窗（设置页）。iOS Alert 风格，与 ConfirmDialog 保持一致。
 // 名字由 DEK 加密后存服务器——本组件只负责收集与校验。
@@ -18,6 +19,9 @@ export default function NameEditDialog({ current, onSaved, onClose }: {
   const [value, setValue] = useState(current)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Esc / Tab 循环 / 焦点归还（2026-10-29）：Esc = onClose（与点遮罩同义）。
+  const cardRef = useRef<HTMLDivElement>(null)
+  useDialogBehavior(cardRef, onClose)
 
   const trimmed = value.trim()
   const canSave = trimmed.length > 0 && trimmed !== current && !busy
@@ -38,9 +42,12 @@ export default function NameEditDialog({ current, onSaved, onClose }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={onClose}>
       <div
+        ref={cardRef}
         className="w-full max-w-xs overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-neutral-800"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
+        aria-label="修改名字"
       >
         <div className="px-5 pb-4 pt-5">
           <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">修改名字</p>
@@ -58,6 +65,7 @@ export default function NameEditDialog({ current, onSaved, onClose }: {
               value={value}
               onChange={(e) => { setValue(e.target.value); setError(null) }}
               maxLength={USER_NAME_MAX}
+              aria-label="新名字"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
@@ -70,7 +78,7 @@ export default function NameEditDialog({ current, onSaved, onClose }: {
               {trimmed.length}/{USER_NAME_MAX}
             </span>
           </div>
-          {error && <p className="mt-2 text-xs text-red-500">{error}</p>}
+          {error && <p role="alert" className="mt-2 text-xs text-red-500">{error}</p>}
         </div>
         <div className="flex border-t border-neutral-200 dark:border-neutral-700">
           <button

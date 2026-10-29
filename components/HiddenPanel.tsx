@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import Link from 'next/link'
 import WipeDataAction from './WipeDataAction'
 import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
+import { useDialogBehavior } from '@/lib/client/dialog'
 
 /**
  * 隐藏入口面板（2026-10-29 用户要求）。
@@ -58,6 +59,10 @@ export default function HiddenPanel({ openedAt, onClose, wipeDisabled = false, o
   const [wipeOpen, setWipeOpen] = useState(false)
   // 打开时刻存进 ref（不参与渲染）。本组件只在打开时挂载 ⇒ 初值就是本次打开时刻。
   const openedAtRef = useRef(openedAt)
+  // Esc = requestClose（带 1 秒闸门，与点遮罩同义，不走裸 onClose 绕过闸门）；
+  // Tab 循环 / 焦点归还统一在 useDialogBehavior。
+  const cardRef = useRef<HTMLDivElement>(null)
+  useDialogBehavior(cardRef, requestClose)
 
   // 遮罩专用：打开后 1 秒内直接吞掉（理由见 CLOSE_GUARD_MS 的注释）。
   // 卡片内有 stopPropagation，所以这里接到的只可能是「点在面板外面」的意图。
@@ -75,6 +80,7 @@ export default function HiddenPanel({ openedAt, onClose, wipeDisabled = false, o
       {!wipeOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={requestClose}>
           <div
+            ref={cardRef}
             className="w-full max-w-xs overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-neutral-800"
             onClick={(e) => e.stopPropagation()}
             role="dialog"

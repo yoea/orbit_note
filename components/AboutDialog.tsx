@@ -5,6 +5,7 @@ import OrbitLogo from './OrbitLogo'
 import HiddenPanel from './HiddenPanel'
 import { pulseLogo, tapHaptic } from '@/lib/client/logo-tap'
 import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
+import { useDialogBehavior } from '@/lib/client/dialog'
 
 // 「删除所有数据」的**隐藏入口**：连点 LOGO「Orbit」8 次（2026-10-10 用户要求）。
 // 界面上不再有任何可见入口 —— 这条功能的可发现性一路降到零。
@@ -144,10 +145,10 @@ function GitHubIcon({ className }: IconProps) {
 // 又几乎不占空间（3×12px，与文字同高），比加分割线轻盈。
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <p className="flex items-center gap-2 px-6 pb-1 text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+    <h3 className="flex items-center gap-2 px-6 pb-1 text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
       <span aria-hidden className="h-3 w-[3px] shrink-0 rounded-full bg-gradient-to-b from-orange-500 via-rose-400 to-violet-500" />
       {children}
-    </p>
+    </h3>
   )
 }
 
@@ -189,6 +190,11 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
   //   而渲染期**读** ref 同样会被 refs 规则判红 —— 所以时间戳只能在事件处理函数里
   //   取、并由 state 带进渲染。它与 `setHiddenOpen(true)` 同批更新，不会多渲染一帧。
   const [hiddenOpenedAt, setHiddenOpenedAt] = useState(0)
+  // Esc / Tab 循环 / 焦点归还（2026-10-29）。★ 本组件开隐藏面板时卡片会被条件换掉
+  //   再挂回来 —— hook 在事件发生时才从 ref 取容器，重挂后依然有效；Esc 栈里本条
+  //   常驻（面板的条目后入 ⇒ 在栈顶，先关面板，符合「一次只关最上层」）。
+  const cardRef = useRef<HTMLDivElement>(null)
+  useDialogBehavior(cardRef, onClose)
 
   // 每次点击都给回应（2026-10-29 用户要求）：
   //   · 动画 → 所有平台都有（iOS 上这就是唯一的即时反馈）；
@@ -218,9 +224,11 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
       {!hiddenOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={onClose}>
           <div
+            ref={cardRef}
             className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-neutral-800"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
+            aria-modal="true"
             aria-label="关于 Orbit"
           >
             {/* 品牌渐变态（与 TabBar 选中态 / 主按钮 / 头像底同一条）。放在滚动区之外，

@@ -711,9 +711,10 @@ export default function EntryView({ id }: { id: string }) {
               {/* 点击复制精确坐标（有地址时复制坐标；无地址时同时触发地点补查） */}
               <button
                 onClick={() => void copyCoords()}
+                aria-label="复制坐标"
                 className="min-w-0 truncate text-xs tabular-nums text-neutral-500 dark:text-neutral-400 active:opacity-60"
               >
-                <span className="mr-0.5 text-[10px]">📍</span>
+                <span aria-hidden className="mr-0.5 text-[10px]">📍</span>
                 {/* 有地址信息只显示地址；没有则只显示经纬度（不显示精度） */}
                 {placeName ?? displayCoords}
                 {/* 已复制提示：跟在地点名/坐标后面 */}
@@ -739,7 +740,7 @@ export default function EntryView({ id }: { id: string }) {
             </div>
             {/* 保存时记录的实时天气（有则显示，右对齐） */}
             {entry.weather && (
-              <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400">{weatherEmoji(entry.weather)}{entry.weather}</span>
+              <span className="shrink-0 text-xs text-neutral-500 dark:text-neutral-400"><span aria-hidden>{weatherEmoji(entry.weather)}</span>{entry.weather}</span>
             )}
           </div>
         </div>
@@ -781,6 +782,7 @@ export default function EntryView({ id }: { id: string }) {
                   onChange={(e) => { setCoordInput(e.target.value); setCoordError(null) }}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void applyManualCoords() } }}
                   placeholder="25.049642, 102.676280"
+                    aria-label="纬度, 经度"
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
@@ -795,7 +797,7 @@ export default function EntryView({ id }: { id: string }) {
                 </button>
               </div>
               <p className="mt-2 text-[10px] text-neutral-500 dark:text-neutral-400">粘贴「纬度, 经度」即可，确定后立即保存</p>
-              {coordError && <p className="mt-1 text-[10px] text-red-500">{coordError}</p>}
+              {coordError && <p role="alert" className="mt-1 text-[10px] text-red-500">{coordError}</p>}
             </div>
           )}
         </div>
@@ -838,6 +840,7 @@ export default function EntryView({ id }: { id: string }) {
                 value={plain}
                 onChange={(e) => setPlain(e.target.value)}
                 disabled={busy}
+                aria-label="日记正文"
                 /* overflow-y-auto 与 AutoTextarea 对齐：滚动条由 textarea 自己承担，
                    不能依赖 UA 默认（默认值一旦被 reset 掉，输入区就彻底滚不动了） */
                 className={`${EDITOR_TEXTAREA_CLASS} overflow-y-auto`}
@@ -898,9 +901,9 @@ export default function EntryView({ id }: { id: string }) {
         </>
       )}
       {decryptFailed && (
-        <p className="mt-3 text-sm text-red-500">原内容无法解密，无法编辑，否则将覆盖原数据</p>
+        <p role="status" className="mt-3 text-sm text-red-500">原内容无法解密，无法编辑，否则将覆盖原数据</p>
       )}
-      {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+      {error && <p role="alert" className="mt-3 text-sm text-red-500">{error}</p>}
       {!editing && (
         <>
           {/* 底部操作栏：一行 **5 个图标**，按「状态 → 编辑 → 收起来 → 销毁」的逻辑排，

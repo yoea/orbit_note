@@ -478,7 +478,7 @@ export default function ArchiveListView() {
         <div className="flex shrink-0 items-center justify-between gap-3 px-5 pb-2">
           <p className="min-w-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
             {items.length > 0 && (total !== null ? `共 ${total + pendingCount} 篇` : `已加载 ${items.length} 篇`)}
-            {items.length > 0 && pendingCount > 0 && <span className="opacity-70">（含 {pendingCount} 篇未同步）</span>}
+            {items.length > 0 && pendingCount > 0 && <span>（含 {pendingCount} 篇未同步）</span>}
           </p>
           {/* 选择态不给它：那时底部工具栏才是操作区，两个地方同时能"动全部"会让人分不清 */}
           {!selectMode && restCount !== null && restCount > 0 && (

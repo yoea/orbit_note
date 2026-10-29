@@ -51,6 +51,7 @@ export default function BackupRestoreView() {
         <button
           role="tab"
           aria-selected={mode === 'import'}
+          aria-controls="backup-page-panel"
           onClick={() => switchTo('import')}
           className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${mode === 'import' ? 'bg-white text-neutral-900 dark:bg-neutral-700 dark:text-neutral-100' : 'text-neutral-500 dark:text-neutral-400'}`}
         >
@@ -59,6 +60,7 @@ export default function BackupRestoreView() {
         <button
           role="tab"
           aria-selected={mode === 'export'}
+          aria-controls="backup-page-panel"
           onClick={() => switchTo('export')}
           className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${mode === 'export' ? 'bg-white text-neutral-900 dark:bg-neutral-700 dark:text-neutral-100' : 'text-neutral-500 dark:text-neutral-400'}`}
         >
@@ -66,7 +68,9 @@ export default function BackupRestoreView() {
         </button>
       </div>
 
-      {mode === 'export' ? <ExportView /> : <ImportView />}
+      <div id="backup-page-panel" role="tabpanel" aria-label="导入与导出内容">
+        {mode === 'export' ? <ExportView /> : <ImportView />}
+      </div>
     </main>
   )
 }

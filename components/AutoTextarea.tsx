@@ -65,6 +65,7 @@ export default function AutoTextarea({ value, onChange, placeholder, autoFocus, 
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
+      aria-label="日记正文"
       disabled={disabled}
       className={`${EDITOR_TEXTAREA_CLASS} overflow-y-auto placeholder:text-neutral-500 dark:placeholder:text-neutral-400`}
     />

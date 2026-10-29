@@ -1,6 +1,6 @@
 'use client'
 
-import { useLayoutEffect, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import {
   GEOCODE_KEY, HEATMAP_KEY, LOCATION_KEY, OFFLINE_KEY, OTD_KEY, PROMPT_KEY,
   SAVE_SOUND_KEY, SHOW_VIEWS_KEY, STREAK_KEY, WEATHER_KEY,
@@ -10,10 +10,14 @@ import {
 } from '@/lib/client/prefs'
 import { clearOfflineData, getQueuedCount } from '@/lib/client/offline'
 import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
+import { useDialogBehavior } from '@/lib/client/dialog'
 
 // 偏好开关组件：未加载时渲染中性占位（圆点居中，视觉上非开非关——
 // 避免「先渲染默认开启、再变关闭」的闪烁）；加载完成后才是真实可切换开关
-function PrefSwitch({ enabled, ready, onToggle }: { enabled: boolean; ready: boolean; onToggle: () => void }) {
+//
+// ★ aria-label（2026-10-29 桌面端无障碍）：role="switch" 单独存在时读屏只会念
+//   「开关，开」，不知道控制的是哪一项 ⇒ 必须带上这一项的名字。
+function PrefSwitch({ label, enabled, ready, onToggle }: { label: string; enabled: boolean; ready: boolean; onToggle: () => void }) {
   if (!ready) {
     return (
       <span className="relative h-7 w-12 shrink-0 rounded-full bg-neutral-300 opacity-60 dark:bg-neutral-600" aria-hidden>
@@ -26,6 +30,7 @@ function PrefSwitch({ enabled, ready, onToggle }: { enabled: boolean; ready: boo
       onClick={onToggle}
       role="switch"
       aria-checked={enabled}
+      aria-label={label}
       className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${enabled ? 'bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500' : 'bg-neutral-300 dark:bg-neutral-600'}`}
     >
       <span className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-5' : ''}`} />
@@ -65,6 +70,9 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
   const [queuedCount, setQueuedCount] = useState(0)
   // 偏好加载完成前渲染中性占位（避免「默认开启→真实状态」的闪烁）
   const [prefsReady, setPrefsReady] = useState(false)
+  // Esc / Tab 循环 / 焦点归还（2026-10-29）：Esc = onClose（与点遮罩同义）。
+  const cardRef = useRef<HTMLDivElement>(null)
+  useDialogBehavior(cardRef, onClose)
 
   // useLayoutEffect：浏览器 paint 前同步读取 localStorage——首帧即真实开关状态，
   // 配合 PrefSwitch 的中性占位（同步读取后立即 ready），无「先开后关」闪烁。
@@ -146,6 +154,7 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-6" onClick={onClose}>
       <div
+        ref={cardRef}
         className="flex w-full max-w-sm flex-col overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-neutral-800"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -159,7 +168,7 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
         <div className="thin-scrollbar max-h-[60dvh] overflow-y-auto px-5 py-2">
           {groups.map((group) => (
             <section key={group}>
-              <p className="pb-1 pt-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">{group}</p>
+              <h3 className="pb-1 pt-2 text-xs font-medium text-neutral-500 dark:text-neutral-400">{group}</h3>
               <ul className="flex flex-col">
                 {rows.filter((row) => row.group === group).map((row) => (
                   <li key={row.key} className="flex items-center justify-between gap-4 border-b border-neutral-100 py-3.5 last:border-b-0 dark:border-neutral-700">
@@ -167,7 +176,7 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
                       <p className="text-neutral-800 dark:text-neutral-200">{row.label}</p>
                       <p className="mt-0.5 text-xs text-neutral-500 dark:text-neutral-400">{row.hint}</p>
                     </div>
-                    <PrefSwitch enabled={row.enabled} ready={prefsReady} onToggle={() => toggle(row.key, row.enabled, row.setEnabled)} />
+                    <PrefSwitch label={row.label} enabled={row.enabled} ready={prefsReady} onToggle={() => toggle(row.key, row.enabled, row.setEnabled)} />
                   </li>
                 ))}
               </ul>

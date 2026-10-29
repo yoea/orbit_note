@@ -6,6 +6,7 @@ import { useUserName } from '@/lib/client/use-user-name'
 import AddPasskeyPanel from './AddPasskeyPanel'
 import ConfirmDialog from './ConfirmDialog'
 import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
+import { useDialogBehavior } from '@/lib/client/dialog'
 
 export interface PasskeyInfo {
   id: string
@@ -59,6 +60,10 @@ export default function PasskeysDialog({ initialData, onClose }: {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const nameInputRef = useRef<HTMLInputElement | null>(null)
+  // Esc / Tab 循环 / 焦点归还（2026-10-29）。Esc = onClose（与点遮罩同义）；
+  //   就地改名输入框自己的 Esc 由 onNameKeyDown 拦下（stopPropagation），只放弃改名、不关弹窗。
+  const cardRef = useRef<HTMLDivElement>(null)
+  useDialogBehavior(cardRef, onClose)
 
   // 进入编辑后把光标放进输入框并**全选**：改名绝大多数是整体替换（「Windows Edge」→「家里电脑」），
   // 全选后直接打字即可；想局部修改就再点一下取消选中。
@@ -119,6 +124,9 @@ export default function PasskeysDialog({ initialData, onClose }: {
       void commitRename(pk)
     } else if (e.key === 'Escape') {
       e.preventDefault()
+      // ★ stopPropagation：React 事件在 root 容器上派发，拦下后**不会**冒泡到 window
+      //   ⇒ 全局 Esc 栈收不到这一下，改名输入框里的 Esc 只「放弃改名」，不会连弹窗一起关掉。
+      e.stopPropagation()
       cancelRename()
     }
   }
@@ -207,9 +215,11 @@ export default function PasskeysDialog({ initialData, onClose }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={onClose}>
       <div
+        ref={cardRef}
         className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-neutral-800"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label={view === 'add' ? '添加通行密钥' : userName ? `${userName}的通行密钥` : '通行密钥'}
       >
         <div className="max-h-[70dvh] overflow-y-auto px-5 py-6">
@@ -363,17 +373,10 @@ export default function PasskeysDialog({ initialData, onClose }: {
             ))}
           </ul>
           )}
-          {error && <p className="mt-3 text-center text-sm text-red-500">{error}</p>}
-          <p className="mt-4 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-            {passkeys.some((p) => !p.ready)
-              ? '「未完成」的通行密钥在注册最后一步没走完，无法解锁日记 —— 请删除后重新添加'
-              : '禁用后该设备无法登录，可随时重新启用或彻底删除'}
-          </p>
-          {/* 改名入口的提示：这是一个**没有任何图标**的入口（点文字即编辑），不写出来没人
-              知道那两个字可以按。触屏没有 hover，`title` 看不到 ⇒ 必须有一行可见文字。 */}
-          {!loadFailed && passkeys.length > 0 && (
-            <p className="mt-1.5 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-              点击设备名称即可修改（例如改成「家里电脑」）；按 Esc 或点空白处放弃修改
+          {error && <p role="alert" className="mt-3 text-center text-sm text-red-500">{error}</p>}
+          {passkeys.some((p) => !p.ready) && (
+            <p className="mt-4 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+              「未完成」的通行密钥在注册最后一步没走完，无法解锁日记 —— 请删除后重新添加
             </p>
           )}
           </>
@@ -388,7 +391,11 @@ export default function PasskeysDialog({ initialData, onClose }: {
           {view === 'list' ? '完成' : '返回列表'}
         </button>
       </div>
-      {confirming && (
+      {/* 禁用确认 / 删除确认：★ 本层拦冒泡（与 WipeDataAction 同一处理）——
+          这两个确认框挂在本弹窗的遮罩内部，若不拦，点确认框自己的遮罩（= 取消确认）
+          会继续冒泡到外层遮罩的 onClick ⇒ 取消确认的同时把整个通行密钥弹窗也关掉。 */}
+      <div onClick={(e) => e.stopPropagation()}>
+        {confirming && (
         <ConfirmDialog
           title={`禁用 ${confirming.device ?? '此设备'} 的通行密钥？`}
           message={
@@ -402,9 +409,11 @@ export default function PasskeysDialog({ initialData, onClose }: {
           onConfirm={() => void disable()}
           onCancel={() => setConfirming(null)}
         />
-      )}
+        )}
+      </div>
       {/* 删除确认（硬删除，不可逆 —— 所以必须二次确认，且文案要说清后果）。
           「未完成」的那类走的是同一条，只是文案不同（删掉它没有任何损失）。 */}
+      <div onClick={(e) => e.stopPropagation()}>
       {removing && (
         <ConfirmDialog
           title={`删除 ${removing.device ?? '此设备'} 的通行密钥？`}
@@ -422,6 +431,7 @@ export default function PasskeysDialog({ initialData, onClose }: {
           onCancel={() => setRemoving(null)}
         />
       )}
+      </div>
     </div>
   )
 }

@@ -239,3 +239,35 @@ body {
   to { opacity: 1; }
 }
 .animate-fade-in { animation: fade-in 0.3s ease-out; }
+
+/* ── 键盘焦点可见（2026-10-29 桌面端无障碍）───────────────────────────────
+   全站此前**零** :focus-visible 样式：按钮与链接靠浏览器默认焦点环（Tailwind
+   preflight 没有重置 outline），而输入框 / 文本域多处写了 `outline-none`
+   ⇒ 聚焦后完全看不到焦点在哪（桌面端键盘操作等于盲操作）。
+   这里给一份全局兜底：
+   · `:is()` 的参数里带属性选择器（[role="switch"] 等）⇒ 优先级 (0,2,0)，
+     高于 Tailwind 工具类 `.outline-none` (0,1,0)；且本规则**未放进 @layer**，
+     未分层样式在层叠里优先于 @layer utilities ⇒ 写了 outline-none 的输入框
+     也能拿到焦点环（否则这条规则会被它们盖掉）。
+   · 只在**键盘**聚焦时出现（:focus-visible）：鼠标点击不显示，不干扰现有观感。
+   · 颜色取品牌紫 #8b5cf6：白底约 3.9:1、深底约 3.4:1，均过 WCAG 非文本对比度 3:1；
+     outline-offset 2px 让焦点环与元素之间留出背景色，渐变按钮上也能分清。 */
+:is(button, a, input, textarea, select, [role="switch"], [role="tab"], [tabindex]):focus-visible {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
+}
+
+/* ── 「减少动态效果」偏好（2026-10-29）────────────────────────────────────
+   系统开启「减少动态效果 / Reduce Motion」时，关掉装饰性动画（保存成功的彩带、
+   Toast 滑入、页面淡入、开关弹跳）与所有过渡，避免前庭敏感用户不适。
+   ★ 用 !important 是因为要压过组件里的 transition/animation 工具类。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

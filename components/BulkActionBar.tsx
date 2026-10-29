@@ -41,6 +41,7 @@ export default function BulkActionBar({
           onClick={onToggleAll}
           disabled={busy || total === 0}
           title={allSelected ? '取消全选' : `全选已加载的 ${total} 篇`}
+          aria-label={allSelected ? '取消全选' : `全选已加载的 ${total} 篇`}
           className="shrink-0 rounded-xl px-2.5 py-2.5 text-xs font-medium text-neutral-600 active:opacity-60 disabled:opacity-40 dark:text-neutral-300"
         >
           {allSelected ? '取消全选' : '全选'}

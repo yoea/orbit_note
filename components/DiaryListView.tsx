@@ -625,7 +625,7 @@ export default function DiaryListView() {
             {/* 元信息：定位图标 + 地点名（左），字数右对齐 */}
             <div className="mt-0.5 flex items-baseline justify-between gap-2 text-[10px] text-neutral-500 dark:text-neutral-400">
               <span className="flex min-w-0 items-center gap-1">
-                {item.lat != null && <span>📍</span>}
+                {item.lat != null && (<><span aria-hidden>📍</span><span className="sr-only">含定位</span></>)}
                 {item.locationName && <span className="truncate">{item.locationName}</span>}
               </span>
               <span className="shrink-0">{item.wordCount} 字</span>

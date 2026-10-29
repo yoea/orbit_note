@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { useDialogBehavior } from '@/lib/client/dialog'
 
 // 输入验证弹窗（iOS Alert 风格）：必须输入指定文字才能确认——防误触的强确认手段
 // （类似 GitHub 删除仓库需输入仓库名）。输入不匹配时确认按钮不可点。
 // destructive：红色边框 + 删除主题（配合 message 中的加粗红重点文字）。
+// ★ Esc = onCancel（与点遮罩同义），Tab 循环 / 焦点归还在 useDialogBehavior。
 export default function InputConfirmDialog({ title, message, expected, placeholder, confirmText = '删除', cancelText = '取消', destructive, onConfirm, onCancel }: {
   title: string
   message?: React.ReactNode
@@ -18,13 +20,18 @@ export default function InputConfirmDialog({ title, message, expected, placehold
 }) {
   const [value, setValue] = useState('')
   const matched = value.trim() === expected
+  const cardRef = useRef<HTMLDivElement>(null)
+  useDialogBehavior(cardRef, onCancel)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={onCancel}>
       <div
+        ref={cardRef}
         className={`w-full max-w-xs overflow-hidden rounded-2xl bg-white text-center shadow-xl dark:bg-neutral-800 ${destructive ? 'border border-red-300 dark:border-red-800' : ''}`}
         onClick={(e) => e.stopPropagation()}
         role="alertdialog"
+        aria-modal="true"
+        aria-label={title}
       >
         <div className="px-5 pb-4 pt-5">
           <p className="text-base font-semibold text-neutral-900 dark:text-neutral-100">{title}</p>
@@ -33,6 +40,7 @@ export default function InputConfirmDialog({ title, message, expected, placehold
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder={placeholder}
+            aria-label={`输入「${expected}」确认`}
             autoCapitalize="none" autoCorrect="off" spellCheck={false}
             autoComplete="off" data-lpignore="true" // 阻止浏览器/密码管理器自动填充
             autoFocus

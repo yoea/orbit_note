@@ -54,21 +54,23 @@ describe('设置页信息架构', () => {
     const src = code(SETTINGS)
     expect(src.length).toBeGreaterThan(1000)
     for (const title of ['账号与安全', '通用', '数据']) {
-      expect(src, `分组标题缺失：${title}`).toContain(`>${title}</p>`)
+      // ★ 2026-10-29 桌面端无障碍：分组标题改用 <h2>（读屏可按标题跳转），
+      //   视觉类名一字未改 ⇒ 页面外观完全不变。
+      expect(src, `分组标题缺失：${title}`).toContain(`>${title}</h2>`)
     }
   })
 
   it('P1 分组顺序为「账号与安全 → 通用 → 数据」', () => {
     const src = code(SETTINGS)
-    expect(pos(src, '>账号与安全</p>')).toBeLessThan(pos(src, '>通用</p>'))
-    expect(pos(src, '>通用</p>')).toBeLessThan(pos(src, '>数据</p>'))
+    expect(pos(src, '>账号与安全</h2>')).toBeLessThan(pos(src, '>通用</h2>'))
+    expect(pos(src, '>通用</h2>')).toBeLessThan(pos(src, '>数据</h2>'))
   })
 
   it('P2 「退出登录」在「账号与安全」组内，不在「数据」组', () => {
     const src = code(SETTINGS)
     const logout = pos(src, '>退出登录</p>')
-    expect(logout).toBeGreaterThan(pos(src, '>账号与安全</p>'))
-    expect(logout).toBeLessThan(pos(src, '>通用</p>'))
+    expect(logout).toBeGreaterThan(pos(src, '>账号与安全</h2>'))
+    expect(logout).toBeLessThan(pos(src, '>通用</h2>'))
   })
 
   it('P3 导入与导出是单一入口（2026-10-29 起是**底部抽屉**，不再跳整页）', () => {
@@ -156,10 +158,14 @@ describe('设置页信息架构', () => {
     expect(body, '桌面没有放开 flex-1（高度 auto 的容器里会塌）').toContain('md:flex-initial')
     expect(body, '手机形态丢了 flex-1（抽屉里内容不再撑满）').toContain('flex-1')
 
-    // ⑤ Esc 关闭（桌面模态窗的基本预期）：监听、判断、退订三件齐全，缺退订就是泄漏
-    expect(src, '没有监听 keydown').toContain("window.addEventListener('keydown', onKey)")
-    expect(src, '没有退订 keydown（会泄漏）').toContain("window.removeEventListener('keydown', onKey)")
-    expect(src, 'Esc 没有真的关闭容器').toContain("if (e.key === 'Escape') onClose()")
+    // ⑤ Esc 关闭（桌面模态窗的基本预期）：**统一走 useDialogBehavior**（2026-10-29 起）。
+    //    早先这里是本组件自己挂 window keydown 的三件套；多个弹窗各挂各的 ⇒ 叠层时
+    //    一次 Esc 会把多层一起关掉。现在由 lib/client/dialog.ts 的**全局 Esc 栈**接管：
+    //    window 上只有一个监听，Esc 只调栈顶（= 最上层）。
+    expect(src, '没有接入统一的弹窗行为 hook（Esc 会与其它弹窗打架）').toContain('useDialogBehavior')
+    expect(src, '没有把面板本体交给 hook（Esc 的判定边界会错）').toContain('ref={panelRef}')
+    // 反向：组件内不得再自己挂 window keydown（两套监听 ⇒ 一次 Esc 关多层）
+    expect(src, '组件里又自己挂了 window keydown（与全局 Esc 栈重复）').not.toContain("window.addEventListener('keydown'")
 
     // ⑥ 反向：形态切换必须是 **CSS 断点**，用 JS 媒体查询会首帧闪一下（SSR 不知道宽度）
     expect(src, '又用 matchMedia 切形态了（首帧会闪，还要监听 resize）').not.toContain('matchMedia')

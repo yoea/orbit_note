@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import ExportView from './ExportView'
 import ImportView from './ImportView'
+import { useDialogBehavior } from '@/lib/client/dialog'
 
 /**
  * 「导入与导出」容器（2026-10-29 用户要求：设置页点进去不再跳新页，改从底部弹出）。
@@ -42,21 +43,16 @@ export default function BackupSheet({ onClose }: { onClose: () => void }) {
   const [mode, setMode] = useState<'export' | 'import'>('import')
   // 切换分段时把抽屉内容滚回顶部：两侧高度差很大，不重置会让人落在半截位置
   const scrollRef = useRef<HTMLDivElement>(null)
+  // 面板本体：Esc（栈式，只关最上层）/ Tab 循环 / 焦点归还统一入口。
+  // ★ 两个子面板内部都没有嵌套遮罩（ExportView / ImportView 都只是表单），
+  //   所以 Esc 的语义唯一 = 关掉整个容器，不会误伤内层。
+  const panelRef = useRef<HTMLDivElement>(null)
+  useDialogBehavior(panelRef, onClose)
 
   function switchTo(next: 'export' | 'import') {
     setMode(next)
     scrollRef.current?.scrollTo({ top: 0 })
   }
-
-  // Esc 关闭：桌面端模态窗的基本预期（手机端靠点遮罩 / 点「关闭」）。
-  // 写法与 Popconfirm 完全同一份：组件只在打开时被挂载，故不必再判 open。
-  // ★ 两个子面板内部都没有嵌套遮罩（ExportView / ImportView 都只是表单），
-  //   所以 Esc 的语义唯一 = 关掉整个容器，不会误伤内层。
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   return (
     /* 遮罩铺满整屏（点遮罩关闭，与其它弹窗一致），z-50 与全站弹窗同一层。
@@ -80,6 +76,7 @@ export default function BackupSheet({ onClose }: { onClose: () => void }) {
          遮罩仍是整屏（点面板外的暗区关闭，与其它弹窗一致）。 */
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40 md:items-center md:justify-center md:p-6" onClick={onClose}>
       <div
+        ref={panelRef}
         className="mx-auto flex h-[70dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-white dark:bg-neutral-800 md:h-auto md:rounded-2xl md:shadow-xl"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
@@ -106,6 +103,7 @@ export default function BackupSheet({ onClose }: { onClose: () => void }) {
               key={id}
               role="tab"
               aria-selected={mode === id}
+              aria-controls="backup-panel"
               onClick={() => switchTo(id)}
               className={`flex-1 rounded-lg py-2 text-sm font-medium transition-colors ${mode === id ? 'bg-white text-neutral-900 dark:bg-neutral-700 dark:text-neutral-100' : 'text-neutral-500 dark:text-neutral-400'}`}
             >
@@ -124,7 +122,13 @@ export default function BackupSheet({ onClose }: { onClose: () => void }) {
                     （与 PrefsDialog 的开关列表同一路子）。这里刻意**不**写
                     「面板 md:max-h + 内容 flex-1」—— 面板高度为 auto 时 `flex-1`
                     （basis 0）能分到多少是不确定的，容易塌成 0 高。 */}
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-safe md:flex-initial md:max-h-[60dvh]">
+        <div
+          id="backup-panel"
+          role="tabpanel"
+          aria-label="导入与导出内容"
+          ref={scrollRef}
+          className="min-h-0 flex-1 overflow-y-auto px-5 pb-safe md:flex-initial md:max-h-[60dvh]"
+        >
           {mode === 'export'
             ? <ExportView compact onDone={onClose} />
             : <ImportView compact />}

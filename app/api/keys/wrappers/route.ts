@@ -7,7 +7,14 @@ import { wrapperSchema } from '@/lib/server/validation'
 
 export async function GET(req: Request) {
   if (!(await isAuthed(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
-  const wrappers = await db.select().from(keyWrappers).orderBy(keyWrappers.createdAt)
+  const rows = await db.select().from(keyWrappers).orderBy(keyWrappers.createdAt)
+  // ★ 完整 recoveryKeyHash（64 位 hex）绝不下发：客户端只需要 8 位不可逆指纹来辨认
+  //   「现在这把是哪把」；哈希本身虽不可逆，但把它发给前端/IndexedDB 会扩大泄露面
+  //   （离线缓存 offline:wrappers 会原样落盘）。指纹 = 哈希前 8 位，仅供人工比对。
+  const wrappers = rows.map(({ recoveryKeyHash, ...rest }) => ({
+    ...rest,
+    recoveryKeyFingerprint: recoveryKeyHash ? recoveryKeyHash.slice(0, 8) : null,
+  }))
   return NextResponse.json({ wrappers })
 }
 
