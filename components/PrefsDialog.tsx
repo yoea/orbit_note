@@ -6,6 +6,7 @@ import {
   SAVE_SOUND_KEY, SHOW_VIEWS_KEY, STREAK_KEY, WEATHER_KEY,
   syncPrefToServer,
   COUNT_ARCHIVED_KEY,
+  notifyStatsScopeChanged,
 } from '@/lib/client/prefs'
 import { clearOfflineData, getQueuedCount } from '@/lib/client/offline'
 import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
@@ -103,6 +104,9 @@ export default function PrefsDialog({ onClose }: { onClose: () => void }) {
       localStorage.setItem(key, next ? '1' : '0')
       if (key !== OFFLINE_KEY) syncPrefToServer(key, next)
       if (key === OFFLINE_KEY && !next) void clearOfflineData().then(() => setQueuedCount(0))
+      // ★ 统计口径变了 ⇒ 立刻广播，让列表页的热力图/天数/篇数/字数当场重拉
+      //   （否则要等下次进页面才生效，用户会以为开关没作用）。守卫 BH3。
+      if (key === COUNT_ARCHIVED_KEY) notifyStatsScopeChanged()
     } catch { /* 忽略存储失败（隐私模式等） */ }
   }
 

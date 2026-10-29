@@ -95,11 +95,31 @@ describe('设置页信息架构', () => {
     // 抽屉高度有限 ⇒ 内容必须自己能滚，并躲开 Home 指示条
     expect(src, '抽屉内容区不可滚').toContain('overflow-y-auto')
     expect(src, '抽屉没做底部安全区').toContain('pb-safe')
+    // ★ 高度**固定 70%**（2026-10-29 用户要求）：自适应高度会让切「导入/导出」时抽屉忽高忽低
+    expect(src, '抽屉高度不是固定的 70dvh').toContain('h-[70dvh]')
+    expect(src, '抽屉又变回自适应高度（max-h）').not.toContain('max-h-[88dvh]')
     // 两个面板都要走精简文案（说明文字少一点），否则按钮会被挤到需要滚动
     expect(src, '导出面板没走精简模式').toContain('<ExportView compact')
     expect(src, '导入面板没走精简模式').toContain('<ImportView compact')
     // 分段默认落在「导入」（与整页版同一理由）
     expect(src).toContain("useState<'export' | 'import'>('import')")
+  })
+
+  it('P20 抽屉在桌面也与应用容器同宽（不铺满整屏）', () => {
+    // 事故：面板写成 `w-full` ⇒ 桌面浏览器里抽屉横跨整个视口，与设置页
+    // `max-w-md` 居中的内容列完全不是一个宽度，看起来像另一个应用。
+    // ★ 手机端必须仍然满屏：`max-w-md` = 448px > 常见 390~430px 屏宽，`w-full` 生效。
+    const src = code('components/BackupSheet.tsx')
+    const panelAt = pos(src, 'h-[70dvh]') // 面板根（唯一带固定高度的那个 div）
+    // 两个 token 必须**都在同一个元素上**：分开断言会漏掉「居中了但没上限」这类半改
+    // 窗口取锚点**两侧**：类名串里 `mx-auto` 在 `h-[70dvh]` 前、`max-w-md` 在后，
+    // 只切一侧会漏掉后一半（实测：只切左侧时 max-w-md 落在窗口外）
+    const head = src.slice(Math.max(0, panelAt - 160), panelAt + 160)
+    expect(head, '抽屉面板没有横向居中（桌面会贴左）').toContain('mx-auto')
+    expect(head, '抽屉面板没有宽度上限（桌面会铺满整屏）').toContain('max-w-md')
+    expect(head, '抽屉面板少了 w-full（手机上会固定成 448px）').toContain('w-full')
+    // 与设置页内容容器**同一个值**（两边都有 px-5 ⇒ 文字边界严格对齐）
+    expect(code('components/SettingsView.tsx'), '设置页容器不是 max-w-md，抽屉宽度就对不齐了').toContain('max-w-md')
   })
 
   it('P4 删除数据不在导出面板里（危险操作不得与「备份」同页）', () => {
@@ -315,6 +335,37 @@ describe('删除所有数据的隐藏入口与四步流程', () => {
 
     // P17 仍然成立：transform 只在 logo-tap.ts 里出现，不进关于弹窗这个文件
     expect(about, '动画的 transform 漏进了 AboutDialog —— P17 的约定会被打破').not.toContain('transform')
+  })
+
+  it('P21 面板打开后 1 秒内忽略遮罩点击（第 9 下连点不会把它关掉）', () => {
+    // 事故：第 8 下刚打开面板，关于弹窗就被条件渲染换掉；手指没动，第 9 下的落点
+    // 已经变成**面板的遮罩**（面板卡片比关于卡片矮、更靠中间）⇒ 开了又关。
+    const src = code(HIDDEN)
+    const about = code(ABOUT)
+    // ① 闸门是 1000ms（写成常量，别散落成字面量）
+    expect(src, '没有 1000ms 闸门常量').toMatch(/const CLOSE_GUARD_MS = 1000\b/)
+    // ② 打开时刻由**打开方**传入并存进 ref：用 state 会随重渲染被重置，闸门形同虚设；
+    //    ★ 也不能在渲染期自己取 Date.now()（react-hooks/purity 会判红）
+    //   签名里必须**真的接住**这个 prop，并且有类型标注（只断言类型行会漏掉"没解构"）
+    const sigAt = pos(src, 'export default function HiddenPanel')
+    const sig = src.slice(sigAt, sigAt + 320)
+    //   ★ 断言**解构**那一处（`{ openedAt,`），只断言 "openedAt" 会被类型标注行兜住而假绿
+    expect(sig, '面板没有接收打开时刻').toMatch(/\{ openedAt,/)
+    expect(sig, '打开时刻没有类型标注').toContain('openedAt: number')
+    expect(src, '打开时刻没存进 ref').toContain('const openedAtRef = useRef(openedAt)')
+    expect(about, '打开时没有把时刻传给面板').toContain('openedAt={hiddenOpenedAt}')
+    //   时刻必须取自**事件处理函数**（`const now = Date.now()` 在 onLogoTap 里），不是渲染期
+    const tapAt = pos(about, 'function onLogoTap')
+    const setAt = pos(about, 'setHiddenOpenedAt(now)')
+    expect(tapAt, '时刻不是在点击处理里取的').toBeLessThan(setAt)
+    expect(about.slice(tapAt, setAt), '点击处理里没有取当前时间').toContain('const now = Date.now()')
+    // ③ 闸门必须真的比时间并**提前返回**（不是只写了个函数）
+    expect(src, '闸门没有真的拦住 onClose').toMatch(/if \(Date\.now\(\) - openedAtRef\.current < CLOSE_GUARD_MS\) return/)
+    // ④ 带闸门的函数必须挂到**遮罩**上：看它前面是不是那层 bg-black/40 的 fixed 层
+    const at = pos(src, 'onClick={requestClose}')
+    expect(src.slice(Math.max(0, at - 220), at), '带闸门的关闭函数没挂在遮罩上').toContain('bg-black/40')
+    // ⑤ 「完成」**不进闸门**：它在卡片底部，不可能被连点误触，必须立刻响应
+    expect(src, '「完成」不该被闸门挡住').toMatch(/onClick=\{onClose\} className=\{DIALOG_FOOTER_BUTTON_CLASS\}/)
   })
 
   it('P17 嵌套弹窗安全：关于弹窗（及其祖先）不得带 transform / filter', () => {

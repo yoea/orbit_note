@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { statsScopeQuery } from './prefs'
+import { STATS_SCOPE_EVENT, statsScopeQuery } from './prefs'
 
 export interface DiaryOverview {
   count: number
@@ -41,6 +41,17 @@ export async function loadDiaryOverview(): Promise<DiaryOverview | null> {
   return inflight
 }
 
+/**
+ * 作废模块级缓存（2026-10-29）。
+ *
+ * 统计口径（「归档计入统计」）一变，这份缓存里的数字就是旧口径的 —— 不清掉的话，
+ * 即便重新请求，`cached` 也会在函数第一行把它原样返回（"开关拨了、数字不动"）。
+ */
+export function invalidateDiaryOverview(): void {
+  cached = null
+  inflight = null
+}
+
 // 失败时返回 null——调用方应整行隐藏，绝不显示 0（会让人以为日记没了）
 export function useDiaryOverview(): DiaryOverview | null {
   const [data, setData] = useState<DiaryOverview | null>(cached)
@@ -56,5 +67,16 @@ export function useDiaryOverview(): DiaryOverview | null {
     })
     return () => { alive = false }
   }, [loaded])
+
+  // 口径切换 ⇒ 作废缓存并重新走上面那个 effect（`loaded=false` 就是它的触发条件）。
+  // 不做这一步，"归档计入统计"拨完回到设置页，卡片上的篇数/天数/字数不会动。
+  useEffect(() => {
+    function onScopeChange() {
+      invalidateDiaryOverview()
+      setLoaded(false)
+    }
+    window.addEventListener(STATS_SCOPE_EVENT, onScopeChange)
+    return () => window.removeEventListener(STATS_SCOPE_EVENT, onScopeChange)
+  }, [])
   return data
 }

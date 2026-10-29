@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import WipeDataAction from './WipeDataAction'
 import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
@@ -26,7 +26,28 @@ import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
  *   两行入口各有**一枚图标底**（紫=已归档、红=删除），因为纯文字两行看着像设置页的
  *   一段残片，加图标才有"这是一张独立的小面板"的边界感。
  */
-export default function HiddenPanel({ onClose, wipeDisabled = false, onWipeBlocked }: {
+
+/**
+ * 打开后的「关闭闸门」时长（2026-10-29）。
+ *
+ * 事故：第 8 下点开面板的瞬间，关于弹窗被换掉、面板顶上来；手指还停在同一个位置，
+ * 第 9 下点下去时落点已经是**面板的遮罩**（关于卡片比面板高，LOGO 在它的上半部；
+ * 而面板卡片更矮、更靠中间 ⇒ 那一点正好落在卡片之外的遮罩上）⇒ 面板开了又关，
+ * 看上去就是「第 9 下把它关掉了」。
+ *
+ * ⇒ 打开后 1 秒内**忽略遮罩点击**。★ 只拦遮罩：「完成」在卡片底部，不可能被连点
+ *   误触，它要能立刻响应（那是明确的意图）。
+ *
+ * ★ `openedAt` 由**打开方**传进来，不在本组件里取 `Date.now()`：那是"不纯"的调用，
+ *   渲染期调用会被 `react-hooks/purity` 判红（实测）；而打开动作本身就发生在事件处理
+ *   函数里，时间天然是现成的。本组件只在打开时挂载一次 ⇒ `useRef(openedAt)` 拿到的
+ *   就是这一次的打开时刻。
+ */
+const CLOSE_GUARD_MS = 1000
+
+export default function HiddenPanel({ openedAt, onClose, wipeDisabled = false, onWipeBlocked }: {
+  /** 打开时刻（Date.now()）：打开后 1 秒内的遮罩点击会被吞掉 */
+  openedAt: number
   onClose: () => void
   /** 离线时「删除所有数据」不可用（与设置页其余写操作一致）；真正的破坏还要过通行密钥 */
   wipeDisabled?: boolean
@@ -35,6 +56,15 @@ export default function HiddenPanel({ onClose, wipeDisabled = false, onWipeBlock
   // 删除流程（四步确认）在本面板之上再叠一层 fixed 层。
   // 条件渲染 ⇒ 每次挂载都是干净 state（见 WipeDataAction 的注释）。
   const [wipeOpen, setWipeOpen] = useState(false)
+  // 打开时刻存进 ref（不参与渲染）。本组件只在打开时挂载 ⇒ 初值就是本次打开时刻。
+  const openedAtRef = useRef(openedAt)
+
+  // 遮罩专用：打开后 1 秒内直接吞掉（理由见 CLOSE_GUARD_MS 的注释）。
+  // 卡片内有 stopPropagation，所以这里接到的只可能是「点在面板外面」的意图。
+  function requestClose() {
+    if (Date.now() - openedAtRef.current < CLOSE_GUARD_MS) return
+    onClose()
+  }
 
   return (
     <>
@@ -43,7 +73,7 @@ export default function HiddenPanel({ onClose, wipeDisabled = false, onWipeBlock
           下面的白卡会从 40% 遮罩里透出来。互斥渲染比调 z-index 干净——
           层级只是把问题藏起来（多一层遮罩叠成更暗），渲染互斥则根本不会有第二个框。 */}
       {!wipeOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={onClose}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={requestClose}>
           <div
             className="w-full max-w-xs overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-neutral-800"
             onClick={(e) => e.stopPropagation()}

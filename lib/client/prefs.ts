@@ -96,6 +96,23 @@ export function isCountArchivedEnabled(): boolean {
   if (typeof window === 'undefined') return false
   return localStorage.getItem(COUNT_ARCHIVED_KEY) === '1'
 }
+/**
+ * 「统计口径变了」的全局事件（2026-10-29）。
+ *
+ * 为什么需要它：口径来自 localStorage，而 stats 是各页面**挂载时**拉的。
+ * 用户在偏好里拨了「归档计入统计」，关掉弹窗回到列表页 —— 页面没重新挂载，
+ * 热力图/天数/篇数/字数全都不动，要等下次进来才生效。用户会判定"开关没作用"。
+ *
+ * ⇒ 拨动开关时广播一次，列表页 / 写页 / 设置页概览各自重拉（并作废模块级缓存）。
+ * ★ 不用 `storage` 事件：它在**同一个标签页**里不会触发（只跨标签页同步）。
+ */
+export const STATS_SCOPE_EVENT = 'qo-stats-scope-changed'
+
+export function notifyStatsScopeChanged(): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event(STATS_SCOPE_EVENT))
+}
+
 /** 统计类接口（stats / on-this-day）的查询串：把「归档是否计入」这个口径带给服务端 */
 export function statsScopeQuery(): string {
   return isCountArchivedEnabled() ? '?includeArchived=1' : ''

@@ -16,7 +16,7 @@ import ContributionHeatmap from './ContributionHeatmap'
 import StarIcon from './StarIcon'
 import Toast from './Toast'
 import { displayLocationName } from '@/lib/client/location'
-import { isHeatmapEnabled, statsScopeQuery } from '@/lib/client/prefs'
+import { isHeatmapEnabled, STATS_SCOPE_EVENT, statsScopeQuery } from '@/lib/client/prefs'
 import { deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
 import { dayKeyOf } from '@/lib/client/date-jump'
 
@@ -477,6 +477,20 @@ export default function DiaryListView() {
       }
     }
     return { items: decrypted, serverCount, cursor: nextCursor }
+  }, [])
+
+  // 统计口径被切换（偏好「归档计入统计」）时**当场重拉**（2026-10-29）：
+  // 本页是挂载时拉的 stats，不重拉就要等下次进来 —— 用户会判定"开关没作用"。
+  // 热力图与「N 天·共 M 篇」「共写了 X 字」都从 stats 派生，所以一处重拉全跟着变。
+  useEffect(() => {
+    function onScopeChange() {
+      void fetch(`/api/diary/stats${statsScopeQuery()}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (d) { setStats(d); void cacheStats(d) } })
+        .catch(() => { /* 失败就保持旧值，不打断用户 */ })
+    }
+    window.addEventListener(STATS_SCOPE_EVENT, onScopeChange)
+    return () => window.removeEventListener(STATS_SCOPE_EVENT, onScopeChange)
   }, [])
 
   // 初始加载：统计 + 第一页（有滚动恢复状态 / 会话快照时循环加载到对应深度）

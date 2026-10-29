@@ -183,6 +183,12 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
   const lastTapRef = useRef(0)
   // 动画要作用在**按钮**上（它包着 LOGO），这样点击区域与缩放的视觉边界一致
   const logoRef = useRef<HTMLButtonElement | null>(null)
+  // 面板的**打开时刻**：连点的人手指不会停，第 9 下的落点正好在面板的遮罩上
+  // （见 HiddenPanel 的 CLOSE_GUARD_MS）⇒ 打开后 1 秒内不许被点掉。
+  // ★ 用 state 而不是 ref：`Date.now()` 是不纯调用、渲染期取会被 purity 判红，
+  //   而渲染期**读** ref 同样会被 refs 规则判红 —— 所以时间戳只能在事件处理函数里
+  //   取、并由 state 带进渲染。它与 `setHiddenOpen(true)` 同批更新，不会多渲染一帧。
+  const [hiddenOpenedAt, setHiddenOpenedAt] = useState(0)
 
   // 每次点击都给回应（2026-10-29 用户要求）：
   //   · 动画 → 所有平台都有（iOS 上这就是唯一的即时反馈）；
@@ -197,6 +203,7 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
     if (wipeTapsRef.current >= WIPE_TAP_TARGET) {
       wipeTapsRef.current = 0
       tapHaptic('unlock') // 达到阈值这一下用更长的三段模式，做出"解锁"的手感
+      setHiddenOpenedAt(now) // 与「打开」同一瞬间，交给面板做防误触窗口
       setHiddenOpen(true)
     } else {
       tapHaptic('tap')
@@ -318,6 +325,7 @@ export default function AboutDialog({ onClose, wipeDisabled = false, onWipeBlock
           不再套在关于弹窗的遮罩里，否则两层 40% 黑会叠成 64%，比全站其它弹窗暗一档。 */}
       {hiddenOpen && (
         <HiddenPanel
+          openedAt={hiddenOpenedAt}
           onClose={() => setHiddenOpen(false)}
           wipeDisabled={wipeDisabled}
           onWipeBlocked={onWipeBlocked}

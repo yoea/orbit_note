@@ -12,7 +12,7 @@ import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
-import { isAutoPlaceNameEnabled, isLocationEnabled, isOfflineCacheEnabled, isOnThisDayEnabled, isPromptEnabled, isStreakEnabled, isWeatherEnabled, statsScopeQuery } from '@/lib/client/prefs'
+import { isAutoPlaceNameEnabled, isLocationEnabled, isOfflineCacheEnabled, isOnThisDayEnabled, isPromptEnabled, isStreakEnabled, isWeatherEnabled, STATS_SCOPE_EVENT, statsScopeQuery } from '@/lib/client/prefs'
 import { clientReverseGeocode } from '@/lib/client/geocode'
 import { locationPatch } from '@/lib/client/location'
 import { fetchWeather } from '@/lib/client/weather'
@@ -229,8 +229,14 @@ export default function DiaryEditor() {
 
   // 连续写作天数 + 总篇数 + 去年的今天（并行获取；失败静默）。
   // 离线兜底：请求不可达时回退缓存（统计/去年今日各一份密文缓存；OTD 只回放当天的）。
+  //
+  // ★ 写法说明（2026-10-29）：拉取逻辑提成 effect 内部的 refresh()，一次性做三件事：
+  //   ① 挂载后立刻拉一次；② 订阅「统计口径变了」的事件，拨动偏好后**当场重拉**；
+  //   ③ 卸载时退订。之所以不抽到组件层（useCallback）：`react-hooks/set-state-in-effect`
+  //   会把"effect 里调用了会 setState 的外部函数"判成级联渲染，而 setState 实际发生在
+  //   await 之后 —— 写在 effect 内部的 async 函数是这条规则允许的形态。
   useEffect(() => {
-    void (async () => {
+    async function refresh() {
       try {
         const [statsRes, otdRes] = await Promise.all([
           fetch(`/api/diary/stats${statsScopeQuery()}`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
@@ -263,7 +269,12 @@ export default function DiaryEditor() {
           }
         }
       } catch { /* 静默 */ }
-    })()
+    }
+    void refresh()
+    // 拨动「归档计入统计」后连写天数 / 总篇数 / 去年今日都要按新口径重算，不能等下次进来
+    function onScopeChange() { void refresh() }
+    window.addEventListener(STATS_SCOPE_EVENT, onScopeChange)
+    return () => window.removeEventListener(STATS_SCOPE_EVENT, onScopeChange)
   }, [])
 
   // 进入写页即尝试冲刷离线写队列（上次离线保存的日记，联网后自动补传）

@@ -33,11 +33,18 @@ export default function BackupSheet({ onClose }: { onClose: () => void }) {
   return (
     /* 遮罩铺满整屏、面板贴底：点遮罩关闭（与其它弹窗一致）。
        z-50 与全站弹窗同一层，`rounded-t-2xl` 表示"从底下抽出来的"。
-       ★ 面板高度 `max-h-[88dvh]` + 内部滚动：比 88% 再高会顶到状态栏，
-         再低会让导出格式列表挤成小窗。 */
+       ★ 高度**固定 70% 屏高**（2026-10-29 用户要求，原来是 `max-h` 自适应）：
+         固定的好处是切「导入 / 导出」时段落长度差很多，面板却不会跟着忽高忽低 ——
+         抽屉的顶边稳定，人的视线不用重新找。内容超出就在面板内部滚（下面那层
+         `overflow-y-auto`，不是整页滚）。
+       ★ 宽度**与应用容器同宽**（2026-10-29 用户要求桌面端别铺满整屏）：
+         面板 `mx-auto w-full max-w-md` —— `max-w-md` 与设置页 `SettingsView` 的
+         内容容器是同一个值（两边内容都吃 `px-5` ⇒ 文字边界严格对齐）；手机上
+         `w-full` 仍然满屏（`max-w-md` = 448px > 常见 390~430px 屏宽），观感不变。
+         遮罩仍是整屏（点左右两侧的暗区关闭，与其它弹窗一致）。 */
     <div className="fixed inset-0 z-50 flex flex-col justify-end bg-black/40" onClick={onClose}>
       <div
-        className="flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-white dark:bg-neutral-800"
+        className="mx-auto flex h-[70dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-white dark:bg-neutral-800"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

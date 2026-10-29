@@ -369,3 +369,37 @@ describe('BH · 第五轮反馈', () => {
     expect(hideAt, '隐藏逻辑写反了（应该先隐藏面板、再渲染流程）').toBeLessThan(flowAt)
   })
 })
+
+// ============================================================================
+// 2026-10-29 第七轮：「归档计入统计」拨完要**当场**生效
+//
+// 为什么单独钉：口径存在 localStorage，而 stats 是各页面**挂载时**拉的。
+// 拨完开关关掉弹窗，页面没重新挂载 ⇒ 热力图/天数/篇数/字数纹丝不动，
+// 用户只会得出"开关没作用"的结论。所以必须有一个广播 + 三处订阅。
+// ============================================================================
+describe('BI · 统计口径切换立刻生效', () => {
+  it('BI1 拨动「归档计入统计」时广播事件', () => {
+    const prefs = code('lib/client/prefs.ts')
+    expect(prefs, '没有事件常量').toContain("STATS_SCOPE_EVENT = 'qo-stats-scope-changed'")
+    expect(prefs, '没有广播函数').toContain('export function notifyStatsScopeChanged')
+    const dialog = code('components/PrefsDialog.tsx')
+    // ★ 必须在 toggle 里、且只对这一个键 —— 所有开关都广播等于每次拨动都重拉统计
+    expect(dialog, '拨动开关没有广播').toMatch(/if \(key === COUNT_ARCHIVED_KEY\) notifyStatsScopeChanged\(\)/)
+  })
+
+  it('BI2 三处都要订阅：列表页 / 写页 / 设置页概览', () => {
+    // 列表页：热力图 + 「N 天·共 M 篇」「共写了 X 字」全从 stats 派生
+    expect(code(LIST), '列表页没订阅口径事件').toContain('addEventListener(STATS_SCOPE_EVENT')
+    // 写页：连续天数 + 总篇数 + 去年的今天
+    const editor = code('components/DiaryEditor.tsx')
+    expect(editor, '写页没订阅口径事件').toContain('addEventListener(STATS_SCOPE_EVENT')
+    // 设置页概览：模块级缓存必须能被作废，否则重新请求也会被 cached 短路
+    const overview = code('lib/client/diary-overview.ts')
+    expect(overview, '概览没有作废缓存的能力').toContain('export function invalidateDiaryOverview')
+    expect(overview, '概览没订阅口径事件').toContain('addEventListener(STATS_SCOPE_EVENT')
+    // 订阅了就必须退订（否则切页后仍持有 setState，白白重拉）
+    for (const rel of [LIST, 'components/DiaryEditor.tsx', 'lib/client/diary-overview.ts']) {
+      expect(code(rel), `${rel} 没有退订口径事件`).toContain('removeEventListener(STATS_SCOPE_EVENT')
+    }
+  })
+})
