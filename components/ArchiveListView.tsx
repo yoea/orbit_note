@@ -22,7 +22,7 @@ import SelectDot from './SelectDot'
 // 再塞一个视图模式进去，每个都要变成两份分支。归档页是需要时才进的子页面，
 // 组件可以彻底重新挂载、从头加载。
 //
-// ★ 三条与列表页刻意不同的地方，改之前先读：
+// ★ 五条与列表页刻意不同的地方，改之前先读：
 //   1. **绝不调用 pruneCachedEntries**。prune 的语义是「服务器全量清单里没有的 ⇒ 已删除」，
 //      而这里拿到的是**全表的一个子集**（archived=only）。照抄列表页那行会把所有未归档条目
 //      当成「已删除」从缓存里清掉 —— 表现为「去了趟归档页，离线列表全空了」，且零报错。
@@ -33,6 +33,10 @@ import SelectDot from './SelectDot'
 //   4. **不显示收藏星标**。`tests/entry-star.test.ts` 的 S1 把星图标限定在
 //      「列表页 / 详情页」两处（收藏是「这一篇的状态」，处处都画会让人以为它们各自独立）。
 //      归档页是回溯场景，星标帮不上忙 —— 与其放宽那条守卫，不如这里不画。
+//   5. **行不打开日记**（2026-10-29 用户要求）：这里是"回收站"，只能「取消归档 / 彻底删除」。
+//      点一下 = 进选择态并选中（等同 iOS 相册），因此也不需要长按那套绕路机制。
+//      副作用（正是要的）：在归档页删一篇不会再走详情页那条流程
+//      —— 那条流程删完没有提示、还会跳到"全部日记"（详情页只知道回列表）。
 
 const PAGE_SIZE = 20
 
@@ -113,13 +117,9 @@ export default function ArchiveListView() {
   const cursorRef = useRef<Cursor | null>(null)
   const hasMoreRef = useRef(true)
   const fetchingRef = useRef(false)
-  // —— 长按进选择态（2026-10-29 用户反馈「归档列表长按还是打开而不是多选」）——
-  // 上一版只给列表页加了长按，归档页整行还是裸 <Link>，所以长按只会导航。
-  // 两个 ref 的作用与列表页逐字同理（见 DiaryListView 里那段注释）：
-  //   · longPressTimerRef：500ms 计时器
-  //   · suppressNavRef：长按已经进入选择态后，**压掉随后那一次 click**，否则人会同时被带走
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const suppressNavRef = useRef(false)
+  // ★ 这里**没有长按机制**，也不需要（2026-10-29）：整行本来就是按钮，点一下就进选择态。
+  //   长按是"整行是链接、但想长按选它"的绕路方案 —— 行不再是链接，绕路自然消失。
+  //   `-webkit-touch-callout` / suppressNavRef 那一套只留给列表页（那里行仍是 Link）。
 
   useEffect(() => { cursorRef.current = cursor }, [cursor])
   useEffect(() => { hasMoreRef.current = hasMore }, [hasMore])
@@ -139,25 +139,15 @@ export default function ArchiveListView() {
     setSelected((prev) => (prev.size === items.length ? new Set() : new Set(items.map((i) => i.id))))
   }
 
-  function cancelLongPress() {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-  }
-
-  // 长按 500ms：进入选择态并选中这一条。与列表页同一个阈值（iOS 系统长按菜单约 500ms，
-  // 再长手指会先被系统抢走；再短则正常滑动容易误触）。
-  function startLongPress(id: string) {
-    if (selectMode) return
-    cancelLongPress()
-    suppressNavRef.current = false
-    longPressTimerRef.current = setTimeout(() => {
-      longPressTimerRef.current = null
-      suppressNavRef.current = true
+  // 点行 = 选它（2026-10-29）：没在选择态就顺带进去，已在选择态就切换。
+  // 于是「进选择态」有两个入口：这行本身 + 页头「选择」按钮（后者给读屏和"先全选"的人）。
+  function toggleFromRow(id: string) {
+    if (!selectMode) {
       setSelectMode(true)
       setSelected(new Set([id]))
-    }, 500)
+      return
+    }
+    toggleItem(id)
   }
 
   function toggleItem(id: string) {
@@ -426,39 +416,20 @@ export default function ArchiveListView() {
           <ul className="flex flex-col divide-y divide-neutral-100 dark:divide-neutral-800">
             {items.map((item) => (
               <li key={item.id}>
-                {selectMode ? (
-                  <button
-                    onClick={() => toggleItem(item.id)}
-                    aria-pressed={selected.has(item.id)}
-                    className="flex w-full items-start gap-2.5 py-3 text-left active:opacity-60"
-                  >
-                    <SelectDot checked={selected.has(item.id)} />
-                    <span className="flex min-w-0 flex-1 flex-col gap-1">{rowBody(item)}</span>
-                  </button>
-                ) : (
-                  /* ?from=archive：详情页据此把返回箭头与「删除后跳转」指回本页
-                     （不带的话会一律回 /diary，用户从归档页点开一篇就回不来了）。
-                     ★ 长按 500ms 进选择态（2026-10-29 用户反馈「长按还是打开」）：
-                       `qo-hold-select` 带 -webkit-touch-callout: none，挡掉 iOS 的链接预览浮层
-                       （光 user-select 不够，它只管文字选择）；suppressNavRef 压掉长按后那一次 click。 */
-                  <Link
-                    href={`/entry/${item.id}?from=archive`}
-                    className="qo-hold-select flex flex-col gap-1 py-3 active:opacity-60"
-                    onPointerDown={() => startLongPress(item.id)}
-                    onPointerUp={cancelLongPress}
-                    onPointerMove={cancelLongPress}
-                    onPointerCancel={cancelLongPress}
-                    onContextMenu={(e) => { if (suppressNavRef.current) e.preventDefault() }}
-                    onClick={(e) => {
-                      if (suppressNavRef.current) {
-                        e.preventDefault()
-                        suppressNavRef.current = false
-                      }
-                    }}
-                  >
-                    {rowBody(item)}
-                  </Link>
-                )}
+                {/* ★ 归档页的行**不打开日记**（2026-10-29 用户要求：这里只能取消归档 / 彻底删除）。
+                    原来整行是 `<Link href="/entry/…?from=archive">`，点一下进详情页，
+                    于是"在归档页删掉一篇"会走详情页的删除流程 —— 删完没有 toast、还跳到全部日记
+                    （详情页只知道"回列表"）。归档页是"回收站"，进去就只该能挑出来处理。
+                    ⇒ 行改成按钮：点一下进入选择态并选中它；已在选择态则切换选中。
+                    这与 iOS 相册 / 文件的行为一致，也让「取消归档 / 彻底删除」成为唯一的去向。 */}
+                <button
+                  onClick={() => toggleFromRow(item.id)}
+                  aria-pressed={selected.has(item.id)}
+                  className="flex w-full items-start gap-2.5 py-3 text-left active:opacity-60"
+                >
+                  <SelectDot checked={selected.has(item.id)} />
+                  <span className="flex min-w-0 flex-1 flex-col gap-1">{rowBody(item)}</span>
+                </button>
               </li>
             ))}
           </ul>

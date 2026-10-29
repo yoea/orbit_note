@@ -79,9 +79,14 @@ describe('AR · 归档页（/settings/archive）', () => {
     expect(src, '归档页没有把拉到的条目写进本地密文缓存（离线就点不开了）').toContain('await cacheEntriesPage(')
   })
 
-  it('AR4 点开一条必须带上 from=archive（否则详情页不知道从哪来）', () => {
+  it('AR4 归档页**不提供"查看文章"**：整行是选择按钮，没有通往详情页的链接', () => {
+    // 2026-10-29 用户要求：归档页只能「取消归档 / 彻底删除」。
+    // 原来整行是 `<Link href="/entry/…?from=archive">`，点一下进详情页 ⇒ 用户在那里点删除，
+    // 结果"没有 toast + 跳到了全部日记"（详情页只知道回列表）。归档页是回收站，不该有入口进正文。
     const src = code(VIEW)
-    expect(src, '归档页的条目链接没带 ?from=archive').toMatch(/href=\{`\/entry\/\$\{item\.id\}\?from=archive`\}/)
+    expect(src, '归档页又出现了通往详情页的链接').not.toContain('/entry/')
+    expect(src, '归档页的行不是选择按钮').toContain('onClick={() => toggleFromRow(item.id)}')
+    expect(src, '点行没有进入选择态的能力').toContain('function toggleFromRow')
   })
 
   it('AR5 归档入口在隐藏面板里，设置页不再有它', () => {
@@ -94,7 +99,10 @@ describe('AR · 归档页（/settings/archive）', () => {
     expect(code(SETTINGS), '设置页又出现了归档入口 —— 它只该在隐藏面板里').not.toContain('/settings/archive')
   })
 
-  it('AR6 详情页的返回箭头 / 删除后跳转都用 backHref，不再写死 /diary', () => {
+  it('AR6 详情页的返回箭头 / 删除后跳转都用 backHref（深链兼容，归档页本身已不再链过去）', () => {
+    // ★ 归档页 2026-10-29 起不再渲染详情链接（AR4），但 backHref 必须留着：
+    //   存量的 `?from=archive` 链接（历史记录 / 收藏的书签）仍会进到详情页，
+    //   删掉它只会让那些入口的"返回"退化成 /diary。
     const src = code(ENTRY_VIEW)
     expect(src, '详情页返回箭头还是写死 /diary —— 从归档页点开就回不去了').toContain('href={backHref}')
     expect(src, '详情页没有识别 from=archive').toMatch(/get\('from'\) === 'archive'/)

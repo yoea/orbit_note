@@ -309,17 +309,19 @@ describe('BG · 第三轮反馈', () => {
     expect(about, '隐藏面板没有用 shared 常量/独立成层').toContain('<HiddenPanel')
   })
 
-  it('BG3 归档页长按也能进选择态（不能只加在列表页）', () => {
+  it('BG3 归档页的行**点一下就进选择态**（行是按钮，不再有长按这套绕路）', () => {
+    // 2026-10-29：归档页不再提供"查看文章"（用户要求），整行变成按钮，
+    // 于是长按机制（timer + suppressNavRef + qo-hold-select）在这里彻底不需要了。
+    // 长按那套只留给列表页 —— 那里行仍是 <Link>，长按是"链接行也能选"的绕路方案。
     const src = code(ARCHIVE_VIEW)
-    // 上一版只有列表页有长按，归档页整行是裸 <Link> ⇒ 长按只会导航
-    expect(src, '归档页没有长按计时器').toContain('longPressTimerRef')
-    expect(src, '归档页没有 startLongPress').toContain('function startLongPress')
-    expect(src, '归档页的行没有挂长按').toContain('onPointerDown={() => startLongPress(item.id)}')
-    // 挡 iOS 链接预览：只有 -webkit-touch-callout 管用（user-select 管不了）
-    expect(src, '归档页的行没挂 qo-hold-select').toContain('qo-hold-select')
-    // 长按进选择态后必须压掉那一次 click
-    expect(src, '长按后没有把 suppressNavRef 置 true').toContain('suppressNavRef.current = true')
-    expect(src, '那一次 click 没有检查标记').toMatch(/if \(suppressNavRef\.current\) \{\s*\n\s*e\.preventDefault\(\)/)
+    expect(src, '归档页没有 toggleFromRow').toContain('function toggleFromRow')
+    expect(src, '归档页的行没有绑定点选').toContain('onClick={() => toggleFromRow(item.id)}')
+    // 反向：长按那套不该再出现在归档页（留着就是死代码，且会让人以为行还是链接）
+    expect(src, '归档页还留着长按计时器').not.toContain('longPressTimerRef')
+    expect(src, '归档页还挂着 qo-hold-select（那是给链接行的）').not.toContain('qo-hold-select')
+    // ★ 只查 ref 与 CSS 类是不够的：把 `onPointerDown={() => startLongPress(...)}` 挂回去
+    //   时那两个字符串都不变，破坏会漏网（非空转验证当场抓到的）。必须直接钉住函数名。
+    expect(src, '归档页又把 startLongPress 挂回来了').not.toContain('startLongPress')
   })
 
   it('BG4 归档页顶部的总篇数来自服务端 total（不是已加载条数）', () => {
