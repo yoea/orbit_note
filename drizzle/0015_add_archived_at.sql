@@ -1,0 +1,21 @@
+-- 0015：「归档」入库（archived_at）
+--
+-- 用户需求：部分日记可以归档、不再出现在日常浏览视图里；导出时能按归档状态筛
+-- （全部 / 仅已归档 / 仅未归档）。
+--
+-- 为什么是**可空时间戳**而不是 boolean：
+--   一列同时回答两个问题 ——「是否归档」（IS NULL / IS NOT NULL）与「什么时候归档的」
+--   （归档页要显示「归档于 X 天前」）。用布尔就还得再加一列时间，两列随时可能不一致。
+--
+-- 存量行自动为 NULL = 未归档，不需要任何回填。
+--
+-- ★ 刻意**不加索引**：单用户日记量级（万行以内）顺序扫描是微秒级，
+--   列表的 `WHERE archived_at IS NULL` 不会因此退化。真觉得慢再拿 EXPLAIN 说话 ——
+--   过早加索引只是多一个要维护的东西。
+--
+-- 语义边界（与 starred / view_count 同级，都是**明文元数据**）：
+--   · 归档是「元数据更新」而不是「编辑」—— PATCH 只带 archived_at、绝不带 ciphertext/iv，
+--     所以**不刷新 updated_at**，详情页不会凭空多出「上次编辑」。
+--   · 归档的日记退出：日常列表（/api/diary 默认）、搜索默认范围、热力图与连续写作天数
+--     （/api/diary/stats）、去年的今天（/api/diary/on-this-day）。
+ALTER TABLE "diary_entries" ADD COLUMN IF NOT EXISTS "archived_at" timestamptz;

@@ -33,6 +33,7 @@ export function entryFixture(patch: Partial<EncryptedEntry> = {}): EncryptedEntr
     weather: null,
     timezone: null,
     starred: false,
+    archivedAt: null,
     viewCount: 0,
     ...patch,
   }
@@ -46,6 +47,7 @@ export function queuedFixture(patch: Partial<QueuedEntry> = {}): QueuedEntry {
     wordCount: 1,
     timezone: null,
     starred: false,
+    archivedAt: null,
     queuedAt: Date.UTC(2026, 8, 1),
     ...patch,
   }

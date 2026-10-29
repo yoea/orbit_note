@@ -37,6 +37,9 @@ interface Entry {
   weather: string | null
   timezone: string | null
   starred: boolean
+  /** 归档时间（可空，NULL = 未归档）。列表里**看不到归档条目**（服务端默认 archived=exclude），
+   *  但整行要随缓存往返——否则离线读到这一篇会以为它没归档。 */
+  archivedAt: string | null
   /** 打开次数（数据库列）。列表**不展示**它（只在查看页底部），但要随整行进本地缓存——
    *  否则离线打开这一篇会读到 0。 */
   viewCount: number

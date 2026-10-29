@@ -137,6 +137,7 @@ interface Ready {
   timezone: string | null
   wordCount: number
   starred: boolean
+  archivedAt: string | null
   viewCount: number
   createdAt: string
   updatedAt: string
@@ -164,6 +165,7 @@ function toPayload(e: Ready): Omit<Ready, 'bytes'> {
     timezone: e.timezone,
     wordCount: e.wordCount,
     starred: e.starred,
+    archivedAt: e.archivedAt,
     viewCount: e.viewCount,
     createdAt: e.createdAt,
     updatedAt: e.updatedAt,
@@ -223,6 +225,7 @@ export async function importJournalFile(opts: {
       timezone: e.timezone,
       wordCount: e.wordCount,
       starred: e.starred,
+      archivedAt: e.archivedAt,
       viewCount: e.viewCount,
       createdAt: e.createdAt,
       updatedAt: e.updatedAt,

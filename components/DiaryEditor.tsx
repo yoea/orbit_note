@@ -362,6 +362,8 @@ export default function DiaryEditor() {
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           // 新建的笔记默认未收藏（收藏入口在查看页，此刻这篇还没有 id 可点）
           starred: false,
+          // 同理默认未归档（归档入口也在查看页）
+          archivedAt: null,
           queuedAt: Date.now(),
         })
         if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null }

@@ -30,9 +30,11 @@ export const JOURNAL_JSON_NAME = 'Journal.json'
 /** 1 = 首版；2 = 曾加入 `orbit.viewCount`（当时是**本机**打开次数，可选字段）；
  *  3 = 撤出 viewCount —— 那时它还是本机数据，导出只含数据库字段；
  *  4 = 加入 `starred`（收藏，Day One 原生字段）与结构化地名（`orbit.locationProvince/City/District`）；
- *  5 = viewCount **回归**：打开次数已改成数据库列（migration 0014），于是重新随文件往返。
- *  解析器不看版本号，各版本文件都能照常导入。 */
-export const FORMAT_VERSION = 5
+ *  5 = viewCount **回归**：打开次数已改成数据库列（migration 0014），于是重新随文件往返；
+ *  6 = 加入 `orbit.archivedAt`（归档时间，migration 0015）。Day One 没有归档概念，
+ *      所以只进私有命名空间，不污染它的原生字段。
+ *  解析器不看版本号，各版本文件都能照常导入（缺 archivedAt ⇒ 视为未归档）。 */
+export const FORMAT_VERSION = 6
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 「不留字段」台账
@@ -51,6 +53,7 @@ export const ENTRY_COLUMN_COVERAGE: Record<string, { json: string; csv: string |
   iv: { json: 'text（同上）', csv: 'body', note: '同上' },
   encryption_version: { json: '—', csv: null, note: '恒为 1；导入时按当前版本重新加密' },
   starred: { json: 'starred', csv: 'starred', note: 'Day One 原生就有这一位，直接对位（不再恒为 false）' },
+  archived_at: { json: 'orbit.archivedAt', csv: 'archived_at', note: 'Day One 没有「归档」概念，只能进私有命名空间；null = 未归档' },
   view_count: { json: 'orbit.viewCount', csv: 'view_count', note: '2026-09-30 起是数据库列（migration 0014）；更早它是纯本机计数，那时刻意不进文件' },
   latitude: { json: 'location.latitude', csv: 'latitude' },
   longitude: { json: 'location.longitude', csv: 'longitude' },
@@ -71,7 +74,7 @@ export const CSV_COLUMNS = [
   'id', 'created_at', 'updated_at', 'body', 'word_count', 'starred', 'view_count',
   'latitude', 'longitude', 'location_accuracy',
   'location_province', 'location_city', 'location_district', 'location_name',
-  'weather', 'timezone',
+  'weather', 'timezone', 'archived_at',
 ] as const
 
 /** 与服务端 `ciphertext` 上限一致（lib/server/validation.ts）。导入侧先本地预检，
@@ -121,6 +124,8 @@ export interface JournalEntry {
     locationName: string | null
     /** 打开次数（数据库列，2026-09-30 起）——Day One 结构里没有对应项，只能塞进私有命名空间 */
     viewCount: number
+    /** 归档时间（ISO）；null = 未归档。Day One 没有归档概念 ⇒ 只进私有命名空间 */
+    archivedAt: string | null
   }
 }
 
@@ -182,6 +187,7 @@ export function buildJournalFile(
         locationDistrict: e.locationDistrict,
         locationName: e.locationName,
         viewCount: e.viewCount,
+        archivedAt: e.archivedAt ? iso(e.archivedAt) : null,
       },
     }
   })
@@ -234,6 +240,7 @@ export function buildCsv(items: DecryptedEntry[]): string {
       location_name: e.locationName ?? '',
       weather: e.weather ?? '',
       timezone: e.timezone ?? '',
+      archived_at: e.archivedAt ?? '',
     }
     return CSV_COLUMNS.map((c) => csvField(cells[c]))
   })
@@ -260,6 +267,8 @@ export interface ParsedImportEntry {
   starred: boolean
   /** 打开次数（数据库列；文件里没有 / 非法时为 0） */
   viewCount: number
+  /** 归档时间（ISO）；null = 未归档（外部文件没有这个概念，一律 null） */
+  archivedAt: string | null
 }
 
 export interface RejectedEntry {
@@ -401,6 +410,12 @@ export async function parseJournal(data: unknown): Promise<ParseResult> {
         ? orbitViews
         : 0
 
+    // 归档时间：自家往返原样取回（orbit.archivedAt）；外部文件没有这个概念 ⇒ null。
+    // 非法时间一律当未归档，**不因此拒绝整条**（与 viewCount 的防御同一套）。
+    const orbitArchived = str(orbit.archivedAt)
+    const archivedMs = orbitArchived ? Date.parse(orbitArchived) : Number.NaN
+    const archivedAt = Number.isNaN(archivedMs) ? null : new Date(archivedMs).toISOString()
+
     if (Array.isArray(r.tags) && r.tags.length > 0) tagCount++
     for (const k of ['photos', 'videos', 'audios', 'pdfs']) {
       if (Array.isArray(r[k]) && (r[k] as unknown[]).length > 0) mediaCount++
@@ -425,6 +440,7 @@ export async function parseJournal(data: unknown): Promise<ParseResult> {
       // （老文件里这个字段恒为 false，Day One 导出里也永远是布尔）。
       starred: r.starred === true,
       viewCount,
+      archivedAt,
     })
   }
 

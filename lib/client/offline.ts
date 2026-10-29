@@ -23,6 +23,8 @@ export interface QueuedEntry {
    * 否则「点了没反应」——按钮有反馈、列表也亮着星，而补传后被服务端默认值抹成未收藏。
    */
   starred: boolean
+  /** 归档时间（ISO）或 null。与 starred 同理入队：离线归档的笔记，联网补传时要带上。 */
+  archivedAt: string | null
   queuedAt: number
 }
 
@@ -331,6 +333,7 @@ export function queuedToEntry(item: QueuedEntry): import('./entries').EncryptedE
     weather: null,
     timezone: item.timezone,
     starred: item.starred,
+    archivedAt: item.archivedAt,
     viewCount: 0,
   }
 }
@@ -354,7 +357,7 @@ export async function getQueuedEntryById(id: string): Promise<import('./entries'
 // 离线编辑「未同步笔记」：更新队列项（id/queuedAt 不变——创建时刻稳定，
 // 编辑时刻由调用方在 UI 层表达为 updatedAt）。只传要改的字段即可（改正文传三件套、改收藏只传 starred）。
 // 条目不在队列中时静默忽略（返回 false）。
-export type QueuedEntryPatch = Partial<Pick<QueuedEntry, 'ciphertext' | 'iv' | 'wordCount' | 'starred'>>
+export type QueuedEntryPatch = Partial<Pick<QueuedEntry, 'ciphertext' | 'iv' | 'wordCount' | 'starred' | 'archivedAt'>>
 
 export async function updateQueuedEntry(id: string, patch: QueuedEntryPatch): Promise<boolean> {
   const queue = (await idbGet<QueuedEntry[]>(QUEUE_KEY)) ?? []
@@ -398,8 +401,9 @@ export async function flushOfflineQueue(): Promise<number> {
           longitude: null,
           locationAccuracy: null,
           timezone: item.timezone,
-          // 离线期间点过的收藏要一起补传（服务端默认 false，不带就等于把星弄丢了）
+          // 离线期间点过的收藏 / 归档要一起补传（服务端默认 false / null，不带就等于把状态弄丢了）
           starred: item.starred,
+          archivedAt: item.archivedAt,
         }),
       })
       if (res.ok) {

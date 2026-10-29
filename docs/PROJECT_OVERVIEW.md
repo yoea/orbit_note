@@ -86,7 +86,8 @@ lib/client/             客户端逻辑：crypto/（加密/KDF/PRF/恢复密钥/
                         idb、draft-sync、location、geocode、weather、sound、streak、prefs、prompts
 lib/server/             服务端逻辑：auth、session、webauthn、validation、ratelimit、
                         security-headers、proxy-guard、weather、db/（schema + 连接）
-drizzle/                SQL 迁移文件（0000 ~ 0014；0013 = 结构化地名三级 + starred；0014 = 打开次数入库）
+drizzle/                SQL 迁移文件（0000 ~ 0015；0013 = 结构化地名三级 + starred；
+                        0014 = 打开次数入库；0015 = 归档 archived_at）
 proxy.ts                Next 16 middleware（安全头 + 粗粒度路由保护）
 scripts/                deploy.sh（一键部署）、generate-icons.js
 docs/                   设计文档、安全审计、手动测试清单、部署示例
@@ -108,7 +109,9 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
 | `user_prefs` | 偏好开关 | 存数据库以便多端同步，非 localStorage。**只收布尔（`'0'`/`'1'`）**——导出格式记忆等设备本地偏好刻意不进该表 |
 | `prompt_stats` | 每日提示展示统计 | `prompt_id`（p_0..p_99）计数 |
 
-> 注意：经纬度、结构化地名、天气、收藏状态、打开次数等元数据 **不在加密范围内**（设计如此）。数据库泄露会暴露位置轨迹、"哪几篇被收藏"以及"每篇回看过几次"，但不暴露正文。
+> 注意：经纬度、结构化地名、天气、收藏状态、归档状态、打开次数等元数据 **不在加密范围内**（设计如此）。数据库泄露会暴露位置轨迹、"哪几篇被收藏 / 已归档"以及"每篇回看过几次"，但不暴露正文。
+>
+> 「归档」是 `archived_at`（**可空时间戳**，migration 0015；NULL = 未归档）——一列同时表达"是否归档"与"什么时候归档的"。与收藏同级：PATCH 只带它、不带 `ciphertext` ⇒ **不刷新 `updatedAt`**（归档不算编辑）。归档后退出日常列表、搜索默认范围、热力图/连续天数（`stats`）、去年的今天（`on-this-day`）。**阶段 1 已上线（v1.32.0）：归档入口在详情页操作栏第 5 个图标、导出可选三档范围；归档列表页与搜索范围切换在阶段 2/3。**
 >
 > 「打开次数」是**数据库列**（`view_count`，migration 0014），语义是「我自己打开这一篇看过几次」。它由服务器原子自增（`view_count = view_count + 1`）、只 `set` 这一列 ⇒ **不刷新 `updatedAt`**，所以回看不会被误判成「编辑」。旧的纯本机 IndexedDB 计数**刻意不迁移**（它按设备计，写进库等于冒充全局真值，一律从 0 起算）。
 >
@@ -124,7 +127,8 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
 **需要登录（`requireAuth` 拦截，未登录 401）**
 - `GET|POST /api/diary`、`GET|PATCH|DELETE /api/diary/[id]`
   （列表支持两套分页：`offset` 与 **`before`/`beforeId` 游标**（(created_at,id) 元组比较，
-  供「滑到底自动加载」与「按某天取一页」）；反方向的 `after` 已于 2026-10-02 随列表页日期功能一并移除）
+  供「滑到底自动加载」与「按某天取一页」）；反方向的 `after` 已于 2026-10-02 随列表页日期功能一并移除。
+  列表另有 **`archived=exclude|only|all`**，**默认 `exclude`**（旧客户端不传也看不见归档）。）
 - `POST /api/diary/[id]/view`（打开次数 +1，服务器原子自增；只写 `view_count` 一列，不碰 `updatedAt`）
 - `POST /api/diary/import`（批量导入，允许客户端指定 createdAt/updatedAt 以保留原始时间）
 - `GET /api/diary/stats`、`GET /api/diary/on-this-day`

@@ -23,6 +23,9 @@ export interface EncryptedEntry {
   timezone: string | null
   /** 收藏（星标）：明文的元数据列，入数据库、跟随导入与导出 */
   starred: boolean
+  /** 归档时间（可空）：**NULL = 未归档**。与 starred 同级，也是明文元数据。
+   *  归档后退出日常列表、搜索默认范围与统计（见服务端 /api/diary 的 `archived` 参数）。 */
+  archivedAt: string | null
   /** 打开次数（我自己看过几次）：数据库列，由 POST /api/diary/[id]/view 原子自增 */
   viewCount: number
 }
@@ -35,18 +38,29 @@ export interface DecryptedEntry {
 // 服务端单页上限 200（见 app/api/diary/route.ts 的 clamp）
 const PAGE_SIZE = 200
 
-// 分页拉取全部条目（服务端按 createdAt 倒序，拼接后仍保持倒序）。
+// 分页拉取条目（服务端按 createdAt 倒序，拼接后仍保持倒序）。
 // 数据源与列表页一致 = 服务器真值 ∪ 未同步队列（离线写下的笔记也要能搜到/导出）。
 // 顺带两件维护工作（都基于「服务器是权威」）：
 // - 把已拉到的全部服务器条目写入本地缓存（密文）；
 // - 用全量列表清理缓存里服务器已不存在的条目（离线列表不再出现「已删除」的残留）。
 // 离线兜底：请求不可达时回退本地密文缓存 + 队列；两者皆空才抛错。
-export async function fetchAllEntries(): Promise<EncryptedEntry[]> {
+//
+// `archived` 决定拉哪一片（2026-10-29）：
+//   · 'exclude'（默认）= 日常视图，**搜索与导出都用这个默认值**，归档条目自然不参与；
+//   · 'only'  = 今后的归档页；
+//   · 'all'   = 导出三档里的「全部」，客户端再按 archivedAt 本地筛。
+// ★ 只有 'all' 是一次「全表快照」，缓存清理（prune）只在那一趟做 —— 拿 'only'
+//   去 prune 会把所有未归档条目当成「已删除」清掉。
+export async function fetchAllEntries(
+  opts: { archived?: 'exclude' | 'only' | 'all' } = {},
+): Promise<EncryptedEntry[]> {
+  const archived = opts.archived ?? 'exclude'
+  const archivedQs = archived === 'exclude' ? '' : `&archived=${archived}`
   const all: EncryptedEntry[] = []
   let offset = 0
   try {
     while (true) {
-      const res = await fetch(`/api/diary?limit=${PAGE_SIZE}&offset=${offset}`)
+      const res = await fetch(`/api/diary?limit=${PAGE_SIZE}&offset=${offset}${archivedQs}`)
       if (!res.ok) throw new Error('加载失败')
       const { entries } = await res.json() as { entries: EncryptedEntry[] }
       all.push(...entries)
@@ -54,7 +68,9 @@ export async function fetchAllEntries(): Promise<EncryptedEntry[]> {
       offset += entries.length
     }
     void cacheEntriesPage(all) // 顺手缓存（异步，不阻塞返回）；只缓存服务器条目，队列另算
-    void pruneCachedEntries(all, { isFirstPage: true, isLastPage: true }) // 已拉到全量 ⇒ 缓存里不在这份清单里的都已被删除
+    if (archived === 'all') {
+      void pruneCachedEntries(all, { isFirstPage: true, isLastPage: true }) // 全量快照 ⇒ 不在清单里的都已被删除
+    }
     return unionWithPending(all, await getQueuedEntries())
   } catch (e) {
     const [cached, queued] = await Promise.all([getCachedEntries(), getQueuedEntries()])

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/server/db'
 import { diaryEntries } from '@/lib/server/db/schema'
-import { and, desc, eq, lt, or } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, isNull, lt, or } from 'drizzle-orm'
 import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { diaryCreateSchema } from '@/lib/server/validation'
 import { rateLimit } from '@/lib/server/ratelimit'
@@ -41,6 +41,20 @@ export async function GET(req: Request) {
     // 只给 id 不给时间没有意义（无法定位），视为坏请求而不是静默忽略
     return NextResponse.json({ error: 'bad_request' }, { status: 400 })
   }
+  // ── 归档范围（`archived`）─────────────────────────────────────────────────
+  //   exclude（默认）= 日常视图，不含归档；only = 归档页；all = 导出
+  // ★ 默认**必须**是 exclude：旧客户端（PWA 缓存里的旧包）不传这个参数，
+  //   默认 all 就等于线上老用户永远看不见归档生效。服务端先上线、前端后上线，顺序不能反。
+  // 游标与归档条件是**与**关系，各自独立成立（翻页时不会跨到归档区去）。
+  const archivedRaw = url.searchParams.get('archived') ?? 'exclude'
+  if (archivedRaw !== 'exclude' && archivedRaw !== 'only' && archivedRaw !== 'all') {
+    return NextResponse.json({ error: 'bad_request' }, { status: 400 })
+  }
+  const archivedWhere = archivedRaw === 'only'
+    ? isNotNull(diaryEntries.archivedAt)
+    : archivedRaw === 'all'
+      ? undefined
+      : isNull(diaryEntries.archivedAt)
   // ★ 排序必须是**全序**：created_at 相同（导入的 Day One/Journey 备份是秒级精度，
   // 同一批导入里很容易撞上）时，只按 created_at 排序的结果在 LIMIT/OFFSET 分页下不保证稳定：
   // 同一行可能在两次查询里落到不同页（被跳过或重复），客户端「加载更多」就会漏条目。
@@ -48,15 +62,19 @@ export async function GET(req: Request) {
   // 游标分支的 WHERE 也用同一组键，保证「排序」与「边界」口径完全一致。
   // created_at 相同时用元组比较 (created_at, id) < (游标 at, id)，
   // 否则同秒的多条会被整批跳过。
+  const cursorWhere = cursor
+    ? (cursor.id
+      ? or(
+        lt(diaryEntries.createdAt, cursor.at),
+        and(eq(diaryEntries.createdAt, cursor.at), lt(diaryEntries.id, cursor.id)),
+      )
+      : lt(diaryEntries.createdAt, cursor.at))
+    : undefined
+  const where = cursorWhere && archivedWhere
+    ? and(cursorWhere, archivedWhere)
+    : (cursorWhere ?? archivedWhere)
   const entries = await db.select().from(diaryEntries)
-    .where(cursor
-      ? (cursor.id
-        ? or(
-          lt(diaryEntries.createdAt, cursor.at),
-          and(eq(diaryEntries.createdAt, cursor.at), lt(diaryEntries.id, cursor.id)),
-        )
-        : lt(diaryEntries.createdAt, cursor.at))
-      : undefined)
+    .where(where)
     .orderBy(desc(diaryEntries.createdAt), desc(diaryEntries.id))
     // 游标已定位到内容，offset 必须归零（两者语义不能叠加）
     .limit(limit).offset(cursor ? 0 : offset)
@@ -69,7 +87,7 @@ export async function POST(req: Request) {
   if (!rateLimit('diary-create', 30, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
   const body = diaryCreateSchema.safeParse(await req.json().catch(() => null))
   if (!body.success) return NextResponse.json({ error: 'bad_request', details: body.error.issues }, { status: 400 })
-  const { id, ciphertext, iv, encryptionVersion, latitude, longitude, locationAccuracy, timezone, wordCount, starred } = body.data
+  const { id, ciphertext, iv, encryptionVersion, latitude, longitude, locationAccuracy, timezone, wordCount, starred, archivedAt } = body.data
   // 客户端 id（离线写队列）：重复 POST 同 id = 网络抖动后的不确定重传，返回已有条目（200）
   // 而非报错——幂等保证离线日记不重复入库。created_at 仍由服务器决定（客户端时钟不可信）。
   if (id) {
@@ -83,8 +101,9 @@ export async function POST(req: Request) {
     latitude: latitude ?? null, longitude: longitude ?? null, locationAccuracy: locationAccuracy ?? null,
     timezone: timezone ?? null,
     wordCount: wordCount ?? 0,
-    // 离线队列补传时可能带着「离线期间点过的收藏」；在线新建恒为 false（服务端默认）
+    // 离线队列补传时可能带着「离线期间点过的收藏 / 归档」；在线新建恒为默认值
     starred: starred ?? false,
+    archivedAt: archivedAt ? new Date(archivedAt) : null,
   }).returning()
   return NextResponse.json({ entry }, { status: 201 })
 }

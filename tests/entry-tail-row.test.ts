@@ -160,13 +160,13 @@ describe('F · 查看页信息行 + 底部 4 图标操作栏', () => {
     expect(src, '「编辑于」又出现在查看页里了——编辑时间只该在编辑态以「上次编辑」显示').not.toContain('编辑于')
   })
 
-  it('F7 四个图标的尺寸与线宽统一（打开次数 / 收藏 / 编辑 / 删除）', () => {
+  it('F7 五个图标的尺寸与线宽统一（打开次数 / 收藏 / 归档 / 编辑 / 删除）', () => {
     const bar = barSlice()
     const sizes = bar.match(/h-\[18px\] w-\[18px\]/g) ?? []
-    expect(sizes.length, '操作栏里不是 4 个 18px 图标（打开次数、收藏、编辑、删除）').toBe(4)
-    // 三个内联 SVG（眼睛 / 编辑 / 删除）都用 strokeWidth 2；星是填充图形，线宽在 StarIcon 内部
+    expect(sizes.length, '操作栏里不是 5 个 18px 图标（打开次数、收藏、归档、编辑、删除）').toBe(5)
+    // 四个内联 SVG（眼睛 / 归档 / 编辑 / 删除）都用 strokeWidth 2；星是填充图形，线宽在 StarIcon 内部
     const strokes = bar.match(/strokeWidth="2"/g) ?? []
-    expect(strokes.length, '内联图标的线宽不统一').toBe(3)
+    expect(strokes.length, '内联图标的线宽不统一').toBe(4)
   })
 
   it('F8 正文滚动区与操作栏之间不得夹任何元素（滚动区下边缘 = 操作栏上边缘）', () => {

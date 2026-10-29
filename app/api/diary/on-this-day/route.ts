@@ -6,6 +6,8 @@ import { rateLimit } from '@/lib/server/ratelimit'
 
 // 去年的今天：往年同月日的日记随机一篇（按笔记时区归日，与 stats 口径一致）；没有则返回 null。
 // 首页顶部「去年的今天」卡片数据源。
+// ★ 候选集合排除**已归档**的日记（2026-10-29）：归档意味着退出日常视图，
+//   把它又翻出来摆在写页顶上会与这个语义直接冲突。
 export async function GET(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   if (!rateLimit('on-this-day', 30, 60_000)) return NextResponse.json({ error: 'too_many_requests' }, { status: 429 })
@@ -14,7 +16,8 @@ export async function GET(req: Request) {
     SELECT id, ciphertext, iv, created_at, latitude,
            location_province, location_city, location_district, location_name
     FROM diary_entries
-    WHERE EXTRACT(MONTH FROM created_at AT TIME ZONE COALESCE(timezone, 'UTC')) = ${today.getMonth() + 1}
+    WHERE archived_at IS NULL
+      AND EXTRACT(MONTH FROM created_at AT TIME ZONE COALESCE(timezone, 'UTC')) = ${today.getMonth() + 1}
       AND EXTRACT(DAY FROM created_at AT TIME ZONE COALESCE(timezone, 'UTC')) = ${today.getDate()}
       AND EXTRACT(YEAR FROM created_at AT TIME ZONE COALESCE(timezone, 'UTC')) < ${today.getFullYear()}
     ORDER BY random() LIMIT 1

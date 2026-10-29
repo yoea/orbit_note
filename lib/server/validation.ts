@@ -18,6 +18,16 @@ const placeFields = {
 // 所以收藏一篇不会让详情页冒出「编辑于」（见 app/api/diary/[id]/route.ts）。
 const starredField = { starred: z.boolean().optional() }
 
+// 归档（可空时间戳）。与 starred 的关键差别：**必须能表达 null** ——
+//   `undefined` = 这次不动归档状态；`null` = 取消归档。
+// ★ 客户端每次都得**显式**传这个键（别写成 `...(x ? { archivedAt } : {})`），
+//   那样「取消归档」会静默变成空操作。项目在 locationPatch 的缺失级上踩过同一类坑。
+// 上限 40 字符 + Date.parse 校验：挡住脏串进 timestamptz（否则 PG 报 22007 → 500）。
+const archivedAtField = {
+  archivedAt: z.string().max(40).nullable().optional()
+    .refine((v) => v == null || !Number.isNaN(Date.parse(v)), 'archivedAt 不是合法时间'),
+}
+
 const encryptedPayload = {
   ciphertext: z.string().min(1).max(300_000),
   iv: z.string().min(1).max(64),
@@ -46,9 +56,10 @@ export const diaryCreateSchema = z
     id: z.string().uuid().optional(),
     ...encryptedPayload,
     timezone: z.string().max(64).nullable().optional(),
-    // starred 只在「离线队列冲刷」这一条路径上由客户端指定（离线时点过收藏的笔记，
-    // 联网补传时要把它一起带上）；在线新建走服务端默认 false。
+    // starred / archivedAt 只在「离线队列冲刷」这一条路径上由客户端指定
+    // （离线期间点过收藏或归档的笔记，联网补传时要一起带上）；在线新建走服务端默认值。
     ...starredField,
+    ...archivedAtField,
     ...locationFields,
     ...wordCountField,
   })
@@ -63,6 +74,7 @@ export const diaryUpdateSchema = z
     locationName: z.string().max(255).nullable().optional(),
     weather: z.string().max(64).nullable().optional(), // 客户端天气查询后补写
     ...starredField,
+    ...archivedAtField,
     ...placeFields,
     ...locationFields,
     ...wordCountField,
@@ -94,6 +106,7 @@ export const diaryImportEntrySchema = z.strictObject({
   weather: z.string().max(64).nullable().optional(),
   timezone: z.string().max(64).nullable().optional(),
   ...starredField,
+  ...archivedAtField,
   ...placeFields,
   ...locationFields,
   ...wordCountField,

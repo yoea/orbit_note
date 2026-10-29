@@ -42,6 +42,8 @@ interface Entry {
   weather: string | null
   timezone: string | null
   starred: boolean
+  /** 归档时间（可空）：NULL = 未归档。归档是元数据更新，**不刷新 updatedAt**（不算编辑） */
+  archivedAt: string | null
   /** 打开次数（数据库列，POST /api/diary/[id]/view 原子自增） */
   viewCount: number
 }
@@ -442,6 +444,7 @@ export default function EntryView({ id }: { id: string }) {
   // 只改元数据：PATCH 不带 ciphertext ⇒ 服务端不更新 updatedAt ⇒ 收藏一篇**不算编辑**，
   // 详情页不会因此多出一行「编辑于」（与定位改动同一条约定）。
   const [starBusy, setStarBusy] = useState(false)
+  const [archiveBusy, setArchiveBusy] = useState(false)
 
   async function toggleStar() {
     if (!entry || starBusy) return
@@ -472,6 +475,41 @@ export default function EntryView({ id }: { id: string }) {
       setError('收藏失败，请重试')
     } finally {
       setStarBusy(false)
+    }
+  }
+
+  // 归档 / 取消归档（2026-10-29）。与 toggleStar 逐条同构，**唯一的硬约定**是：
+  // PATCH 只带 archivedAt，绝不带 ciphertext —— 带了就会刷新 updatedAt，
+  // 详情页凭空多一条「上次编辑」，而用户只是把它收起来、没改一个字。
+  async function toggleArchive() {
+    if (!entry || archiveBusy) return
+    const next = entry.archivedAt == null ? new Date().toISOString() : null
+    setArchiveBusy(true)
+    // 乐观更新：这一屏能立刻反映状态的只有信息行末尾的「· 已归档」
+    setEntry((prev) => (prev ? { ...prev, archivedAt: next } : prev))
+    try {
+      if (pendingSync) {
+        // 还没上服务器的笔记：归档写进本地写队列，联网补传时一起带上
+        //（否则服务端会按默认 null 抹掉——见 lib/client/offline.ts 的 QueuedEntry.archivedAt）
+        const ok = await updateQueuedEntry(id, { archivedAt: next })
+        if (!ok) throw new Error('保存失败')
+      } else {
+        const res = await fetch(`/api/diary/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ archivedAt: next }),
+        })
+        if (!res.ok) throw new Error('保存失败')
+        const data = await res.json() as { entry: Entry }
+        // 本地密文缓存同步更新：否则离线（读缓存）看到的还是归档之前的归档态
+        void cacheEntriesPage([data.entry])
+        setEntry((prev) => (prev ? { ...prev, ...data.entry } : prev))
+      }
+    } catch {
+      setEntry((prev) => (prev ? { ...prev, archivedAt: entry.archivedAt } : prev)) // 失败回滚，不留假状态
+      setError('归档失败，请重试')
+    } finally {
+      setArchiveBusy(false)
     }
   }
 
@@ -620,6 +658,9 @@ export default function EntryView({ id }: { id: string }) {
         {fmtDate(created)}
         {/* 字数在解密时计算（与编辑器底部"共 x 字"一致：trim 后长度） */}
         {!decryptFailed && <> · {countWords(plain)} 字</>}
+        {/* 已归档标记（2026-10-29）：从书签 / 搜索进到一篇归档的日记时，这一屏和普通日记
+            长得一模一样——没有这个标，用户会以为「归档没生效」。它同时是归档按钮的状态反馈。 */}
+        {entry.archivedAt != null && <> · 已归档</>}
         {/* 未同步徽标：离线新增、尚未上传服务器的笔记（同步后自动消失） */}
         {pendingSync && (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
@@ -879,6 +920,23 @@ export default function EntryView({ id }: { id: string }) {
                 {/* 暖色 Q 版五角星：实心=已收藏，描边=未收藏（同一颗星的两个状态，不用两套图形）。
                     刻意**不带文字**——用户要求「仅通过图标状态变化表示收藏状态」。 */}
                 <StarIcon filled={entry.starred} className="h-[18px] w-[18px]" />
+              </button>
+              <button
+                onClick={() => void toggleArchive()}
+                disabled={archiveBusy || (localReadonly && !pendingSync)}
+                aria-pressed={entry.archivedAt != null}
+                aria-label={entry.archivedAt != null ? '取消归档' : '归档'}
+                title={entry.archivedAt != null ? '取消归档' : '归档'}
+                className="rounded-full p-2 text-neutral-500 transition-colors active:bg-neutral-100 active:opacity-60 disabled:opacity-40 dark:text-neutral-400 dark:active:bg-neutral-800"
+              >
+                {/* 收纳盒：18px + strokeWidth 2，与眼睛 / 编辑 / 删除同规格。
+                    状态**不用**实心/描边区分（那要再画一套图形），而由上方信息行的
+                    「· 已归档」承担——一处状态、一处动作，不重复两套表达。 */}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]" aria-hidden>
+                  <rect x="2" y="3" width="20" height="5" rx="1" />
+                  <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+                  <path d="M10 12h4" />
+                </svg>
               </button>
             </div>
             <div className="-mr-2 flex items-center gap-1">

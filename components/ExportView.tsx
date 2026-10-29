@@ -11,6 +11,8 @@ import { BRAND_GRADIENT_CLASS, PRIMARY_BUTTON_CLASS } from '@/lib/client/ui'
 import { useUserName } from '@/lib/client/use-user-name'
 
 type ExportFormat = 'json-zip' | 'json' | 'csv'
+/** 导出范围（2026-10-29 随「归档」一起加）：默认全部，备份心智不该默认丢东西 */
+type ExportScope = 'all' | 'active' | 'archived'
 
 // 记忆上次选择的导出格式（设备本地，不同步服务器）：
 // 格式选择是「这次导出去干什么」的设备相关习惯（有人常年只要 CSV），
@@ -47,6 +49,14 @@ const EXPORT_FORMATS: { id: ExportFormat; label: string; hint: string; ext: stri
   { id: 'csv', label: 'CSV 表格（.csv）', hint: '给 Excel 看，字段扁平；不能导回本应用', ext: 'csv' },
 ]
 
+// 导出范围三档。刻意**不做记忆**（与格式不同）：格式是设备习惯，范围是「这次要导什么」，
+// 每次都回到「全部」才符合备份语义 —— 忘记改回全量然后以为备份完整，是最坏的失败方式。
+const EXPORT_SCOPES: { id: ExportScope; label: string; hint: string }[] = [
+  { id: 'all', label: '全部日记', hint: '推荐：备份就该完整，恢复时不丢东西' },
+  { id: 'active', label: '仅未归档', hint: '不含已收进归档的那些' },
+  { id: 'archived', label: '仅已归档', hint: '只导已归档的那些' },
+]
+
 // 导出面板：验证身份（通行密钥或恢复密钥二选一）→ 拉取全部密文 → 客户端解密 →
 // 生成 JSON 压缩包 / JSON / CSV 下载。明文只在本地生成，不上传服务器。
 //
@@ -69,6 +79,7 @@ export default function ExportView() {
   const [exported, setExported] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [format, setFormat] = useState<ExportFormat>(readExportFormat)
+  const [scope, setScope] = useState<ExportScope>('all')
 
   // 切换格式：立即生效 + 记住（下次打开本页自动选中）
   function pickFormat(id: ExportFormat) {
@@ -147,7 +158,16 @@ export default function ExportView() {
     try {
       // 拉取 + 逐条解密与搜索弹窗共用同一套逻辑（lib/client/entries.ts），避免分页约定各自演化。
       // 保持服务端顺序（createdAt 倒序）。
-      const all = await decryptEntries(dek, await fetchAllEntries())
+      // ★ 一律拉 `archived=all`（全表快照），再按范围本地筛：metadata.count 才是这份文件
+      //   真正的条数；而且只有全表快照才允许做缓存清理（见 fetchAllEntries 的注释）。
+      const fetched = await decryptEntries(dek, await fetchAllEntries({ archived: 'all' }))
+      const all = scope === 'all'
+        ? fetched
+        : fetched.filter(({ entry }) => (scope === 'archived' ? entry.archivedAt != null : entry.archivedAt == null))
+      if (!all.length) {
+        setError(scope === 'archived' ? '还没有已归档的日记，这一档导出为空' : '没有可导出的日记，这一档导出为空')
+        return
+      }
 
       if (format === 'csv') {
         // 列集合与转义都在 journal-format.ts（纯函数，逐列取值 ⇒ 加列忘了给值 typecheck 会报错）
@@ -176,7 +196,7 @@ export default function ExportView() {
   return (
     <div>
       <p className="mt-4 text-sm leading-relaxed text-neutral-600 dark:text-neutral-300">
-        将{userName ? `${userName}的` : ''}全部日记导出为 <span className="font-medium">JSON 压缩包</span>（推荐）或 CSV 表格。
+        将{userName ? `${userName}的` : ''}日记导出为 <span className="font-medium">JSON 压缩包</span>（推荐）或 CSV 表格。
         JSON 采用标准 Day One 结构，<span className="font-medium">Day One、Journey 都能直接导入</span>，也能重新导回本应用。
       </p>
       <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
@@ -246,6 +266,25 @@ export default function ExportView() {
                     <span className="mt-0.5 block text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">{f.hint}</span>
                   </span>
                   <span className={`shrink-0 text-sm ${format === f.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-transparent'}`}>✓</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <p className="mt-4 text-xs font-medium text-neutral-500 dark:text-neutral-400">导出范围</p>
+          <ul className="mt-2 divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
+            {EXPORT_SCOPES.map((sc) => (
+              <li key={sc.id}>
+                <button
+                  onClick={() => setScope(sc.id)}
+                  aria-pressed={scope === sc.id}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left active:opacity-60"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-sm text-neutral-800 dark:text-neutral-200">{sc.label}</span>
+                    <span className="mt-0.5 block text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">{sc.hint}</span>
+                  </span>
+                  <span className={`shrink-0 text-sm ${scope === sc.id ? 'text-emerald-600 dark:text-emerald-400' : 'text-transparent'}`}>✓</span>
                 </button>
               </li>
             ))}

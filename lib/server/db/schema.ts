@@ -66,6 +66,11 @@ export const diaryEntries = pgTable('diary_entries', {
   // 与位置、天气同级：属于**明文的元数据**（不进加密范围，也不影响 updatedAt——
   // 收藏一篇不算「编辑」，详情页不会因此显示「编辑于」）。
   starred: boolean('starred').notNull().default(false),
+  // 「归档」：收起来，不再出现在日常浏览视图里（列表 / 搜索默认范围 / 统计都不含它）。
+  // 用**可空时间戳**而不是 boolean —— 一列同时表达「是否归档」与「什么时候归档的」
+  // （归档页要显示「归档于 X 天前」）。NULL = 未归档（migration 0015）。
+  // 与 starred 同级：明文的元数据，**不触发 updatedAt**（归档不算编辑）。
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
   // 「打开次数」：**我自己**打开这一篇看过几次（不是「被谁看过」）。
   // 2026-09-30 起改为写进数据库（此前是纯本机 IndexedDB 计数，见 lib/client/views.ts 的历史说明）：
   // 用户要求跨设备一致，且它既然是数据库列，就应当随导出 / 导入往返（台账见 journal-format.ts）。

@@ -69,14 +69,15 @@ const sample: DecryptedEntry = {
 }
 
 describe('导出字段台账（对账 schema.ts）', () => {
-  it('F0 防空转：schema 里能读到 18 列', () => {
+  it('F0 防空转：schema 里能读到 19 列', () => {
     const cols = diaryEntryColumns()
-    expect(cols.length, `读到的列：${cols.join(', ')}`).toBe(18)
+    expect(cols.length, `读到的列：${cols.join(', ')}`).toBe(19)
     expect(cols).toContain('ciphertext')
     expect(cols).toContain('location_accuracy')
     expect(cols).toContain('starred')
     expect(cols).toContain('view_count')
     expect(cols).toContain('location_province')
+    expect(cols).toContain('archived_at')
   })
 
   it('F1 每一列都在台账里登记 → 新增列忘了导出会直接红', () => {
@@ -191,6 +192,49 @@ describe('自家导出 → 再导入 往返无损（数据库字段）', () => {
   })
 })
 
+// 归档（2026-10-29，migration 0015）：归档时间是数据库列，必须随文件往返；
+// Day One 没有这个概念 ⇒ 只进 orbit 命名空间，不能污染原生字段。
+describe('归档时间的往返（archivedAt）', () => {
+  const archivedAt = '2026-09-10T08:00:00.000Z'
+
+  it('F12 未归档写 null、已归档写 ISO，且只出现在 orbit 里', () => {
+    const plainFile = buildJournalFile([sample])
+    expect(plainFile.entries[0].orbit?.archivedAt, '未归档应写 null').toBeNull()
+    // 原生字段里不许出现归档（Day One / Journey 不认识它）
+    expect(JSON.stringify(plainFile.entries[0])).not.toMatch(/"archivedAt":[^n]/)
+
+    const archived = buildJournalFile([{ ...sample, entry: { ...sample.entry, archivedAt } }])
+    expect(archived.entries[0].orbit?.archivedAt).toBe(archivedAt)
+  })
+
+  it('F13 再导入时原样恢复；外部文件（没有 orbit.archivedAt）视为未归档', async () => {
+    const file = buildJournalFile([{ ...sample, entry: { ...sample.entry, archivedAt } }])
+    const parsed = await parseJournal(JSON.parse(serializeJournal(file)))
+    expect(parsed.rejected).toHaveLength(0)
+    expect(parsed.entries[0].archivedAt, '归档时间没随文件往返').toBe(archivedAt)
+
+    // Day One / Journey 的文件没有 orbit 块 ⇒ 必须是 null（不能留 undefined 漏进上传载荷）
+    const external = { entries: [{ uuid: 'AA7A6A77946547449ED0BBC99349537C', creationDate: '2020-01-01T00:00:00Z', text: '外部' }] }
+    const r = await parseJournal(external)
+    expect(r.entries[0].archivedAt).toBeNull()
+  })
+
+  it('F14 脏文件里的非法归档时间归 null，而不是拒绝整条', async () => {
+    for (const bad of ['不是时间', 0, {}, '2026-13-45T99:99:99Z']) {
+      const r = await parseJournal({
+        entries: [{
+          uuid: 'AA7A6A77946547449ED0BBC99349537C',
+          creationDate: '2020-01-01T00:00:00Z',
+          text: '脏数据',
+          orbit: { id: ID, archivedAt: bad },
+        }],
+      })
+      expect(r.rejected, `archivedAt=${JSON.stringify(bad)} 不该让整条被拒`).toHaveLength(0)
+      expect(r.entries[0].archivedAt, `archivedAt=${JSON.stringify(bad)} 应归 null`).toBeNull()
+    }
+  })
+})
+
 describe('CSV 字段覆盖', () => {
   // 用**单行**正文，避免「正文里含换行」干扰按行断言（那是 F10 专门覆盖的事）
   const flat: DecryptedEntry = { entry: sample.entry, plain: '单行正文' }
@@ -204,6 +248,7 @@ describe('CSV 字段覆盖', () => {
     expect(lines[0]).toContain('view_count')
     expect(lines[0]).toContain('location_province')
     expect(lines[0]).toContain('location_name')
+    expect(lines[0]).toContain('archived_at')
   })
 
   it('F9 数据行按列顺序取值（含收藏、打开次数、定位精度与三级地名）', () => {
@@ -211,7 +256,7 @@ describe('CSV 字段覆盖', () => {
       ID, '2024-03-05T01:02:03.000Z', '2024-04-06T07:08:09.000Z', '单行正文', '42',
       'true', '12',
       '31.2304', '121.4737', '25', '上海市', '上海市', '黄浦区', '',
-      '晴 25°C', 'Asia/Shanghai',
+      '晴 25°C', 'Asia/Shanghai', '',
     ])
   })
 
