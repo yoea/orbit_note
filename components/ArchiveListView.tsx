@@ -401,7 +401,7 @@ export default function ArchiveListView() {
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">已归档</h1>
         {selectMode ? (
-          <button onClick={exitSelect} className="px-1 text-sm font-medium text-neutral-500 active:opacity-60 dark:text-neutral-400">完成</button>
+          <button onClick={exitSelect} className="px-1 text-sm font-medium text-neutral-500 active:opacity-60 dark:text-neutral-400">退出多选</button>
         ) : items.length > 0 ? (
           /* 有内容才给「选择」入口：空列表上放一个点了没反应的按钮没有意义 */
           <button onClick={() => setSelectMode(true)} className="px-1 text-sm text-neutral-500 active:opacity-60 dark:text-neutral-400">选择</button>

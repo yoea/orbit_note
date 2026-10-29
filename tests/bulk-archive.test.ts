@@ -335,11 +335,35 @@ describe('BG · 第三轮反馈', () => {
     expect(view, '离线时也硬算总数了').toContain('已加载 ${items.length} 篇')
   })
 
-  it('BG5 「归档计入统计」的说明文案压到一行（≤12 字）', () => {
+  it('BG5 「归档计入统计」的说明文案压到一行（≤16 字，且是用户指定的措辞）', () => {
     const src = code('components/PrefsDialog.tsx')
     const m = src.match(/COUNT_ARCHIVED_KEY,[^\n]*hint: '([^']*)'/)
     expect(m, '找不到这条偏好的 hint').not.toBeNull()
-    expect(m![1].length, `说明文字 ${m![1].length} 字，在 320px 卡片里会换行（其余行都是 9~14 字）`)
-      .toBeLessThanOrEqual(12)
+    expect(m![1], '文案被改掉了（2026-10-29 用户指定这一句）').toBe('计入热力图、天数、篇数与字数统计')
+    // 同一张列表里其它 hint 都在 16 字以内；超过就会折行，整行比邻居高一截
+    expect(m![1].length, `说明文字 ${m![1].length} 字，会折行`).toBeLessThanOrEqual(16)
+  })
+})
+
+// ============================================================================
+// 2026-10-29 第五轮（三条）
+// ============================================================================
+describe('BH · 第五轮反馈', () => {
+  it('BH1 多选态右侧是「退出多选」，不再写「完成」', () => {
+    for (const rel of [LIST, ARCHIVE_VIEW]) {
+      const src = code(rel)
+      expect(src, `${rel} 的多选态没有「退出多选」`).toContain('>退出多选</button>')
+      // 反向：多选没有"完成"这个动作，写成完成会让人以为还要去哪一步。
+      // ⚠️ 只对**这个按钮**断言（整页里别处还有「完成」——弹窗底栏就是两个字）
+      expect(src, `${rel} 又多出一个「完成」按钮`).not.toContain('>完成</button>\n')
+    }
+  })
+
+  it('BH2 删除流程打开时不渲染隐藏入口面板（两个 fixed 层不许叠）', () => {
+    const src = code('components/HiddenPanel.tsx')
+    const hideAt = src.indexOf('{!wipeOpen && (')
+    const flowAt = src.indexOf('{wipeOpen && (')
+    expect(hideAt, '删除流程打开时面板没有被隐藏 —— 两个 fixed inset-0 会重叠').toBeGreaterThanOrEqual(0)
+    expect(hideAt, '隐藏逻辑写反了（应该先隐藏面板、再渲染流程）').toBeLessThan(flowAt)
   })
 })

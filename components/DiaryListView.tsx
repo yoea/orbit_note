@@ -702,8 +702,11 @@ export default function DiaryListView() {
           </svg>
         </button>
         <div className="flex items-center">
+          {/* 选择态右侧是「退出多选」，不是「完成」（2026-10-29 用户要求）：
+              多选没有"完成"这个动作，用户点了会以为要去哪一步；「退出」说的是它实际干的事。
+              左侧那个图标已经是开关（进去 / 退出都点它），这里是给"没找到图标"的人的第二条路。 */}
           {selectMode ? (
-            <button onClick={exitSelect} className="-mr-1 px-1 text-sm font-medium text-neutral-500 active:opacity-60 dark:text-neutral-400">完成</button>
+            <button onClick={exitSelect} className="-mr-1 px-1 text-sm font-medium text-neutral-500 active:opacity-60 dark:text-neutral-400">退出多选</button>
           ) : (
             /* 搜索：点击后弹出全屏搜索层（正文加密，检索只能在客户端解密后完成）。
                「找某一天」也在里面——时间档的「具体日期」日历（2026-10-02 从列表页搬过去）。 */

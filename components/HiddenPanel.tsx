@@ -38,87 +38,95 @@ export default function HiddenPanel({ onClose, wipeDisabled = false, onWipeBlock
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={onClose}>
-        <div
-          className="w-full max-w-xs overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-neutral-800"
-          onClick={(e) => e.stopPropagation()}
-          role="dialog"
-          aria-modal="true"
-          aria-label="隐藏入口"
-        >
-          {/* 品牌渐变态：与关于弹窗、TabBar 选中态、主按钮同一条 */}
-          <div className="h-[3px] w-full bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500" />
+      {/* ★ 删除流程打开时**整块不渲染**（2026-10-29 用户反馈"两个框重叠了"）：
+          面板与 WipeDataAction 都是 `fixed inset-0 z-50`，同一层级叠在一起，
+          下面的白卡会从 40% 遮罩里透出来。互斥渲染比调 z-index 干净——
+          层级只是把问题藏起来（多一层遮罩叠成更暗），渲染互斥则根本不会有第二个框。 */}
+      {!wipeOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-8" onClick={onClose}>
+          <div
+            className="w-full max-w-xs overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-neutral-800"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="隐藏入口"
+          >
+            {/* 品牌渐变态：与关于弹窗、TabBar 选中态、主按钮同一条 */}
+            <div className="h-[3px] w-full bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500" />
 
-          <div className="px-5 pb-4 pt-5 text-center">
-            {/* 锁形徽标：这一屏的"身份"——藏起来的东西。渐变底用品牌两端的浅色，
-                不做实心填充（那是主按钮的语言，这里只是标点级别的装饰）。 */}
-            <span
-              aria-hidden
-              className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-100 to-rose-100 text-violet-600 dark:from-violet-500/20 dark:to-rose-500/15 dark:text-violet-300"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-            </span>
-            <p className="mt-2.5 text-base font-semibold text-neutral-900 dark:text-neutral-100">隐藏入口</p>
-            <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
-              连点「关于」里的 LOGO 8 次才会出现
-            </p>
-          </div>
-
-          <ul className="border-t border-neutral-100 dark:border-neutral-700">
-            <li>
-              <Link href="/settings/archive" className="flex items-center gap-3 px-4 py-3 active:bg-neutral-100 dark:active:bg-neutral-700">
-                <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                    <rect x="2" y="3" width="20" height="5" rx="1" />
-                    <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
-                    <path d="M10 12h4" />
-                  </svg>
-                </span>
-                <span className="min-w-0 flex-1 text-left">
-                  <span className="block text-sm text-neutral-800 dark:text-neutral-200">已归档</span>
-                  <span className="mt-0.5 block text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
-                    收起来的日记都在这里
-                  </span>
-                </span>
-                <span aria-hidden className="shrink-0 text-neutral-500 dark:text-neutral-400">›</span>
-              </Link>
-            </li>
-            <li className="border-t border-neutral-100 dark:border-neutral-700">
-              <button
-                onClick={() => {
-                  if (wipeDisabled) { onWipeBlocked?.(); return }
-                  setWipeOpen(true)
-                }}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-neutral-100 dark:active:bg-neutral-700"
+            <div className="px-5 pb-4 pt-5 text-center">
+              {/* 锁形徽标：这一屏的"身份"——藏起来的东西。渐变底用品牌两端的浅色，
+                  不做实心填充（那是主按钮的语言，这里只是标点级别的装饰）。 */}
+              <span
+                aria-hidden
+                className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-violet-100 to-rose-100 text-violet-600 dark:from-violet-500/20 dark:to-rose-500/15 dark:text-violet-300"
               >
-                <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-400">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                    <path d="M3 6h18" />
-                    <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
-                    <path d="M5 6l1 14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-14" />
-                  </svg>
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className={`block text-sm text-red-600 dark:text-red-400 ${wipeDisabled ? 'opacity-50' : ''}`}>
-                    删除所有数据
-                  </span>
-                  <span className="mt-0.5 block text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
-                    不可撤销，需要通行密钥验证
-                  </span>
-                </span>
-                <span aria-hidden className="shrink-0 text-neutral-500 dark:text-neutral-400">›</span>
-              </button>
-            </li>
-          </ul>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </span>
+              <p className="mt-2.5 text-base font-semibold text-neutral-900 dark:text-neutral-100">隐藏入口</p>
+              <p className="mt-1 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+                连点「关于」里的 LOGO 8 次才会出现
+              </p>
+            </div>
 
-          <button onClick={onClose} className={DIALOG_FOOTER_BUTTON_CLASS}>
-            完成
-          </button>
+            <ul className="border-t border-neutral-100 dark:border-neutral-700">
+              <li>
+                <Link href="/settings/archive" className="flex items-center gap-3 px-4 py-3 active:bg-neutral-100 dark:active:bg-neutral-700">
+                  <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                      <rect x="2" y="3" width="20" height="5" rx="1" />
+                      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8" />
+                      <path d="M10 12h4" />
+                    </svg>
+                  </span>
+                  <span className="min-w-0 flex-1 text-left">
+                    <span className="block text-sm text-neutral-800 dark:text-neutral-200">已归档</span>
+                    <span className="mt-0.5 block text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+                      收起来的日记都在这里
+                    </span>
+                  </span>
+                  <span aria-hidden className="shrink-0 text-neutral-500 dark:text-neutral-400">›</span>
+                </Link>
+              </li>
+              <li className="border-t border-neutral-100 dark:border-neutral-700">
+                <button
+                  onClick={() => {
+                    if (wipeDisabled) { onWipeBlocked?.(); return }
+                    setWipeOpen(true)
+                  }}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left active:bg-neutral-100 dark:active:bg-neutral-700"
+                >
+                  <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-400">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                      <path d="M3 6h18" />
+                      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+                      <path d="M5 6l1 14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-14" />
+                    </svg>
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className={`block text-sm text-red-600 dark:text-red-400 ${wipeDisabled ? 'opacity-50' : ''}`}>
+                      删除所有数据
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-relaxed text-neutral-500 dark:text-neutral-400">
+                      不可撤销，需要通行密钥验证
+                    </span>
+                  </span>
+                  <span aria-hidden className="shrink-0 text-neutral-500 dark:text-neutral-400">›</span>
+                </button>
+              </li>
+            </ul>
+
+            <button onClick={onClose} className={DIALOG_FOOTER_BUTTON_CLASS}>
+              完成
+            </button>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* 删除流程自带 `fixed inset-0 z-50` 与遮罩，单独成层（不叠在面板的遮罩里） */}
       {wipeOpen && (
         <WipeDataAction onClose={() => setWipeOpen(false)} disabled={wipeDisabled} onBlocked={onWipeBlocked} />
       )}
