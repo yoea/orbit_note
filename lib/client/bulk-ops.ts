@@ -57,8 +57,28 @@ async function postBulk(url: string, body: unknown): Promise<unknown> {
   return await res.json()
 }
 
+export interface ArchiveAllResult {
+  /** 实际发生变化的条数（**已归档的不重复计入**） */
+  updated: number
+  /** 服务端写入的归档时间（ISO）。回写本地缓存 / 离线队列必须用**同一个值** */
+  archivedAt: string
+  /** 被改到的 id：客户端拿它回写本地密文缓存（离线一致性） */
+  ids: string[]
+}
+
 export async function postBulkArchive(ids: string[], archived: boolean): Promise<BulkArchiveResult> {
   return await postBulk('/api/diary/archive', { ids, archived }) as BulkArchiveResult
+}
+
+/**
+ * 归档**所有**日记（服务端一句 UPDATE，不需要客户端知道 id）。
+ *
+ * ★ 影响面是三个批量操作里最大的 —— 一次清空整个日常列表。
+ *   它**可逆**（随时在归档页取消归档），所以只需要一道确认；但**篇数必须说清楚**，
+ *   不能让人盲点。
+ */
+export async function postArchiveAll(): Promise<ArchiveAllResult> {
+  return await postBulk('/api/diary/archive/all', {}) as ArchiveAllResult
 }
 
 /** 永久删除。**不可逆** —— 调用方必须先做二次确认（文案要写清不能恢复）。 */

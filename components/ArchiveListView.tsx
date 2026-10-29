@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { getDek } from '@/lib/client/session'
 import { decryptText } from '@/lib/client/crypto/encryption'
-import { cacheEntriesPage, getCachedEntries, getQueuedEntries, patchCachedEntries, removeCachedEntries, removeQueuedEntry, unionWithPending } from '@/lib/client/offline'
-import { bulkErrorText, postBulkArchive, postBulkDelete } from '@/lib/client/bulk-ops'
+import { cacheEntriesPage, getCachedEntries, getQueuedEntries, patchCachedEntries, removeCachedEntries, removeQueuedEntry, unionWithPending, updateQueuedEntry } from '@/lib/client/offline'
+import { bulkErrorText, postArchiveAll, postBulkArchive, postBulkDelete } from '@/lib/client/bulk-ops'
 import { displayLocationName } from '@/lib/client/location'
 import { deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
 import { daysAgoLabel } from '@/lib/client/archive'
@@ -112,6 +112,15 @@ export default function ArchiveListView() {
   // 归档页是「回收站」语义，在这里删 = 彻底清掉，所以比列表页的删除多一道。
   const [deleteStep, setDeleteStep] = useState<0 | 1 | 2>(0)
 
+  // —— 归档所有日记（2026-10-29）——
+  // `restCount` = **还没归档**的篇数（服务端 total，limit=1 顺手带回来，不拉正文）。
+  //   · 它决定那一行**存不存在**：没有可归档的日记时整个入口消失（既不误导，也不占地方）；
+  //   · 它决定确认框里能不能说出篇数 —— 一次清空日常列表的操作，不说清影响多少篇不能让人点。
+  //   · null = 不知道（离线 / 请求失败），此时候口不出现。
+  const [restCount, setRestCount] = useState<number | null>(null)
+  const [archiveAllOpen, setArchiveAllOpen] = useState(false)
+  const [archiveAllBusy, setArchiveAllBusy] = useState(false)
+
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [sentinelEl, setSentinelEl] = useState<HTMLDivElement | null>(null)
   const cursorRef = useRef<Cursor | null>(null)
@@ -140,7 +149,9 @@ export default function ArchiveListView() {
   }
 
   // 点行 = 选它（2026-10-29）：没在选择态就顺带进去，已在选择态就切换。
-  // 于是「进选择态」有两个入口：这行本身 + 页头「选择」按钮（后者给读屏和"先全选"的人）。
+  // ★ 这是进入选择态的**唯一**入口（2026-10-29：页头那个「选择」按钮已删）——
+  //   行本身就是按钮，点一下同时完成"进选择态"和"选中它"，读屏也能到（`aria-pressed`）。
+  //   想"先全选"的人进选择态后走底部工具栏的「全选」。
   function toggleFromRow(id: string) {
     if (!selectMode) {
       setSelectMode(true)
@@ -171,6 +182,9 @@ export default function ArchiveListView() {
       setItems((prev) => prev.filter((i) => !gone.has(i.id)))
       const stillThere = ids.filter((id) => !res.missing.includes(id))
       await patchCachedEntries(stillThere, { archivedAt: null })
+      // 「未归档篇数」要跟着加：顶部那行的「归档其余 N 篇」用的就是它，
+      // 不更新的话取消归档之后数字还停在旧值（乃至停在 0，整个入口凭空消失）
+      setRestCount((prev) => (prev === null ? null : prev + res.updated))
       if (res.missing.length) setToast(`已取消归档 ${res.updated} 篇，另有 ${res.missing.length} 篇已不存在`)
       else if (res.updated === 0) setToast('选中的日记没有归档状态')
       else setToast(`已取消归档 ${res.updated} 篇`)
@@ -203,6 +217,34 @@ export default function ArchiveListView() {
       setToast(bulkErrorText(e, '删除'))
     } finally {
       setBulkBusy(false)
+    }
+  }
+
+  // 归档所有日记（2026-10-29）。三件事必须一起做完，少一件都会留下"假象"：
+  //   ① 服务器：一句 UPDATE 收掉所有未归档的（见 /api/diary/archive/all）；
+  //   ② 本地密文缓存：不改的话，断网后列表页读缓存 ⇒ 那些日记在"全部日记"里**复活**；
+  //   ③ 离线写队列：还没上服务器的笔记，服务端那句 UPDATE 根本碰不到它们 ——
+  //      不一起改，同步上去之后它们仍站在日常列表里，等于"所有"里漏了几篇。
+  // ④ 最后整页重取：这一页的条目从 12 篇变成几十篇，游标/总数/hasMore 全部作废。
+  async function submitArchiveAll() {
+    if (archiveAllBusy) return
+    setArchiveAllBusy(true)
+    try {
+      const res = await postArchiveAll()
+      await patchCachedEntries(res.ids, { archivedAt: res.archivedAt })
+      const queued = await getQueuedEntries()
+      await Promise.all(
+        queued.filter((q) => q.archivedAt == null).map((q) => updateQueuedEntry(q.id, { archivedAt: res.archivedAt })),
+      ).catch(() => { /* 队列写失败不回滚：服务器已经改了，回滚只会更不一致 */ })
+      setArchiveAllOpen(false)
+      setRestCount(0)
+      await loadFirst()
+      scrollRef.current?.scrollTo({ top: 0 })
+      setToast(res.updated === 0 ? '没有需要归档的日记' : `已归档 ${res.updated} 篇`)
+    } catch (e) {
+      setToast(bulkErrorText(e, '归档'))
+    } finally {
+      setArchiveAllBusy(false)
     }
   }
 
@@ -288,21 +330,37 @@ export default function ArchiveListView() {
     return { items: decrypted, serverCount, total, cursor: nextCursor }
   }, [])
 
+  // ★ 抽成函数而不是只写在挂载 effect 里：「归档所有日记」之后要**整页重取**
+  //   （这一页的条目从 12 篇变成 46 篇，游标、总数、hasMore 全部作废，只插几条是不对的）。
+  //   失败**向上抛**，由调用方决定是整页报错还是静默（重取失败不该弹整页错误）。
+  const loadFirst = useCallback(async () => {
+    const first = await fetchPage(null)
+    setItems(first.items)
+    setTotal(first.total)
+    setCursor(first.cursor)
+    setHasMore(first.serverCount === PAGE_SIZE)
+  }, [fetchPage])
+
   useEffect(() => {
-    void (async () => {
+    // ★ boot 必须**定义在 effect 内部**再调用（2026-10-29 实测）：写成外部函数
+    //   （哪怕包了 useCallback）会被 react-hooks/set-state-in-effect 判成级联渲染。
+    async function boot() {
       try {
-        const first = await fetchPage(null)
-        setItems(first.items)
-        setTotal(first.total)
-        setCursor(first.cursor)
-        setHasMore(first.serverCount === PAGE_SIZE)
+        await loadFirst()
       } catch {
         setError('连接失败，请检查网络后重试')
       } finally {
         setLoading(false)
       }
-    })()
-  }, [fetchPage])
+      // 顺带问一次「还有多少篇没归档」（limit=1，只取 total，不拉正文）。
+      // ★ 这是**独立的一问**：它失败只影响「归档所有日记」那个入口，
+      //   不该把整页打成错误态；取不到就置 null（离线时条数本就只是本机缓存的口径）。
+      const res = await fetch('/api/diary?archived=exclude&limit=1').then((r) => (r.ok ? r.json() : null)).catch(() => null)
+      const n = (res as { total?: number } | null)?.total
+      setRestCount(typeof n === 'number' ? n : null)
+    }
+    void boot()
+  }, [loadFirst])
 
   const loadOlder = useCallback(async () => {
     if (fetchingRef.current || !hasMoreRef.current) return
@@ -392,10 +450,12 @@ export default function ArchiveListView() {
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">已归档</h1>
         {selectMode ? (
           <button onClick={exitSelect} className="px-1 text-sm font-medium text-neutral-500 active:opacity-60 dark:text-neutral-400">退出多选</button>
-        ) : items.length > 0 ? (
-          /* 有内容才给「选择」入口：空列表上放一个点了没反应的按钮没有意义 */
-          <button onClick={() => setSelectMode(true)} className="px-1 text-sm text-neutral-500 active:opacity-60 dark:text-neutral-400">选择</button>
         ) : (
+          /* ★ 非选择态这里**只有占位块**（2026-10-29 用户要求：右上角「选择」两个字是多余的）。
+             去掉它的理由：点任意一行就会进选择态并选中那一行（与 iOS 相册 / 文件一致），
+             「选择」把一件本来就在手势里的事又说了一遍。
+             ★ 占位块**不能删**：页头标题是 `absolute` 居中，流内只剩左右两个元素，
+               少一个 `justify-between` 就没了对手，返回箭头会被推到中间。 */
           <span className="w-8" aria-hidden />
         )}
       </header>
@@ -404,12 +464,33 @@ export default function ArchiveListView() {
           （`shrink-0` 固定、`text-xs tabular-nums`），但**只有篇数**——归档条目不参与
           热力图/连续天数，这里再摆一堆统计会自相矛盾。
           ★ 数字来自服务端 `total`（与游标无关的总量），不是已加载条数；
-            离线时 total 为 null，退化成「已加载 N 篇」，不编造总数。 */}
-      {items.length > 0 && (
-        <p className="shrink-0 px-5 pb-2 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
-          {total !== null ? `共 ${total + pendingCount} 篇` : `已加载 ${items.length} 篇`}
-          {pendingCount > 0 && <span className="opacity-70">（含 {pendingCount} 篇未同步）</span>}
-        </p>
+            离线时 total 为 null，退化成「已加载 N 篇」，不编造总数。
+
+          ★★ 2026-10-29 起这一行**兼作「归档所有日记」的落点**（用户定稿：同一行右对齐）：
+            · 为什么在这一行：它是本页唯一的"页级信息区"，在固定区里 —— 列表滚多远都点得到，
+              而不像"放在列表底部"那样要滚到几百条的最后；
+            · 渲染条件从 `items.length > 0` 放宽成 `items.length > 0 || restCount > 0`：
+              归档列表**为空**时（还没有任何归档）恰恰是最可能需要它的时刻，
+              若仍挂在"有归档条目才显示"上，那一行会连入口一起消失；
+            · 右侧用 violet（与「已归档」那扇门的图标底同色）表示"这里是归档类操作"，
+              也让它在一行灰色小字里显得可点。 */}
+      {(items.length > 0 || (restCount ?? 0) > 0) && (
+        <div className="flex shrink-0 items-center justify-between gap-3 px-5 pb-2">
+          <p className="min-w-0 text-xs tabular-nums text-neutral-500 dark:text-neutral-400">
+            {items.length > 0 && (total !== null ? `共 ${total + pendingCount} 篇` : `已加载 ${items.length} 篇`)}
+            {items.length > 0 && pendingCount > 0 && <span className="opacity-70">（含 {pendingCount} 篇未同步）</span>}
+          </p>
+          {/* 选择态不给它：那时底部工具栏才是操作区，两个地方同时能"动全部"会让人分不清 */}
+          {!selectMode && restCount !== null && restCount > 0 && (
+            <button
+              onClick={() => setArchiveAllOpen(true)}
+              disabled={archiveAllBusy}
+              className="shrink-0 text-xs font-medium text-violet-600 active:opacity-60 disabled:opacity-50 dark:text-violet-400"
+            >
+              {items.length > 0 ? `归档其余 ${restCount} 篇` : `归档全部 ${restCount} 篇`}
+            </button>
+          )}
+        </div>
       )}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5">
         <div className="flex flex-col gap-6 pb-4">
@@ -475,6 +556,19 @@ export default function ArchiveListView() {
       )}
 
       {toast && <Toast message={toast} />}
+      {/* 「归档所有日记」只要**一道**确认（2026-10-29 用户定稿）：它可逆 —— 随时能在这页
+          取消归档还原 —— 所以不该与「彻底删除」用同一套两段确认（那会分不出轻重）。
+          但**篇数必须写进标题**：这是本页影响面最大的操作，不能让人盲点。 */}
+      {archiveAllOpen && restCount !== null && restCount > 0 && (
+        <ConfirmDialog
+          title={items.length > 0 ? `把其余 ${restCount} 篇日记全部归档？` : `把 ${restCount} 篇日记全部归档？`}
+          message="它们会从日常列表、搜索和统计里移出，收进「已归档」。随时可以在这里取消归档还原。"
+          confirmText="归档"
+          cancelText="取消"
+          onConfirm={() => void submitArchiveAll()}
+          onCancel={() => setArchiveAllOpen(false)}
+        />
+      )}
       {confirmBulk && (
         <ConfirmDialog
           title={`取消归档这 ${selected.size} 篇日记？`}

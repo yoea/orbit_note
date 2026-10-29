@@ -114,6 +114,14 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
 > 注意：经纬度、结构化地名、天气、收藏状态、归档状态、打开次数等元数据 **不在加密范围内**（设计如此）。数据库泄露会暴露位置轨迹、"哪几篇被收藏 / 已归档"以及"每篇回看过几次"，但不暴露正文。
 >
 > 「归档」是 `archived_at`（**可空时间戳**，migration 0015；NULL = 未归档）——一列同时表达"是否归档"与"什么时候归档的"。与收藏同级：PATCH 只带它、不带 `ciphertext` ⇒ **不刷新 `updatedAt`**（归档不算编辑）。归档后退出日常列表、搜索默认范围、热力图/连续天数（`stats`）、去年的今天（`on-this-day`）。**已全部上线（v1.32.0~）：详情页操作栏按「状态 → 编辑 → 归档 → 删除」排列（归档夹在编辑与删除之间），归档 / 删除走**气泡确认**（Popconfirm）；归档列表在 /settings/archive，入口在连点 LOGO 8 次打开的隐藏面板里。**
+   > **归档所有日记**（v2.1.0）：`POST /api/diary/archive/all` —— 一条 `UPDATE ... WHERE archived_at IS NULL`
+   > 覆盖全表（客户端不知道全表 id，也没必要拉全表密文），返回 `{ updated, archivedAt, ids }`；
+   > 只 set `archived_at`、不碰 `updated_at`，已归档的行不刷时间。★ 客户端拿到 `ids` 必须回写
+   > **本地密文缓存**与**离线写队列**（未同步的笔记服务端那句 UPDATE 碰不到）⇒ 否则断网后这批
+   > 日记会在日常列表里"复活"。入口在归档页顶部「共 N 篇」同一行右侧，条件是
+   > `items.length > 0 || restCount > 0`（归档为空时入口仍在），一次确认且**标题带篇数**（可逆，
+   > 不该与「彻底删除」的两段确认同级）。限流 5 次/分钟（批量归档是 20）。
+   > **页头「选择」已删**（2026-10-29）：点行即进选择态并选中它，`justify-between` 的占位块必须留着。
 >
 > 「打开次数」是**数据库列**（`view_count`，migration 0014），语义是「我自己打开这一篇看过几次」。它由服务器原子自增（`view_count = view_count + 1`）、只 `set` 这一列 ⇒ **不刷新 `updatedAt`**，所以回看不会被误判成「编辑」。旧的纯本机 IndexedDB 计数**刻意不迁移**（它按设备计，写进库等于冒充全局真值，一律从 0 起算）。
 >
@@ -137,6 +145,9 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
 - `POST /api/diary/archive`（**批量**归档/取消归档：`{ids, archived}` → `{updated, missing}`，
   一次 UPDATE 全部落库。刻意不循环调 `PATCH /api/diary/[id]` —— 单实例内存限流下 50 条就撞 429；
   只写 `archived_at` 一列、跳过已达标行、如实返回服务器上已不存在的 id）
+- `POST /api/diary/archive/all`（**归档所有**：无需 id，一条 UPDATE 覆盖全部未归档的行 →
+  `{updated, archivedAt, ids}`。返回 `ids` 是为了让客户端回写本地缓存与离线队列；
+  限流 5 次/分钟，比批量归档的 20 更严——它一次清空整个日常列表）
 - `POST /api/diary/delete`（**批量**永久删除：`{ids}` → `{deleted, missing}`，一次 DELETE 全部落库；
   限流 10 次/分钟，比归档的 20 更严——删除不可逆）
 - `GET /api/diary/stats?includeArchived=1`、`GET /api/diary/on-this-day?includeArchived=1`

@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import { projectRoot } from './class-attrs'
 
 const API = 'app/api/diary/archive/route.ts'
+const ARCHIVE_ALL_API = 'app/api/diary/archive/all/route.ts'
 const CLIENT = 'lib/client/bulk-ops.ts'
 const PATCH_API = 'app/api/diary/[id]/route.ts'
 const DELETE_API = 'app/api/diary/delete/route.ts'
@@ -401,5 +402,133 @@ describe('BI · 统计口径切换立刻生效', () => {
     for (const rel of [LIST, 'components/DiaryEditor.tsx', 'lib/client/diary-overview.ts']) {
       expect(code(rel), `${rel} 没有退订口径事件`).toContain('removeEventListener(STATS_SCOPE_EVENT')
     }
+  })
+})
+
+// ============================================================================
+// 2026-10-29 第九轮：「归档所有日记」+ 删掉页头多余的「选择」
+//
+// 为什么单独钉：这是本应用**影响面最大**的写操作 —— 一次清空整个日常列表
+// （比「彻底删除」还容易误触，因为它是"一键整理"的样子）。三条最容易静默出错的路径：
+//   ① 服务端顺手写了 updatedAt / 顺带刷了已归档那批的时间；
+//   ② 只改服务器、不改本地缓存与离线队列 ⇒ 断网后这批日记在列表里"复活"；
+//   ③ 入口挂在"有归档条目才显示"的行上 ⇒ 归档为空（最需要它的时刻）反而没有入口。
+// ============================================================================
+describe('BJ · 归档所有日记', () => {
+  it('BJ1 服务端：专用接口 + 鉴权/同源/静态限流，且限流比批量归档更严', () => {
+    const src = code(ARCHIVE_ALL_API)
+    expect(src, '没有鉴权').toContain('requireAuth(req)')
+    expect(src, '没有同源校验').toContain('assertSameOrigin(req)')
+    // key 必须静态（动态 key 会让限流形同虚设）
+    expect(src, '限流 key 不是静态的').toMatch(/rateLimit\('diary-archive-all', 5, 60_000\)/)
+    // 5 次/分钟 < 批量归档的 20：它一次动全表，连点两下就清空整个列表
+    const bulk = code(API)
+    expect(bulk, '批量归档的限流被改了（归档所有必须比它严）').toContain("rateLimit('diary-archive-bulk', 20, 60_000)")
+  })
+
+  it('BJ2 ★ 服务端只 set archivedAt，且只动未归档的行', () => {
+    const src = code(ARCHIVE_ALL_API)
+    // ① 绝不碰 updated_at（归档不是编辑）
+    expect(src, '顺手写了 updatedAt —— 详情页会凭空多一行「上次编辑」').not.toMatch(/updatedAt|updated_at/)
+    // ② 只处理 archived_at IS NULL 的：不刷已归档那批的时间
+    expect(src, '没有用 isNull(archivedAt) 过滤 —— 已归档那批的「归档于 X 天前」会被刷成今天')
+      .toContain('.where(isNull(diaryEntries.archivedAt))')
+    expect(src, 'set 里写了归档以外的列').toContain('.set({ archivedAt: at })')
+    // ③ ★ 必须是 Date 对象：drizzle 的 timestamp 列塞字符串是 500 不是 400。
+    //    ★ 断言必须钉到**整句**——只断言 `new Date()` 会被 `new Date().toISOString()` 兜住
+    //      （那正是要拦的写法，非空转验证当场抓到的）。
+    expect(src, '存档时间不是 Date（字符串会 500）').toMatch(/const at = new Date\(\)\r?\n/)
+    // ④ 返回 id 让客户端回写本地缓存（离线一致性）
+    expect(src, '没有 RETURNING id —— 客户端无法回写缓存').toContain('.returning({ id: diaryEntries.id })')
+  })
+
+  it('BJ3 客户端走专用接口，成功后**三处**都要落地 + 整页重取', () => {
+    const client = code(CLIENT)
+    expect(client, '没有 postArchiveAll').toContain('export async function postArchiveAll')
+    expect(client, '接口地址不对').toContain("'/api/diary/archive/all'")
+    // ★ 断言必须限定在 submitArchiveAll **内部**：`await loadFirst()` 在挂载流程里也有一处，
+    //   只做全文 toContain 的话，把提交流程里那句删掉测试照样绿（非空转验证当场抓到的）。
+    const view = code(ARCHIVE_VIEW)
+    const body = view.slice(at(view, 'async function submitArchiveAll'), at(view, 'async function submitArchiveAll') + 1600)
+    expect(body, '没有调用 postArchiveAll').toContain('await postArchiveAll()')
+    // ★ 三处：服务器（接口内）→ 本地密文缓存 → 离线写队列（未同步的笔记服务端 UPDATE 碰不到）
+    expect(body, '没有回写本地密文缓存 —— 断网后这批日记会在列表里复活')
+      .toContain('patchCachedEntries(res.ids, { archivedAt: res.archivedAt })')
+    expect(body, '没有改离线写队列 —— 未同步的笔记会漏在「所有」之外')
+      .toContain('updateQueuedEntry(q.id, { archivedAt: res.archivedAt })')
+    // 整页重取：这一页从 12 篇变成几十篇，游标 / 总数 / hasMore 全部作废
+    expect(body, '没有整页重取（只插几条会与游标打架）').toContain('await loadFirst()')
+    expect(body, '没有回到顶部').toContain('scrollRef.current?.scrollTo({ top: 0 })')
+  })
+
+  it('BJ4 ★ 入口在「共 N 篇」同一行，且归档为空时仍然在', () => {
+    const view = code(ARCHIVE_VIEW)
+    // 同一行 = 同一个 flex 容器里同时装着篇数与那个按钮
+    const rowAt = at(view, 'flex shrink-0 items-center justify-between gap-3 px-5 pb-2')
+    const row = view.slice(rowAt, rowAt + 900)
+    expect(row, '篇数不在这行里').toContain('共 ${total + pendingCount} 篇')
+    expect(row, '按钮不在这行里').toContain('归档其余 ${restCount} 篇')
+    // ★ 渲染条件放宽成「有归档条目 **或** 有可归档的日记」：
+    //   归档为空恰恰是最需要这个功能的时刻，挂在 items.length > 0 上入口会凭空消失
+    expect(view, '归档为空时入口会消失（条件没放宽）').toContain('(items.length > 0 || (restCount ?? 0) > 0) && (')
+    // 在固定区（shrink-0）：列表滚多远都点得到
+    expect(rowAt, '这一行不在固定区').toBeLessThan(at(view, 'min-h-0 flex-1 overflow-y-auto'))
+  })
+
+  it('BJ5 篇数来自服务端，取不到就置 null（不编数字）', () => {
+    const view = code(ARCHIVE_VIEW)
+    // limit=1 ⇒ 只取 total，不拉正文
+    expect(view, '没有查未归档篇数').toContain("'/api/diary?archived=exclude&limit=1'")
+    expect(view, '取不到时编了数字').toContain('typeof n === \'number\' ? n : null')
+    // restCount 为 0 / null 时按钮不出现（没有可归档的日记 ⇒ 不给入口）
+    const btnAt = at(view, '归档其余 ${restCount} 篇')
+    const guard = view.slice(Math.max(0, btnAt - 520), btnAt)
+    expect(guard, '没有 restCount > 0 的条件（没有可归档的日记时也显示）').toContain('restCount > 0')
+  })
+
+  it('BJ6 一次确认（**带篇数**），不是两段确认', () => {
+    const view = code(ARCHIVE_VIEW)
+    const dlgAt = at(view, '把其余 ${restCount} 篇日记全部归档？')
+    const dlg = view.slice(dlgAt, dlgAt + 700)
+    // 可逆 ⇒ 一道确认足够；但篇数必须进标题，不能让人盲点
+    expect(dlg, '确认框没有 confirmText').toContain('confirmText="归档"')
+    expect(dlg, '确认框没说清可以还原').toContain('随时可以在这里取消归档还原')
+    // 与「彻底删除」区分：删除是 deleteStep 1 → 2 两段
+    expect(dlg, '「归档所有」用上了两段确认（与彻底删除分不出轻重）').not.toContain('setDeleteStep')
+    // 归档为空时标题换措辞（"其余"在没有已归档条目时说不通）
+    expect(view, '归档为空时的标题措辞不对').toContain('把 ${restCount} 篇日记全部归档？')
+    expect(view, '归档为空时的按钮措辞不对').toContain('归档全部 ${restCount} 篇')
+  })
+
+  it('BJ7 ★ 取消归档后要把「未归档篇数」加回去', () => {
+    const view = code(ARCHIVE_VIEW)
+    // 不加的话：归档所有 ⇒ restCount=0 ⇒ 入口消失；此时取消归档几篇，数字还停在 0
+    const setAt = at(view, 'setRestCount((prev) => (prev === null ? null : prev + res.updated))')
+    const unAt = at(view, 'async function submitBulkUnarchive')
+    expect(unAt, '这行不在取消归档的流程里').toBeLessThan(setAt)
+  })
+})
+
+// ============================================================================
+// 2026-10-29：页头那个「选择」按钮是多余的（用户要求删）
+// ============================================================================
+describe('BK · 归档页不再有「选择」入口', () => {
+  it('BK1 页头非选择态只有占位块（「选择」被拿掉）', () => {
+    const src = code(ARCHIVE_VIEW)
+    const headAt = at(src, '<header')
+    const head = src.slice(headAt, at(src, '</header>'))
+    expect(head, '页头又长出「选择」按钮了').not.toContain('>选择<')
+    // 占位块必须留着：标题是 absolute 居中，流内只剩左右两个元素，
+    // 少一个 justify-between 就没有对手，返回箭头会被推到中间
+    expect(head, '非选择态分支没有占位块').toContain('aria-hidden')
+    expect(head, '页头没用 justify-between').toContain('justify-between')
+  })
+
+  it('BK2 进选择态只剩「点行」这一个入口（读屏可达）', () => {
+    const src = code(ARCHIVE_VIEW)
+    expect(src, '行不再能进入选择态').toContain('onClick={() => toggleFromRow(item.id)}')
+    // 没有鼠标/手势的人也要能到：行是 button 且带 aria-pressed
+    expect(src, '行不是 button').toContain('aria-pressed={selected.has(item.id)}')
+    expect(src, '「退出多选」还在（选择态得能出来）').toContain('>退出多选</button>')
   })
 })
