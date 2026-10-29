@@ -440,6 +440,22 @@ export default function EntryView({ id }: { id: string }) {
 
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
+  // ——「从哪来」（2026-10-29 归档页）——
+  // 决定两件事：页眉返回箭头指向哪、删除之后跳回哪。
+  // 不带这个判断的话，从 /settings/archive 点开一篇，返回会一律回 /diary ——
+  // 用户进归档想看一眼，一出来就被扔到主列表，归档页得重新进一遍。
+  //
+  // ★ 刻意不用 useSearchParams：它会让本页在构建时要求 Suspense 边界
+  //   （本项目全仓没有 Suspense，为读一个参数引入一层包裹不划算）。
+  // ★ 也刻意不在 effect 里 setState（react-hooks/set-state-in-effect 会拦）：
+  //   惰性初始化器只读一次 URL，`typeof window` 兜底是为了将来万一 (app)/layout
+  //   的 loading 分支改成渲染 children（当前 state='loading' 时不渲染，本组件不进 SSR 输出）。
+  const [backHref] = useState(() =>
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('from') === 'archive'
+      ? '/settings/archive'
+      : '/diary',
+  )
+
   // —— 收藏（星标）——
   // 只改元数据：PATCH 不带 ciphertext ⇒ 服务端不更新 updatedAt ⇒ 收藏一篇**不算编辑**，
   // 详情页不会因此多出一行「编辑于」（与定位改动同一条约定）。
@@ -524,7 +540,7 @@ export default function EntryView({ id }: { id: string }) {
         } catch { /* 离线：服务器那一条仍在，联网后仍在列表里可见 */ }
         await removeCachedEntry(id)
       }
-      router.replace('/diary')
+      router.replace(backHref)
       return
     }
     try {
@@ -535,7 +551,7 @@ export default function EntryView({ id }: { id: string }) {
         // （离线列表读缓存——此前缓存只增不减，正是「在线看不到、离线看得到」的根因）
         await removeCachedEntry(id)
         await removeQueuedEntry(id)
-        router.replace('/diary')
+        router.replace(backHref)
         return
       }
       setError('删除失败，请重试')
@@ -543,7 +559,7 @@ export default function EntryView({ id }: { id: string }) {
       setError('删除失败，请重试')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, pendingSync, serverBacked])
+  }, [id, pendingSync, serverBacked, backHref])
 
   if (error && !entry) {
     return (
@@ -618,7 +634,7 @@ export default function EntryView({ id }: { id: string }) {
       <header className="page-header relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中。
             字号：‹ 为半角字符视觉偏小（text-3xl），＋ 为全角字符视觉偏大（text-xl）——视觉平衡 */}
-        <Link href="/diary" aria-label="返回" scroll={false} className="-ml-1 px-1 text-3xl leading-none text-neutral-500 dark:text-neutral-400">
+        <Link href={backHref} aria-label="返回" scroll={false} className="-ml-1 px-1 text-3xl leading-none text-neutral-500 dark:text-neutral-400">
           ‹
         </Link>
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">日记</h1>
