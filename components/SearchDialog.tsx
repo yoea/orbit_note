@@ -28,6 +28,19 @@ import { dayKeyOf, monthGrid, monthTitle, shiftMonth } from '@/lib/client/date-j
 // 上限的意义是避免上千条时一次性建 DOM，而不是「只显示这么多」。
 const PAGE = 100
 
+// 搜索范围三档（2026-10-29 随「归档」一起加）。
+//
+// 默认「未归档」是刻意的：它 = 列表页 / 统计 / 去年今日的同一口径（归档条目退出日常浏览），
+// 所以老用户升级后行为一点没变；要找回归档的日记，才主动切到另两档。
+// ★ 这**不是第四个筛选**：筛选是「在同一个数据集里收窄」，范围是「换一个数据集」。
+//   所以它既不进 chip 行（那一行恒为 时间 → 地点 → 收藏，守卫 F1），也不参与「重置」。
+type SearchScope = 'active' | 'archived' | 'all'
+const SEARCH_SCOPES: { id: SearchScope; label: string }[] = [
+  { id: 'active', label: '未归档' },
+  { id: 'archived', label: '已归档' },
+  { id: 'all', label: '全部' },
+]
+
 // 命中片段的高亮渲染。用 <mark> 分段渲染，**不使用 dangerouslySetInnerHTML**（项目铁律）。
 function Highlighted({ text, query }: { text: string; query: string }) {
   const segments = highlightSegments(text, query)
@@ -246,38 +259,76 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
   const [location, setLocation] = useState<string | null>(null)
   // 当前展开的筛选项面板（时间 / 地点；收藏是即时开关、没有面板）。null = 都收起
   const [openPanel, setOpenPanel] = useState<FilterPanel | null>(null)
-  // null = 尚未加载（还没搜过）；加载完成后持有全部已解密条目
-  const [entries, setEntries] = useState<DecryptedEntry[] | null>(null)
+  // 当前范围（见 SEARCH_SCOPES 的注释）
+  const [scope, setScope] = useState<SearchScope>('active')
+  // 每个范围**各自一份**已解密结果：切回来不重新拉（一次全量解密几百条要几十到几百毫秒）。
+  // null = 这个范围还没加载过。**注意**：'only' 不能拿去 prune 缓存（见 lib/client/entries.ts）。
+  const [entriesByScope, setEntriesByScope] = useState<Record<SearchScope, DecryptedEntry[] | null>>({
+    active: null, archived: null, all: null,
+  })
+  // 当前范围的数据。facets / dayKeys / results 全从它派生 ⇒ 自动跟着范围走，
+  // 于是「地点清单」不会给出「选了却零结果」的档位（清单来自当前数据集本身）。
+  const entries = entriesByScope[scope]
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // 当前渲染到第几条（分批递增，避免上千条时一次性建 DOM）
   const [visibleCount, setVisibleCount] = useState(PAGE)
   const inputRef = useRef<HTMLInputElement>(null)
+  // 并发闸门用 ref 而不是 loading state：事件处理器里读到的 state 是**本次渲染的旧值**，
+  // 同一帧内连点两次就拦不住（切范围时连点很容易发生）。这同时修好了「重试」按钮——
+  // 它原来先 setEntries(null) 再 ensureLoaded()，而后者读到旧的 entries 仍然非 null ⇒ 直接 return，
+  // 也就是按了没反应。
+  const loadingRef = useRef(false)
 
   // 打开即聚焦，省一次点击
   useEffect(() => { inputRef.current?.focus() }, [])
 
-  // 按需加载：由输入/筛选的事件处理器触发，而不是 effect——
+  // 按需加载：由输入/筛选/切换范围的事件处理器触发，而不是 effect——
   // effect 里同步 setState 属于级联渲染（react-hooks/set-state-in-effect）。
-  function ensureLoaded() {
-    if (entries !== null || loading) return
+  //
+  // ★ `target` 必须显式传：切范围时 `scope` 这个 state 还是**旧值**（setState 异步），
+  //   用它去拉会拉错数据集，而且会把结果存进错的桶（表现为「切到已归档，内容却是未归档的」）。
+  // ★ `force` 只给「重试」用：正常路径一律「这个范围已经加载过就直接返回」。
+  function ensureLoaded(target: SearchScope = scope, force = false) {
+    if (!force && entriesByScope[target] !== null) return
+    if (loadingRef.current) return
+    loadingRef.current = true
     setLoading(true)
     setError(null)
     void (async () => {
       try {
         const dek = getDek()
         if (!dek) throw new Error('未解锁')
-        const decrypted = await decryptEntries(dek, await fetchAllEntries())
+        // 三档到服务端参数的映射（**三档各不相同，别写成 `target === 'active' ? 'exclude' : target`**：
+        // UI 叫 'archived'，接口叫 'only'，名字不一样）。
+        // 'exclude' 就是服务端默认值，与列表页、统计同一口径。
+        const archived = target === 'active' ? 'exclude' : target === 'archived' ? 'only' : 'all'
+        const decrypted = await decryptEntries(dek, await fetchAllEntries({ archived }))
         // 搜索只吃**纯文本派生**：直接拿 Markdown 源码匹配，用户搜「粗体」会命中所有 `**加粗**`，
         // 摘要里也会露出 # 与星号。这里一次性派生好并保持 DecryptedEntry 的形状，
         // 于是 lib/client/search.ts 的纯文本契约完全不用动（它的 28 个单测也不用改）。
-        setEntries(decrypted.map((d) => ({ entry: d.entry, plain: toPlainText(d.plain) })))
+        // 结果存进 **target 那个桶**，不是「当前 scope」——请求在路上时用户可能已经切走了。
+        setEntriesByScope((prev) => ({
+          ...prev,
+          [target]: decrypted.map((d) => ({ entry: d.entry, plain: toPlainText(d.plain) })),
+        }))
       } catch {
         setError('搜索失败，请重试')
       } finally {
+        loadingRef.current = false
         setLoading(false)
       }
     })()
+  }
+
+  // 切换搜索范围。**必须自己触发加载**——与「开面板必须 ensureLoaded」是同一类教训：
+  // 只 setScope 不拉数据，新范围永远是 null ⇒ 用户看到的一片空白，
+  // 而纯逻辑（matches 过滤）完全正确，属于最难归因的那种 bug。
+  function pickScope(next: SearchScope) {
+    if (next === scope) return
+    setScope(next)
+    setVisibleCount(PAGE)
+    ensureLoaded(next)
   }
 
   // 筛选条件变化后：把已显示条数收回初始值（否则换关键词后仍停在上次展开的深度），
@@ -343,7 +394,10 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
   }
 
   const filters = { query, range, noLocation, onlyStarred, location }
-  const active = !isDefaultFilters(filters)
+  // 范围非默认也算 active：切到「已归档」却没输关键词时，应该直接列出归档的那些。
+  // 否则会落在「输入关键词，或选择上面的筛选条件」那句引导上 ——
+  // 用户刚点了「已归档」却被告知去输入点什么，等于否认了他刚才那一下。
+  const active = !isDefaultFilters(filters) || scope !== 'active'
   // 是否有任何**筛选**（不含关键词）非默认——决定「重置」按钮出不出来
   const filtersActive = range !== 'all' || onlyStarred || noLocation || location !== null
 
@@ -404,6 +458,27 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
             )}
           </div>
           <button onClick={onClose} className="shrink-0 text-sm text-neutral-500 dark:text-neutral-400 active:opacity-60">取消</button>
+        </div>
+        {/* 搜索范围：**换数据集**，不是筛选（见 SEARCH_SCOPES 的注释）。
+            刻意与 chip 行分开：chip 是「在同一批日记里收窄」，这一行是「换一批日记」，
+            两者混排会让人以为它们是同一层级的四个筛选项。
+            选中态用「浅底 + 深字」而不是品牌渐变 —— 品牌渐变已经被 chip 选中占用，
+            同一屏出现两种"选中"会分不清哪一层是筛选。 */}
+        <div className="flex items-center gap-1 pb-2.5" role="group" aria-label="搜索范围">
+          {SEARCH_SCOPES.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => pickScope(s.id)}
+              aria-pressed={scope === s.id}
+              className={`rounded-full px-2.5 py-1 text-xs transition-colors ${
+                scope === s.id
+                  ? 'bg-neutral-200 font-medium text-neutral-800 dark:bg-neutral-700 dark:text-neutral-100'
+                  : 'text-neutral-500 active:opacity-60 dark:text-neutral-400'
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
         </div>
         {/* 筛选归为**三类**（时间 / 收藏 / 地点），与关键词同样是「与」的关系；
             全部是明文元数据，每一项都只**收窄**结果集 ⇒ 任意组合恒为交集（见 lib/client/search.ts）。
@@ -491,7 +566,12 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
           <div className="pt-16 text-center">
             <p className="text-sm text-red-500">{error}</p>
             <button
-              onClick={() => { setEntries(null); ensureLoaded() }}
+              onClick={() => {
+                // force：清掉这个范围的失败态并重新拉。不清的话 ensureLoaded 会认为
+                // 「已经加载过」而直接返回（旧数据可能压根不存在，因为上次就是失败的）。
+                setEntriesByScope((prev) => ({ ...prev, [scope]: null }))
+                ensureLoaded(scope, true)
+              }}
               className="mt-4 rounded-xl bg-neutral-100 px-6 py-2.5 text-sm font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
             >
               重试
@@ -502,7 +582,9 @@ export default function SearchDialog({ onClose }: { onClose: () => void }) {
         {active && !loading && !error && entries !== null && (
           results.length === 0 ? (
             <p className="pt-16 text-center text-sm text-neutral-500 dark:text-neutral-400">
-              {trimmedQuery ? <>没有找到包含「{trimmedQuery}」的日记</> : '没有符合条件的日记'}
+              {trimmedQuery
+                ? <>没有找到包含「{trimmedQuery}」的日记</>
+                : scope === 'archived' ? '还没有已归档的日记' : '没有符合条件的日记'}
             </p>
           ) : (
             <>
