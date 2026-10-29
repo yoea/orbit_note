@@ -13,7 +13,7 @@
 | 加密 | AES-256-GCM 客户端加密，每篇独立 IV，服务器仅存密文 |
 | 登录 | WebAuthn 通行密钥 + PRF 扩展派生密钥，无密码；支持指纹 / Face ID / Windows Hello |
 | 兜底 | 256-bit 恢复密钥，仅显示一次，通行密钥全丢时找回数据 |
-| 多设备 | 同一账号可注册多把通行密钥（认证器里显示为「<用户名>的Orbit」），逐设备管理（禁用 / 启用 / 彻底删除） |
+| 多设备 | 同一账号可注册多把通行密钥（认证器里显示为「<用户名>的Orbit」），逐设备管理（**点名称就地改名** / 禁用 / 启用 / 彻底删除） |
 | 草稿 | IndexedDB 本地优先 + 服务器同步 + 冲突处理，关页面不丢输入；**切 tab 再切回正文原样保留**（同会话内用模块级快照，不弹恢复横幅） |
 | 写作 | Markdown 工具条 + 预览切换（写页与详情页编辑态共用同一套）；工具条常驻编辑区顶部。**键盘适配：页头 / 工具条 / 底部按钮固定，正文是唯一滚动容器**（光标在可滚动元素内 ⇒ iOS 不平移可视视口；2026-10-06 第二版，第一版「压整页」会露出大片空白，已废弃）；段间距 = 1.15× 行距（`mb-1` / 4px，空行与单次回车同值） |
 | 记录 | 可选保存坐标（自动反查**结构化地名：省 / 市 / 区**）、保存时自动记录实时天气 |
@@ -100,7 +100,7 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
 
 | 表 | 作用 | 关键点 |
 |---|---|---|
-| `credentials` | 通行密钥凭证 | `credential_id` 唯一、`counter` 防重放、`disabled` 软禁用、`device` 标识设备 |
+| `credentials` | 通行密钥凭证 | `credential_id` 唯一、`counter` 防重放、`disabled` 软禁用、`device` 标识设备（**也是用户可改的显示名**） |
 
 > 「这把钥匙能不能解开日记」不看 `credentials`，而看 `key_wrappers` 里有没有对应的 `passkey_prf` 行
 > （列表接口的 `ready`）。注册是「登记凭据 → 认证一次拿 PRF → 存 wrapper」三段，中途放弃会留下
@@ -154,7 +154,8 @@ tests/                  Vitest 测试（crypto / draft-sync / ratelimit / valida
   （默认只统计未归档；`includeArchived=1` 由偏好「归档计入统计」控制）
 - `GET|PUT|DELETE /api/draft`
 - `GET|POST /api/keys/wrappers`、`PUT /api/keys/wrappers/recovery`
-- `GET|POST /api/keys/passkeys`、`DELETE /api/keys/passkeys/[id]`、`POST /api/keys/passkeys/[id]/enable`
+- `GET|POST /api/keys/passkeys`、`PATCH|DELETE /api/keys/passkeys/[id]`（PATCH = 改名，只 set `device`）、
+  `POST /api/keys/passkeys/[id]/enable`、`POST /api/keys/passkeys/[id]/purge`
 - `GET|PUT /api/prefs`、`POST /api/prompts/record`、`GET /api/weather`
 - `POST /api/admin/wipe`（额外限流）
 

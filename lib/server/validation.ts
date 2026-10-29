@@ -168,3 +168,24 @@ export const wrapperSchema = z
       ctx.addIssue({ code: 'custom', message: 'recovery wrapper 不能包含 credentialId' })
     }
   })
+
+// 通行密钥改名（2026-10-29 用户要求：点设备名即改，回车或勾提交、点空白处放弃）。
+//
+// `device` 这一列原本只放「注册时客户端上报的设备标识」（明文元数据，不进加密范围），
+// 现在它同时是**用户可编辑的显示名** —— 列本身不动，无需迁移。
+//
+// ★ 只收 1~64 字符的非空白串，空串一律 400 —— 清空没有稳定语义：
+//   登录接口在 `stored.device == null` 时会用设备指纹自动补标
+//   （见 app/api/auth/login/route.ts）⇒ 清成 NULL 后这台设备下次登录又会变回「Windows Edge」。
+//   所以前端把纯空白的输入当作「取消」，根本不发请求。
+// ★ 控制/格式字符（Cc/Cf）必须挡掉：它会让列表里出现看不见的换行与零宽字符，
+//   与注册选项里对 userName 的净化同一条规则。
+export const passkeyRenameSchema = z.object({
+  device: z
+    .string()
+    .max(200) // 先挡超长 payload（DoS），再 trim 后按显示长度限 64
+    .trim()
+    .min(1)
+    .max(64)
+    .refine((v) => !/[\p{Cc}\p{Cf}]/u.test(v), 'device 含控制字符'),
+})

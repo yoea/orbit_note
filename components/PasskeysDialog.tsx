@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { useUserName } from '@/lib/client/use-user-name'
 import AddPasskeyPanel from './AddPasskeyPanel'
 import ConfirmDialog from './ConfirmDialog'
@@ -51,6 +52,76 @@ export default function PasskeysDialog({ initialData, onClose }: {
   const [busy, setBusy] = useState(false)
   // 待确认**删除**（硬删除）的那一条
   const [removing, setRemoving] = useState<PasskeyInfo | null>(null)
+  // 就地改名（2026-10-29）：正在编辑的那一条 id + 输入框草稿。
+  // ★ 草稿是**字符串**而不是 `PasskeyInfo | null` —— 需要区分「正在编辑」与「内容是什么」，
+  //   且 device 为 null（未命名的老钥匙）时草稿必须是空串，不能拿「未知设备」当初始值
+  //   （那样一提交就把占位文字写成真名了）。
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
+  const nameInputRef = useRef<HTMLInputElement | null>(null)
+
+  // 进入编辑后把光标放进输入框并**全选**：改名绝大多数是整体替换（「Windows Edge」→「家里电脑」），
+  // 全选后直接打字即可；想局部修改就再点一下取消选中。
+  // ★ 用 effect 而不是 autoFocus：autoFocus 在列表里重渲染时可能被重复触发；
+  //   这里只在 editingId 变化时聚焦一次（effect 内只操作 DOM，不 setState，故不违反 purity/refs 规则）。
+  useEffect(() => {
+    if (editingId == null) return
+    const el = nameInputRef.current
+    if (!el) return
+    el.focus()
+    el.select()
+  }, [editingId])
+
+  function startRename(pk: PasskeyInfo) {
+    if (busy) return
+    setDraft(pk.device ?? '')
+    setEditingId(pk.id)
+  }
+
+  /** 放弃：不写库、不提示，直接退回展示态（点空白处 / Esc 都走这里） */
+  function cancelRename() {
+    setEditingId(null)
+    setDraft('')
+  }
+
+  // 提交（回车或右侧的勾）。★ trim 后为空 ⇒ 按**放弃**处理，不发请求：
+  // 清成 NULL 没有稳定语义 —— 登录接口在 `stored.device == null` 时会用设备指纹自动补标，
+  // 清了之后这台设备下次登录又会变回「Windows Edge」。与旧名相同也不必发请求。
+  async function commitRename(pk: PasskeyInfo) {
+    const next = draft.trim()
+    if (!next || next === (pk.device ?? '')) {
+      cancelRename()
+      return
+    }
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/keys/passkeys/${pk.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ device: next }),
+      })
+      if (!res.ok) throw new Error('改名失败')
+      // 回写本地列表：这一页不再重新拉一遍（改名只动一行，重拉会让滚动位置跳掉）
+      setPasskeys((prev) => prev.map((p) => (p.id === pk.id ? { ...p, device: next } : p)))
+      setError(null)
+      cancelRename()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '改名失败，请重试')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** 键盘：回车提交、Esc 放弃（与点空白同义） */
+  function onNameKeyDown(e: KeyboardEvent<HTMLInputElement>, pk: PasskeyInfo) {
+    if (e.key === 'Enter') {
+      e.preventDefault() // 表单里回车会触发隐式提交，这里没有 form，但保持语义
+      void commitRename(pk)
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      cancelRename()
+    }
+  }
 
   // 拉取列表：初始预取失败后的重试、以及添加新凭据成功后刷新，共用这一条
   async function load() {
@@ -158,7 +229,7 @@ export default function PasskeysDialog({ initialData, onClose }: {
             {/* 添加新 Passkey：弱化为右上角加号，切到本弹窗的添加视图（不动路由——
                 原先跳 /settings/passkey 整页，返回时落回设置页而不是这个弹窗） */}
             <button
-              onClick={() => setView('add')}
+              onClick={() => { cancelRename(); setView('add') }}
               aria-label="注册新的通行密钥"
               className="shrink-0 text-2xl font-light leading-6 text-neutral-500 dark:text-neutral-400 active:opacity-60"
             >
@@ -181,7 +252,33 @@ export default function PasskeysDialog({ initialData, onClose }: {
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-1.5 text-sm font-medium text-neutral-800 dark:text-neutral-200">
-                      <span className={pk.disabled ? 'text-neutral-500 dark:text-neutral-400' : undefined}>{pk.device ?? '未知设备'}</span>
+                      {/* 名称：展示态是**可点的按钮**（点一下就地变输入框），编辑态是输入框。
+                          `truncate` + `min-w-0` 让超长名字在一行内截断，不去挤右边的徽标；
+                          `-mx-1 px-1` 让可点区比文字略大一圈，而文字起点与原来完全一致。 */}
+                      {editingId === pk.id ? (
+                        <input
+                          ref={nameInputRef}
+                          value={draft}
+                          onChange={(e) => setDraft(e.target.value)}
+                          onKeyDown={(e) => onNameKeyDown(e, pk)}
+                          onBlur={cancelRename}
+                          maxLength={64}
+                          placeholder="未知设备"
+                          aria-label="设备名称"
+                          className="min-w-0 flex-1 rounded-md border border-neutral-300 bg-transparent px-1 py-0.5 text-sm font-medium text-neutral-900 outline-none dark:border-neutral-600 dark:text-neutral-100"
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => startRename(pk)}
+                          disabled={busy}
+                          title="点击修改名称"
+                          aria-label={`修改名称：${pk.device ?? '未知设备'}`}
+                          className={`-mx-1 min-w-0 max-w-full truncate rounded-md px-1 text-left active:opacity-60 ${pk.disabled ? 'text-neutral-500 dark:text-neutral-400' : ''}`}
+                        >
+                          {pk.device ?? '未知设备'}
+                        </button>
+                      )}
                       {/* 当前会话登录用的那把 key（登录后自动标注） */}
                       {pk.isCurrent && !pk.disabled && (
                         <span className="rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">当前</span>
@@ -195,43 +292,64 @@ export default function PasskeysDialog({ initialData, onClose }: {
                       )}
                     </p>
                   </div>
-                  {!pk.ready ? (
-                    /* 未完成：只能删除（它既没有「启用」的意义，也不该让人以为可以救活） */
+                  {editingId === pk.id ? (
+                    /* 改名中：右侧只留**一个提交勾**。此刻摆禁用/删除会让人分心，
+                       而且它们的落点就在手指刚点过的那一片（误触代价太高）。
+                       ★ onMouseDown 里 preventDefault 是**关键**：mousedown 的默认行为会把焦点
+                         从输入框移走 ⇒ blur 先触发 ⇒ cancelRename 已把 editingId 清空 ⇒
+                         click 再也落不到这个按钮上（表现就是「勾点不动」）。挡掉默认行为就不失焦。 */
                     <button
-                      onClick={() => setRemoving(pk)}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => void commitRename(pk)}
                       disabled={busy}
-                      className="shrink-0 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
+                      aria-label="保存名称"
+                      title="保存（回车同样有效）"
+                      className="shrink-0 rounded-lg bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
                     >
-                      删除
+                      ✓
                     </button>
-                  ) : pk.disabled ? (
-                    /* 已禁用：**直接并排两个按钮**（启用 / 删除）。
-                       2026-10-10 用户要求去掉「启用 ▾」折叠那一级 —— 一步可达，不用先展开。 */
-                    <div className="flex shrink-0 gap-1.5">
-                      <button
-                        onClick={() => void enable(pk)}
-                        disabled={busy}
-                        className="rounded-lg bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
-                      >
-                        启用
-                      </button>
+                  ) : (
+                    <>
+                    {!pk.ready ? (
+                      /* 未完成：只能删除（它既没有「启用」的意义，也不该让人以为可以救活） */
                       <button
                         onClick={() => setRemoving(pk)}
                         disabled={busy}
-                        className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
+                        className="shrink-0 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
                       >
                         删除
                       </button>
-                    </div>
-                  ) : (
-                    /* 可用：禁用（红色填充小按钮，破坏性语义，样式与主题按钮统一） */
-                    <button
-                      onClick={() => setConfirming(pk)}
-                      disabled={busy}
-                      className="shrink-0 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
-                    >
-                      禁用
-                    </button>
+                    ) : pk.disabled ? (
+                      /* 已禁用：**直接并排两个按钮**（启用 / 删除）。
+                         2026-10-10 用户要求去掉「启用 ▾」折叠那一级 —— 一步可达，不用先展开。 */
+                      <div className="flex shrink-0 gap-1.5">
+                        <button
+                          onClick={() => void enable(pk)}
+                          disabled={busy}
+                          className="rounded-lg bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
+                        >
+                          启用
+                        </button>
+                        <button
+                          onClick={() => setRemoving(pk)}
+                          disabled={busy}
+                          className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    ) : (
+                      /* 可用：禁用（红色填充小按钮，破坏性语义，样式与主题按钮统一） */
+                      <button
+                        onClick={() => setConfirming(pk)}
+                        disabled={busy}
+                        className="shrink-0 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white active:opacity-70 disabled:opacity-40"
+                      >
+                        禁用
+                      </button>
+                    )}
+                    </>
                   )}
                 </div>
                 {/* 信息行：**独占一整行**（排在按钮行之后），因此永远不会被按钮挤断。
@@ -251,6 +369,13 @@ export default function PasskeysDialog({ initialData, onClose }: {
               ? '「未完成」的通行密钥在注册最后一步没走完，无法解锁日记 —— 请删除后重新添加'
               : '禁用后该设备无法登录，可随时重新启用或彻底删除'}
           </p>
+          {/* 改名入口的提示：这是一个**没有任何图标**的入口（点文字即编辑），不写出来没人
+              知道那两个字可以按。触屏没有 hover，`title` 看不到 ⇒ 必须有一行可见文字。 */}
+          {!loadFailed && passkeys.length > 0 && (
+            <p className="mt-1.5 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">
+              点击设备名称即可修改（例如改成「家里电脑」）；按 Esc 或点空白处放弃修改
+            </p>
+          )}
           </>
           )}
         </div>

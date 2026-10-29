@@ -48,6 +48,8 @@ const ADD_PANEL = 'components/AddPasskeyPanel.tsx'
 const DIALOG = 'components/PasskeysDialog.tsx'
 const LIST_ROUTE = 'app/api/keys/passkeys/route.ts'
 const PURGE_ROUTE = 'app/api/keys/passkeys/[id]/purge/route.ts'
+const RENAME_ROUTE = 'app/api/keys/passkeys/[id]/route.ts'
+const VALIDATION = 'lib/server/validation.ts'
 const SESSION = 'lib/client/session.ts'
 const LOGIN_PAGE = 'app/login/page.tsx'
 const UNLOCK_HOOK = 'lib/client/use-require-unlock.ts'
@@ -254,5 +256,117 @@ describe('已禁用钥匙的两个按钮与信息行', () => {
     expect(src, '没有计算「还能真正解锁日记的钥匙数」（未完成/已禁用的都不该算）').toContain(
       'passkeys.filter((p) => p.ready && !p.disabled)',
     )
+  })
+})
+
+// ============================================================================
+// 五、就地改名（2026-10-29 用户要求：点设备名即变输入框，回车或勾提交、点空白处放弃）
+//
+// 三条交互契约各自钉死，缺一条这个入口就废掉一半：
+//   ① 点名称进编辑（展示态必须是**按钮**，静态 span 点不动）；
+//   ② 回车 / 右侧勾 = 提交，Esc / 失焦 = 放弃；
+//   ③ ★ 勾按钮必须挡掉 mousedown 的默认行为 —— 否则「勾点不动」（见 N19 注释里的机理）。
+// ============================================================================
+describe('通行密钥就地改名', () => {
+  it('N16 PATCH 接口：鉴权 + 同源 + 限流 + 只 set device', () => {
+    const route = code(RENAME_ROUTE)
+    expect(route, '没有 PATCH 方法').toContain('export async function PATCH(')
+    // PATCH 是本文件最后一个函数 ⇒ 从它切到文件尾即可（写死右界会被换行符变化搞空转）
+    const patch = route.slice(pos(route, 'export async function PATCH('))
+    expect(patch, '缺少鉴权').toContain('requireAuth(req)')
+    expect(patch, '缺少同源校验').toContain('assertSameOrigin(req)')
+    expect(patch, '没有限流').toContain("rateLimit('passkey:rename'")
+    // id 非 uuid 时 PG 对 uuid 列比较会报 22P02 ⇒ 必须先判形状再查库（与 purge 同一条坑）
+    expect(patch, '没有判 id 形状').toContain('if (!parseId(id))')
+    expect(patch, '入参没有走 schema').toContain('passkeyRenameSchema.safeParse')
+    // ★ 只写 device：改名既不是登录（不该刷 lastUsedAt），也不是编辑日记
+    expect(patch).toContain('.set({ device: parsed.data.device })')
+    expect(patch, '★ 不该碰 lastUsedAt（改名不是登录）').not.toContain('lastUsedAt')
+    expect(patch, '找不到时没有 404 兜底').toContain("NextResponse.json({ error: 'not_found' }, { status: 404 })")
+  })
+
+  it('N17 改名 schema：trim 在长度校验之前，且挡掉控制字符', () => {
+    const v = code(VALIDATION)
+    const sch = v.slice(pos(v, 'export const passkeyRenameSchema'))
+    expect(sch, '没有 trim —— 前后空格会原样写进库').toContain('.trim()')
+    expect(sch, '没有下限（空串不该被接受）').toContain('.min(1)')
+    expect(sch, '没有上限').toContain('.max(64)')
+    // ★ 必须写成字面量转义：`/\p{Cc}/u` 里的 \p{…} 是**匹配模式**（匹配一个控制字符），
+    //   不是字面文本 ⇒ 要断言源码里写了这个净化规则，反斜杠得自己转义
+    expect(sch, '没有挡控制/格式字符（会让列表里出现看不见的换行与零宽字符）').toMatch(
+      /\\p\{Cc\}\\p\{Cf\}/u,
+    )
+    // ★ 顺序：先 trim 再判长度 —— 反过来的话 '   ' 能通过 min(1) 然后被 trim 成空串写进库
+    expect(pos(sch, '.trim()'), '.trim() 必须在 .min(1) 之前').toBeLessThan(pos(sch, '.min(1)'))
+  })
+
+  it('N18 点名称进入编辑：展示态是按钮，编辑态是受控输入框', () => {
+    const src = code(DIALOG)
+    const nameBlock = between(src, '{editingId === pk.id ? (', '{pk.isCurrent && !pk.disabled && (')
+    expect(nameBlock, '编辑态没有输入框').toContain('<input')
+    expect(nameBlock, '输入框不是受控的').toContain('value={draft}')
+    expect(nameBlock, '没有同步服务端的 64 上限').toContain('maxLength={64}')
+    // 展示态必须是**可点的**：静态文字没有任何「可以改」的暗示，也没有点击目标。
+    // ★ 窗口取法而不是 between：跨行锚点在 CRLF 文件里对不上（\n 匹配不到 \r\n）
+    const labelAt = pos(src, "aria-label={`修改名称：${pk.device ?? '未知设备'}`}")
+    const viewBlock = src.slice(labelAt - 300, labelAt + 60)
+    expect(viewBlock, '展示态名称不是按钮（点它是唯一的改名入口）').toContain('onClick={() => startRename(pk)}')
+    // ★ 未命名的老钥匙（device=null）草稿必须是空串 —— 拿「未知设备」当初始值会把占位文字写成真名
+    expect(src).toContain("setDraft(pk.device ?? '')")
+    expect(src, '占位文字不该出现在 value 里').not.toContain("setDraft(pk.device ?? '未知设备')")
+  })
+
+  it('N19 键盘与失焦：回车提交、Esc 放弃、点空白处（失焦）放弃', () => {
+    const src = code(DIALOG)
+    const kb = src.slice(pos(src, 'function onNameKeyDown'))
+    const kbBody = kb.slice(0, kb.indexOf('\n  }'))
+    expect(kbBody, '回车没有提交').toContain("e.key === 'Enter'")
+    expect(kbBody, '回车没有调用提交函数').toContain('void commitRename(pk)')
+    expect(kbBody, 'Esc 没有放弃').toContain("e.key === 'Escape'")
+    expect(kbBody, 'Esc 没有调用放弃函数').toContain('cancelRename()')
+    expect(src, '输入框没有挂键盘处理').toContain('onKeyDown={(e) => onNameKeyDown(e, pk)}')
+    // 用户原话：「点击空白处则不修改」
+    expect(src, '失焦没有放弃修改（点空白处会静默提交）').toContain('onBlur={cancelRename}')
+  })
+
+  it('N20 ★ 勾按钮必须挡掉 mousedown 默认行为，否则「勾点不动」', () => {
+    const src = code(DIALOG)
+    const tickAt = pos(src, 'aria-label="保存名称"')
+    // 窗口要够宽：勾的 ✓ 在 aria-label 之后还隔着一整个 className（约 170 字符）
+    const tick = src.slice(tickAt - 600, tickAt + 400)
+    expect(tick, '没有勾按钮').toContain('✓')
+    // mousedown 的默认行为是把焦点从输入框移走 ⇒ blur 先触发 ⇒ cancelRename 已清空 editingId
+    // ⇒ 随后的 click 再也落不到按钮上。挡掉默认行为就不失焦，click 才有机会执行。
+    expect(tick, '★ 勾按钮没有挡掉 mousedown 的默认行为（blur 先触发 ⇒ 勾点不动）').toContain(
+      'onMouseDown={(e) => e.preventDefault()}',
+    )
+    expect(tick, '勾按钮没有提交').toContain('onClick={() => void commitRename(pk)}')
+    expect(tick, '编辑态右侧不该同时摆禁用/删除（落点就在手指刚点过的地方，误触代价太高）').not.toContain(
+      'setConfirming',
+    )
+    expect(tick, '编辑态右侧不该出现删除').not.toContain('setRemoving')
+  })
+
+  it('N21 提交：空白或与旧名相同都不发请求，成功后只回写本地一行', () => {
+    const src = code(DIALOG)
+    const commit = src.slice(pos(src, 'async function commitRename'))
+    const body = commit.slice(0, commit.indexOf('\n  }'))
+    expect(body, '没有 trim').toContain('const next = draft.trim()')
+    // ★ 空白不发请求：清成 NULL 没有稳定语义 —— 登录接口在 device 为 NULL 时会用设备指纹
+    //   自动补标，清了之后这台设备下次登录又会变回「Windows Edge」
+    expect(body).toMatch(/if \(!next \|\| next === \(pk\.device \?\? ''\)\)/)
+    expect(body, '空白/未改动时没有直接退出（不该发请求）').toContain('cancelRename()')
+    expect(body, '没有走 PATCH').toContain("method: 'PATCH'")
+    // 不重拉整个列表：只改一行动一个字段，重拉会让滚动位置跳掉
+    expect(body, '没有回写本地列表').toContain('prev.map((p) => (p.id === pk.id ? { ...p, device: next } : p))')
+  })
+
+  it('N22 可发现性：一行可见提示（触屏没有 hover，title 提示看不到）', () => {
+    const src = code(DIALOG)
+    expect(src, '没有可见的改名提示 —— 没有任何图标的入口，不写出来没人知道可以点').toContain(
+      '点击设备名称即可修改',
+    )
+    // 反面：不用 prompt —— iOS 上它会盖住整个弹窗，且无法与列表样式统一
+    expect(src, '不该用 window.prompt 改名').not.toContain('window.prompt')
   })
 })
