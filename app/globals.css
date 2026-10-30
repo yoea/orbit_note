@@ -148,21 +148,6 @@ body {
   height: 100dvh;
 }
 
-/* ── 键盘弹起：锁住文档（配合正文区限高，页面不滚、只有 textarea 文字滚）────────
-   目标（用户原话）：「打开键盘后，整个页面不要滚动，只有输入区域的文字能滚动。」
-   · html 不可滚 —— 堵住键盘滚动文档的第一落点；
-   · body fixed —— 脱离文档流、文档高度归零，iOS 没有 window.scrollY 可滚。
-   高度一寸不改（body 仍是 100dvh），正文区的高度由 JS 用 maxHeight 压到键盘上方。 */
-html[data-qo-keyboard] {
-  overflow: hidden;
-}
-html[data-qo-keyboard] body.app-height {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-}
-
 /* 页面标题栏高度（单一来源，勿在组件里各写一遍）。
    为什么需要它：页头是 flex + items-center，而 <h1> 用绝对定位做水平居中。
    按 CSS Flexbox 规范，绝对定位子元素的静态位置按「它是唯一的 flex item」计算，

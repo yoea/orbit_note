@@ -9,7 +9,7 @@ import Markdown from './Markdown'
 import MarkdownToolbar from './MarkdownToolbar'
 import { countWords, deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
 import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
-import { useKeyboardEditorHeight } from '@/lib/client/use-viewport-height'
+import { useVisibleViewportHeight } from '@/lib/client/use-viewport-height'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
@@ -58,8 +58,8 @@ export default function DiaryEditor() {
   const isPromptVisible = isPromptEnabled()
   const textRef = useRef(editorSnapshot)
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // 键盘弹起时：正文区限高到键盘上方 + 锁文档（页面不滚、只有正文文字滚）
-  const { bodyRef, maxHeight } = useKeyboardEditorHeight()
+  // 键盘弹起时的可视高度：内容列缩到它以内，页头/工具条/保存按钮原地不动，只有 textarea 文字滚
+  const visibleHeight = useVisibleViewportHeight()
   const pendingDraftRef = useRef<{ ciphertext: string; iv: string } | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 草稿写回 epoch：save/discard 成功时递增，作废进行中的冲刷（防止"放弃/保存后草稿复活"的竞态）
@@ -425,18 +425,17 @@ export default function DiaryEditor() {
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
 
   return (
-    // ── 布局（2026-10-06 第二次改，用户反馈「键盘弹出后往下滑，保存按钮下方出现大片空白」）──
-    //
-    // 改造前/后：
-    //   旧：根容器 `overflow-hidden` + 键盘时 `flex: 0 0 <可见高>`，**整页**（含页头、工具条、
-    //       底部按钮）一起被压进可见区。后果见下面 header 处的说明。
-    //   新：根容器**不滚动也不压高度**（就吃 flex-1 的剩余空间）；页头、工具条、底部按钮
-    //       全部固定；**只有正文编辑区滚动**。
-    //
-    // 为什么不再用 useVisibleViewportHeight 压高度：见 header 后的注释块。
-    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col px-5">
+    // ── 布局（2026-10-30 重写，正常逻辑）──────────────────────────────────
+    // 整页就是一个普通的 flex 列：页头 → 工具条 → 正文（flex-1 自己滚）→ 保存按钮（贴底）。
+    // 键盘弹起时：把这一列的高度压到「可视高度」（visibleHeight），整列恰好落在键盘上方，
+    //   footer 靠 mt-auto 贴到列底（键盘上沿），正文区变矮后文字在 textarea 内部滚动。
+    //   这样 iOS 没有理由去滚可视视口 ⇒ 页头/工具条/保存按钮原地不动，页面不整体滚动。
+    <div
+      style={visibleHeight != null ? { height: visibleHeight } : undefined}
+      className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5"
+    >
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
-      <header className="py-4">
+      <header className="shrink-0 py-4">
         {/* 页头不再放「全部日记」「设置」图标——这两个目的地已由底部 TabBar 承担，
             同一入口出现两处只会让页头变杂（也符合 iOS 习惯：顶部不放重复的 tab 入口） */}
         <OrbitLogo />
@@ -451,22 +450,6 @@ export default function DiaryEditor() {
           </span>
         </div>
       </header>
-      {/* ★ 键盘适配（2026-10-06，本轮改法）：
-          正文编辑区与底部按钮**不再**跟着键盘上移。这里曾经用 `useVisibleViewportHeight()`
-          把整页压到可见区高度，那正是「保存按钮下方一大片空白」的成因：
-            · iOS 的键盘不改变布局视口，只让 **visualViewport** 变小；
-            · 被压矮的那一列下面，**布局视口那一整段仍然存在**（可滚动、且被 `.qo-app-root`
-              的整页底色填充）；
-            · 用户在键盘弹起时往下滑 = 内层滚动/橡皮筋把**可视视口**在布局视口里往上滚 ⇒
-              底部露出「无人绘制的那段空白」，再往下才是布局在文档底部的 TabBar。
-          ⇒ 现在的做法是：**页头 / 工具条 / 底部按钮不滚不动，只有正文编辑区滚动**
-             （textarea 是自身可滚动的元素）。键盘弹起时，光标在可滚动的 textarea 内部被算成
-             「可见」，iOS 就不会再去滚可视视口 —— 这正是用户要的「整个页面不能整体下滑，
-             只有文字输入区域可以滚动」。所以本页**不再需要 visibleHeight**。
-          ⇒ 底部按钮「位置不变」也是明确要求（退路方案），现在直接就是固定不动的。
-          唯一的取舍：可见区变矮后，底部按钮会落进键盘**下面**（看不见）。与其把它举上去、
-          换来一片能滑出来的空白，不如让它老实待在底部 —— 需要保存时收起键盘即可，
-          而「键盘弹起时到底该不该让保存按钮可见」在下面的 footer 处另有说明。 */}
       {/* 去年的今天：往年同月日的随机一篇，点击查看详情；右侧 ✕ 隐藏（今天不再显示） */}
       {isOnThisDayEnabled() && !otdHidden && onThisDay && (
         <div className="mb-3 flex items-start gap-2 rounded-xl border border-neutral-100 bg-neutral-50/60 px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900/40">
@@ -549,11 +532,7 @@ export default function DiaryEditor() {
            `pt-4` 提供与工具条的 16px 间距；`pb-2` 与改造前预览区一致。
            min-h-0 + flex + flex-col 三者都必须有：flex 子项默认 min-height:auto，不加压不下去；
            而 `flex-1` 只在 flex 容器里才有意义（漏了 `flex` ⇒ 输入区塌成 2~3 行，守卫 K9）。 */}
-      <div
-        ref={bodyRef}
-        style={maxHeight != null ? { maxHeight } : undefined}
-        className="flex min-h-0 flex-1 flex-col pt-4 pb-2"
-      >
+      <div className="flex min-h-0 flex-1 flex-col pt-4 pb-2">
         {preview ? (
           <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto">
             {text.trim()
@@ -591,7 +570,7 @@ export default function DiaryEditor() {
           此处若再加 env(safe-area-inset-bottom) 会叠出一段空白。
           也不能用 safe-pb + pb-4 组合——.safe-pb 是 unlayered 自定义类，会覆盖 Tailwind 的 pb-4
           relative：给 ConfettiBurst 当定位上下文（它按 footer 顶边锚定，不再用 fixed + 像素偏移） */}
-      <footer className="relative shrink-0 pb-4 pt-2">
+      <footer className="relative mt-auto shrink-0 pb-4 pt-2">
         {showConfetti && <ConfettiBurst />}
         <p aria-live="polite" className="mb-3 text-center text-xs text-neutral-500 dark:text-neutral-400">
           {status === 'saving' && '正在保存…'}
