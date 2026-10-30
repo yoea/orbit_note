@@ -272,7 +272,16 @@ export default function DiaryEditor() {
         }
       } catch { /* 静默 */ }
     }
-    void refresh()
+    // ★ 延后到「首屏空闲」再拉统计/去年今日（2026-10-30）：PWA 冷启动时这一串
+    //   （2 个 fetch + 解密 + 多次 setState）会和用户「第一次点输入框」抢主线程，
+    //   表现为键盘迟到。统计不是首屏必需（页头有 invisible 占位，不跳动），
+    //   让出主线程给真正的交互更值。空闲回调不可用时退回 setTimeout。
+    const idle = (cb: () => void) => {
+      const ric = (window as Window & { requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void }).requestIdleCallback
+      if (ric) ric(cb, { timeout: 2000 })
+      else setTimeout(cb, 300)
+    }
+    idle(() => { void refresh() })
     // 拨动「归档计入统计」后连写天数 / 总篇数 / 去年今日都要按新口径重算，不能等下次进来
     function onScopeChange() { void refresh() }
     window.addEventListener(STATS_SCOPE_EVENT, onScopeChange)

@@ -56,6 +56,22 @@ export default function AutoTextarea({ value, onChange, placeholder, autoFocus, 
     try { el.setSelectionRange(el.value.length, el.value.length) } catch { /* 同上 */ }
   }, [autoFocus, textareaRef])
 
+  // ★ 触屏「抢早」弹键盘（2026-10-30，用户反馈「PWA 首次点 textarea 仍延迟」）：
+  //   PWA 冷启动时，原生 tap 流程要等 touchend 才 focus，而那一刻主线程可能还在跑首屏的
+  //   一堆初始化 ⇒ 键盘明显迟到。在 `touchstart`（手指刚按下、仍在用户手势内）就主动
+  //   focus，键盘能提前开始弹，不必等 tap 走完。
+  //   `preventScroll: true` 是为了不引发 iOS 的 scroll-into-view —— 页面本身不该动。
+  //   ★ 只在用户真按下时触发，与「挂载时不碰焦点」不冲突（那条是为了躲开无手势的假会话）。
+  useEffect(() => {
+    const el = textareaRef?.current ?? innerRef.current
+    if (!el || !isCoarsePointer()) return
+    const onTouchStart = () => {
+      try { el.focus({ preventScroll: true }) } catch { /* 忽略 */ }
+    }
+    el.addEventListener('touchstart', onTouchStart, { passive: true })
+    return () => el.removeEventListener('touchstart', onTouchStart)
+  }, [textareaRef])
+
   return (
     <textarea
       ref={textareaRef ?? innerRef}

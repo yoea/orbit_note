@@ -168,16 +168,23 @@ describe('K · 键盘弹起时页面完全不动', () => {
     expect(code(AUTO), 'AutoTextarea 丢了 overflow-y-auto').toContain('overflow-y-auto')
   })
 
-  it('K12 触屏挂载时彻底不碰焦点/选区（PWA 首次点键盘延迟的根因）', () => {
+  it('K12 PWA 首次点键盘不延迟：挂载不碰焦点 + 触屏 touchstart 抢早聚焦', () => {
     const src = readFileSync(join(projectRoot, AUTO), 'utf8')
-    // ★ 用 maxTouchPoints 判触屏：pointer: coarse 在 PWA(standalone) 里会误报 fine，
-    //   于是走桌面分支的裸 focus()，留下「已聚焦、无键盘」假会话 ⇒ 首次点键盘要等。
+    // ① 用 maxTouchPoints 判触屏：pointer: coarse 在 PWA(standalone) 里会误报 fine，
+    //    于是走桌面分支的裸 focus()，留下「已聚焦、无键盘」假会话 ⇒ 首次点键盘要等。
     expect(src, '触屏判定没用 maxTouchPoints（PWA 里 pointer:coarse 会误报）').toContain(
       'navigator.maxTouchPoints',
     )
-    // 触屏：直接 return，不 focus、不 setSelectionRange、不 scrollTo
-    expect(src, '触屏分支没有提前 return（仍会碰焦点/选区，假会话还在）').toMatch(
+    // ② 挂载时触屏直接 return：不 focus、不 setSelectionRange、不 scrollTo
+    expect(src, '触屏挂载分支没有提前 return（仍会碰焦点/选区，假会话还在）').toMatch(
       /if\s*\(isCoarsePointer\(\)\)\s*return/,
+    )
+    // ③ 用户手指按下就抢早 focus（不等原生 tap 走完）——PWA 冷启动首次弹键盘的关键
+    expect(src, '没有在 touchstart 上抢早聚焦（PWA 首次键盘会迟到）').toMatch(
+      /addEventListener\('touchstart'/,
+    )
+    expect(src, '抢早聚焦没有带 preventScroll（会触发 iOS 滚动整页）').toMatch(
+      /focus\(\{\s*preventScroll:\s*true\s*\}\)/,
     )
     expect(src, '又把 autoFocus 属性传给 textarea 了（React 会自己聚焦，分流失效）')
       .not.toMatch(/autoFocus=\{autoFocus\}/)
