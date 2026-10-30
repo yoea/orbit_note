@@ -13,11 +13,14 @@ import { EDITOR_TEXTAREA_CLASS } from '@/lib/client/ui'
 // 字号来自 EDITOR_TEXTAREA_CLASS（text-base，与查看页 qo-markdown 容器一致）：
 // 此前这里单独写着 text-lg（18px），写页的字比查看页大一号 ⇒ 同一段文字在两边换行
 // 位置不同，「所见即所得」断了。别在组件里另写字号，改常量（lib/client/ui.ts）。
-// 触屏设备判定（粗指针）：手机 / 平板。桌面浏览器是 fine。
-// ★ 用它决定「挂载时要不要程序化聚焦」——理由见下面 useEffect 里的长注释。
+// 触屏设备判定：用「是否支持触控」这个更可靠的信号，而不是 `pointer: coarse`。
+// ★ 为什么换掉（2026-10-30，用户反馈「PWA 首次点输入框键盘延迟」）：PWA(standalone) 里
+//   `matchMedia('(pointer: coarse)')` 可能误报 fine ⇒ 走了桌面分支的裸 `focus()`，
+//   在无用户手势时留下「已聚焦、无键盘」的假输入会话 ⇒ 首次点键盘要等系统先收掉它。
+//   `navigator.maxTouchPoints > 0` 不依赖 pointer 特性，真机触屏恒真、桌面恒假。
 function isCoarsePointer(): boolean {
-  if (typeof window === 'undefined' || !window.matchMedia) return false
-  return window.matchMedia('(pointer: coarse)').matches
+  if (typeof window === 'undefined') return false
+  return (navigator.maxTouchPoints ?? 0) > 0
 }
 
 export default function AutoTextarea({ value, onChange, placeholder, autoFocus, disabled, textareaRef }: {
@@ -38,8 +41,9 @@ export default function AutoTextarea({ value, onChange, placeholder, autoFocus, 
   //   假的会话收掉再重建，键盘因此晚 0.5~1 秒；第二次点时会话已经热了，立刻弹出。
   //   桌面端没有这层（键盘是硬件的，focus 即生效），所以不影响体验。
   //
-  //   触屏上仍然做「接着上次写」该做的两件事：光标放文末、滚到文末 —— 只是不抢焦点。
-  //   用户点哪里就落在哪里，比"系统替我决定光标位置"更贴合手机上写字的手感。
+  //   ★ 2026-10-30 补强（用户反馈「PWA 首次点键盘仍延迟」）：触屏上**彻底什么都不做** ——
+  //   不 focus、不 setSelectionRange、不 scrollTo。后两个同样会触发 iOS 的输入会话准备
+  //   （让系统以为要开始编辑），一样留下假会话。光标交给用户点哪落在哪，这也更贴合手机手感。
   //
   //   ⚠️ 刻意**不**把 autoFocus 传给 <textarea>：React 会在挂载时自己 focus() 一次，
   //   那等于绕过这里的判断，白改。聚焦只走这一个 effect。
@@ -47,16 +51,9 @@ export default function AutoTextarea({ value, onChange, placeholder, autoFocus, 
     if (!autoFocus) return
     const el = textareaRef?.current ?? innerRef.current
     if (!el) return
-    const end = el.value.length
-    if (isCoarsePointer()) {
-      try { el.setSelectionRange(end, end) } catch { /* 该环境不支持就算了 */ }
-      // 用 scrollTo 而不是 `el.scrollTop = …`：后者会被 react-hooks/immutability 判成
-      // 「改了 ref 里的对象」（它无法区分 DOM 节点与普通对象）。
-      el.scrollTo({ top: el.scrollHeight })
-      return
-    }
+    if (isCoarsePointer()) return // 触屏：什么都不做，等用户真点
     el.focus()
-    try { el.setSelectionRange(end, end) } catch { /* 同上 */ }
+    try { el.setSelectionRange(el.value.length, el.value.length) } catch { /* 同上 */ }
   }, [autoFocus, textareaRef])
 
   return (

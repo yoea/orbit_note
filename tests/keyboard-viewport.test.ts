@@ -1,24 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { classAttrsIn, classTokens, projectRoot } from './class-attrs'
 
 // ============================================================================
 // 键盘适配守卫
 //
-// ── 定稿（2026-10-30，用户选择「页面完全不动」）────────────────────────────
-// iOS 键盘弹起时可视区变矮、但 dvh 不变 ⇒ 文档比可视区高出一个键盘 ⇒ iOS 允许把整页
-// 拖走/推走（用户看到的「整个页面可滚动」）。这是系统行为，任何输入框都会触发。
+// ── 定稿（2026-10-30，用户原话）──────────────────────────────────────────
+// 「只希望 textarea 能动，让光标时刻保持在键盘之上，其他不动，底部 navbar 永远贴在屏幕底部。」
 //
-// 修法：**把文档层锁死**（html overflow:hidden + body fixed）⇒ document 滚动高度归零
-// ⇒ 键盘弹起时页面一寸不动，键盘直接盖在下半截。
-// 代价（用户明确接受）：输入时光标可能被键盘遮住（盲打）；保存按钮要收键盘才点得到。
-// 内部滚动照常：列表 / 正文 / 弹窗内容区各自 overflow-y-auto。
+// 三层配合，各管一件事：
+//   1. **限高正文区**（useKeyboardEditorHeight）：键盘弹起时只给正文区一个 maxHeight
+//      = 可视高度 − 正文区顶边 − 余量 ⇒ 光标始终露在键盘上方 ⇒ iOS 不会平移整页。
+//      ★ 顶边距离必须在「键盘未弹起」时量（弹起后页面可能被平移，量出来是错的）。
+//   2. **footer mt-auto + shrink-0**：正文变矮后 footer 仍贴列底 ⇒ 保存按钮位置不变。
+//   3. **锁文档层**（html overflow:hidden + body fixed）：兜底，让 document 没有可滚高度；
+//      TabBar 在 body 的 flex 列底部、body 高度不变 ⇒ navbar 永远贴在屏幕底部。
 //
 // ── 历史（全部真机否掉，别再回去）──────────────────────────────────────────
-// 压整列 / 只限正文区 / 压文档根（导航栏被顶上来）/ body fixed + scrollTo 补偿（闪）/
-// interactive-widget（PWA 变可滚）/ 只锁 body（仍可滚）/ 压内容列高度（布局会缩）。
-// 共同点：都在跟 iOS 的键盘行为讨价还价，结果不是布局变就是还能滚。
+// 压整列（页头/按钮跟着动）/ 压文档根（navbar 被顶上来）/ body fixed + scrollTo 补偿（闪）/
+// interactive-widget（PWA 变可滚）/ 只锁文档不限高（textarea 在键盘下 ⇒ iOS 仍推页面）。
 // ============================================================================
 
 const EDITOR = 'components/DiaryEditor.tsx'
@@ -26,8 +27,7 @@ const ENTRY = 'components/EntryView.tsx'
 const TOOLBAR = 'components/MarkdownToolbar.tsx'
 const AUTO = 'components/AutoTextarea.tsx'
 const GLOBALS = 'app/globals.css'
-// 2026-10-30 起删除：曾经按 visualViewport 压高度的 hook。不许再加回来。
-const OLD_HOOK = 'lib/client/use-viewport-height.ts'
+const HOOK = 'lib/client/use-viewport-height.ts'
 
 function code(rel: string): string {
   return readFileSync(join(projectRoot, rel), 'utf8')
@@ -60,25 +60,32 @@ describe('K · 键盘弹起时页面完全不动', () => {
     expect(rule, 'body 高度不再是 100dvh').toContain('100dvh')
   })
 
-  it('K3 两个编辑面不许再自己算/压高度（页面完全不动，任何压缩都会让布局变）', () => {
+  it('K3 两个编辑面：只给正文区限高（让光标始终在键盘上方），不许压整列', () => {
     for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
       const src = code(rel)
-      // 反向：不许再引用按可视高度压布局的写法
-      expect(src, `${name}又引回了压高度的 hook`).not.toContain('useVisibleViewportHeight')
-      expect(src, `${name}又出现了按可视高度设内联高度`).not.toMatch(/height:\s*visibleHeight/)
-      expect(src, `${name}又出现了 maxHeight 限高`).not.toMatch(/maxHeight/)
-      expect(src, `${name}又出现了 flex-basis 压高度写法`).not.toMatch(/flex:\s*`0 0 \$\{/)
+      expect(src, `${name}没有接入 useKeyboardEditorHeight`).toContain('useKeyboardEditorHeight()')
+      expect(src, `${name}正文区没有挂 bodyRef`).toContain('ref={bodyRef}')
+      // ★ 必须断到「style 上真的用了 maxHeight」这一整句 —— 只断 /maxHeight/ 会被解构处
+      //   `const { bodyRef, maxHeight }` 兜住（假绿，实测踩过）。
+      expect(src, `${name}正文区没有在 style 上应用 maxHeight`).toMatch(
+        /style=\{\s*maxHeight\s*!=\s*null\s*\?\s*\{\s*maxHeight\s*\}\s*:\s*undefined\s*\}/,
+      )
+      // ★ 反向：不许再压整列（flex-basis 写死高度会让页头和按钮跟着动）
+      expect(src, `${name}又出现了压整列写法`).not.toMatch(/flex:\s*`0 0 \$\{/)
+      expect(src, `${name}又出现了内联 height 覆盖（压整页的痕迹）`).not.toMatch(/height:\s*visibleHeight/)
     }
   })
 
-  it('K4 压高度的 hook 已删除，不许再加回来', () => {
-    expect(
-      existsSync(join(projectRoot, OLD_HOOK)),
-      `${OLD_HOOK} 又回来了 —— 它正是布局跳动的来源`,
-    ).toBe(false)
-    for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
-      expect(code(rel), `${name}又 import 了已删除的 hook`).not.toContain('use-viewport-height')
-    }
+  it('K4 限高必须由「键盘未弹起时量的顶边距离」算出（键盘弹起后量会算错）', () => {
+    const hook = code(HOOK)
+    expect(hook.length).toBeGreaterThan(500)
+    expect(hook, '没有读 visualViewport').toContain('window.visualViewport')
+    // ★ 顶边距离只在「键盘未弹」分支里更新 —— 弹起后页面可能被平移，那时量的是错的
+    expect(hook, '顶边距离没有在键盘未弹时量（弹起后量会算错）').toMatch(
+      /topOffsetRef\.current\s*=\s*bodyRef\.current\.getBoundingClientRect\(\)\.top/,
+    )
+    // 上限 = 可视高度 − 顶边距离 − 余量
+    expect(hook, '上限没有用「可视高度 − 顶边距离」算').toMatch(/vv\.height\s*-\s*topOffsetRef\.current/)
   })
 
   it('K5 写页 footer 必须 mt-auto + shrink-0（贴列底、不参与压缩）', () => {
@@ -161,10 +168,17 @@ describe('K · 键盘弹起时页面完全不动', () => {
     expect(code(AUTO), 'AutoTextarea 丢了 overflow-y-auto').toContain('overflow-y-auto')
   })
 
-  it('K12 触屏设备不在挂载时程序化聚焦（否则 iOS 留下假输入会话，首次点击键盘要等）', () => {
+  it('K12 触屏挂载时彻底不碰焦点/选区（PWA 首次点键盘延迟的根因）', () => {
     const src = readFileSync(join(projectRoot, AUTO), 'utf8')
-    expect(src, '没有按 pointer: coarse 分流').toContain("matchMedia('(pointer: coarse)')")
-    expect(src, '触屏分支没有提前 return（还是会抢焦点）').toMatch(/isCoarsePointer\(\)\) \{[\s\S]{0,300}?return/)
+    // ★ 用 maxTouchPoints 判触屏：pointer: coarse 在 PWA(standalone) 里会误报 fine，
+    //   于是走桌面分支的裸 focus()，留下「已聚焦、无键盘」假会话 ⇒ 首次点键盘要等。
+    expect(src, '触屏判定没用 maxTouchPoints（PWA 里 pointer:coarse 会误报）').toContain(
+      'navigator.maxTouchPoints',
+    )
+    // 触屏：直接 return，不 focus、不 setSelectionRange、不 scrollTo
+    expect(src, '触屏分支没有提前 return（仍会碰焦点/选区，假会话还在）').toMatch(
+      /if\s*\(isCoarsePointer\(\)\)\s*return/,
+    )
     expect(src, '又把 autoFocus 属性传给 textarea 了（React 会自己聚焦，分流失效）')
       .not.toMatch(/autoFocus=\{autoFocus\}/)
   })

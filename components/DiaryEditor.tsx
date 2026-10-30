@@ -9,6 +9,7 @@ import Markdown from './Markdown'
 import MarkdownToolbar from './MarkdownToolbar'
 import { countWords, deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
 import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
+import { useKeyboardEditorHeight } from '@/lib/client/use-viewport-height'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
@@ -57,6 +58,8 @@ export default function DiaryEditor() {
   const isPromptVisible = isPromptEnabled()
   const textRef = useRef(editorSnapshot)
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 键盘弹起时只给正文区一个高度上限（光标始终在键盘上方），其他元素不动
+  const { bodyRef, maxHeight } = useKeyboardEditorHeight()
   const pendingDraftRef = useRef<{ ciphertext: string; iv: string } | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 草稿写回 epoch：save/discard 成功时递增，作废进行中的冲刷（防止"放弃/保存后草稿复活"的竞态）
@@ -421,12 +424,13 @@ export default function DiaryEditor() {
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
 
   return (
-    // ── 布局（2026-10-30 定稿：页面完全不动）────────────────────────────────
-    // 整页就是一个普通的 flex 列：页头 → 工具条 → 正文（flex-1 自己滚）→ 保存按钮（贴底）。
-    // 键盘弹起时**这一列不动、不压高度**：文档层（html/body）已经锁死不可滚，
-    //   iOS 没有可滚空间 ⇒ 页面纹丝不动，键盘直接盖在下半截上。
-    //   ★ 这是用户明确选择的「页面完全不动」（接受盲打），见 globals.css 的 .app-height 注释。
-    //   正文文字仍在 textarea 内部滚动（它是独立的 overflow-y-auto 容器）。
+    // ── 布局（2026-10-30 定稿：只缩正文区，其他一律不动）──────────────────────
+    // 普通 flex 列：页头 → 工具条 → 正文（flex-1 自己滚）→ 保存按钮（mt-auto 贴列底）。
+    // 键盘弹起时**只给正文区一个 maxHeight**（= 可视高度 − 正文区顶边 − 余量）：
+    //   · 正文变矮 ⇒ 光标始终露在键盘上方 ⇒ iOS 不会去平移整页；
+    //   · 页头 / 工具条 / 保存按钮的位置全不变（footer 靠 mt-auto 仍贴列底）；
+    //   · TabBar 在 body 的 flex 列底部，body 高度不变 ⇒ 永远贴在屏幕底部。
+    // 文档层另有一道兜底（html/body 不可滚），见 globals.css。
     <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="shrink-0 py-4">
@@ -526,7 +530,11 @@ export default function DiaryEditor() {
            `pt-4` 提供与工具条的 16px 间距；`pb-2` 与改造前预览区一致。
            min-h-0 + flex + flex-col 三者都必须有：flex 子项默认 min-height:auto，不加压不下去；
            而 `flex-1` 只在 flex 容器里才有意义（漏了 `flex` ⇒ 输入区塌成 2~3 行，守卫 K9）。 */}
-      <div className="flex min-h-0 flex-1 flex-col pt-4 pb-2">
+      <div
+        ref={bodyRef}
+        style={maxHeight != null ? { maxHeight } : undefined}
+        className="flex min-h-0 flex-1 flex-col pt-4 pb-2"
+      >
         {preview ? (
           <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto">
             {text.trim()
