@@ -9,7 +9,6 @@ import Markdown from './Markdown'
 import MarkdownToolbar from './MarkdownToolbar'
 import { countWords, deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
 import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
-import { useVisibleViewportHeight } from '@/lib/client/use-viewport-height'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
@@ -58,8 +57,6 @@ export default function DiaryEditor() {
   const isPromptVisible = isPromptEnabled()
   const textRef = useRef(editorSnapshot)
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // 键盘弹起时的可视高度：内容列缩到它以内，页头/工具条/保存按钮原地不动，只有 textarea 文字滚
-  const visibleHeight = useVisibleViewportHeight()
   const pendingDraftRef = useRef<{ ciphertext: string; iv: string } | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 草稿写回 epoch：save/discard 成功时递增，作废进行中的冲刷（防止"放弃/保存后草稿复活"的竞态）
@@ -133,10 +130,9 @@ export default function DiaryEditor() {
     else await flushDraft(text)
   }, [flushDraft, clearStoredDraft])
 
-  // 键盘弹出时**不再**压整页高度：正文编辑区自己是滚动容器，光标在它内部被算成可见，
-  // iOS 就不会去滚可视视口。这段能力（use-viewport-height.ts）2026-10-06 曾用于压整页，
-  // 但它正是「保存按钮下方一大片空白」的成因（详见 render 里 header 之后的注释块）。
-  // hook 本身保留给详情页编辑态使用（那边的结构不同）。
+  // 键盘：本页**完全不处理**（2026-10-30 定稿）。文档层（html/body）已锁死不可滚，
+  // 键盘弹起时页面不动、键盘盖在下半截；正文文字仍在 textarea 内部滚。
+  // 曾经用来压高度的 hook（use-viewport-height.ts）已随这版删除，别再引回来。
 
   // 卸载/pagehide 冲刷未决草稿（避免丢末段输入，iOS Safari pagehide 更可靠）；online 恢复时补推
   useEffect(() => {
@@ -425,15 +421,13 @@ export default function DiaryEditor() {
   const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })
 
   return (
-    // ── 布局（2026-10-30 重写，正常逻辑）──────────────────────────────────
+    // ── 布局（2026-10-30 定稿：页面完全不动）────────────────────────────────
     // 整页就是一个普通的 flex 列：页头 → 工具条 → 正文（flex-1 自己滚）→ 保存按钮（贴底）。
-    // 键盘弹起时：把这一列的高度压到「可视高度」（visibleHeight），整列恰好落在键盘上方，
-    //   footer 靠 mt-auto 贴到列底（键盘上沿），正文区变矮后文字在 textarea 内部滚动。
-    //   这样 iOS 没有理由去滚可视视口 ⇒ 页头/工具条/保存按钮原地不动，页面不整体滚动。
-    <div
-      style={visibleHeight != null ? { height: visibleHeight } : undefined}
-      className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5"
-    >
+    // 键盘弹起时**这一列不动、不压高度**：文档层（html/body）已经锁死不可滚，
+    //   iOS 没有可滚空间 ⇒ 页面纹丝不动，键盘直接盖在下半截上。
+    //   ★ 这是用户明确选择的「页面完全不动」（接受盲打），见 globals.css 的 .app-height 注释。
+    //   正文文字仍在 textarea 内部滚动（它是独立的 overflow-y-auto 容器）。
+    <div className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col overflow-hidden px-5">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="shrink-0 py-4">
         {/* 页头不再放「全部日记」「设置」图标——这两个目的地已由底部 TabBar 承担，

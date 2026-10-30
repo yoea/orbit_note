@@ -23,7 +23,6 @@ import MarkdownToolbar from './MarkdownToolbar'
 import StarIcon from './StarIcon'
 import { countWords } from '@/lib/client/markdown'
 import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
-import { useVisibleViewportHeight } from '@/lib/client/use-viewport-height'
 
 // 行结构 = 服务端整行（含密文）；与 EncryptedEntry 同构（wordCount 为明文计数字段，
 // 详情页虽不用，但列表缓存/离线兜底按整行存取）
@@ -57,9 +56,8 @@ const VIEW_COUNT_DELAY_MS = 1_000
 // 日记详情视图（原生路由页 /entry/[id] 渲染；DEK 会话级持久化，导航/重载自动恢复）
 export default function EntryView({ id }: { id: string }) {
   const router = useRouter()
-  // 键盘适配（2026-10-06 改法）：编辑态不再压整页高度 —— 正文自己就是滚动容器，
-  // 光标在它内部被算成可见，iOS 就不会去滚可视视口（写页 DiaryEditor 有完整说明）。
-  // 早前用 useVisibleViewportHeight 压整页是「保存按钮下方一大片空白」的成因。
+  // 键盘（2026-10-30 定稿）：本页不处理 —— 文档层已锁死不可滚，键盘弹起时页面完全不动，
+  // 键盘盖在下半截（用户明确选择的「页面完全不动」）。正文仍在它自己的滚动容器里滚。
   const [entry, setEntry] = useState<Entry | null>(null)
   const [plain, setPlain] = useState('') // 解密后的正文，现在承载的是 Markdown 源码
   const [editing, setEditing] = useState(false)
@@ -123,8 +121,8 @@ export default function EntryView({ id }: { id: string }) {
     applyText: setPlain,
   })
 
-  // 键盘弹起时的可视高度：编辑态正文区随整列一起缩到键盘上方，只有 textarea 文字滚
-  const visibleHeight = useVisibleViewportHeight()
+  // 键盘（2026-10-30 定稿）：本页不做任何处理 —— 文档层已锁死不可滚，
+  // 键盘弹起时页面完全不动，键盘直接盖在下半截（用户明确选择的「页面完全不动」）。
 
   // 复制坐标到剪贴板并提示；无地点名时顺带查询一次（已有地名不重复查询，失败静默保持坐标）
   async function copyCoords() {
@@ -645,10 +643,7 @@ export default function EntryView({ id }: { id: string }) {
     //   顺序与源码顺序不一致、极易看漏，本文件已禁用（守卫 K10）。
     // 页眉能固定，靠的是「它不是滚动容器的子元素」——下面那个 `overflow-y-auto` 的 div
     // 只包正文。与 order 无关。
-    <main
-      style={editing && visibleHeight != null ? { height: visibleHeight } : undefined}
-      className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col px-5"
-    >
+    <main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col px-5">
       {/* viewTransitionName：页面切换动画中页头保持固定（空间锚点） */}
       <header className="page-header relative flex items-center justify-between py-3">
         {/* iOS 原生风格返回：chevron 箭头（原生路由返回，右滑手势同样生效）；标题绝对居中。
@@ -811,10 +806,9 @@ export default function EntryView({ id }: { id: string }) {
       ) : null}
       {editing ? (
         <>
-          {/* ★ 键盘适配（2026-10-06）：编辑态**不再**用 useVisibleViewportHeight 压整页高度。
-              原因与写页完全相同（那里有完整说明）：被压矮的那一列下方会露出布局视口里
-              「无人绘制」的一段，用户往下滑就是一片空白。改成
-              「页头/元信息/工具条/底部按钮固定，只有正文可滚」——见下面滚动容器的注释。 */}
+          {/* ★ 键盘（2026-10-30 定稿）：本页不压任何高度 —— 文档层已锁死不可滚，
+              键盘弹起时页面完全不动、键盘盖在下半截（用户选择的「页面完全不动」）。
+              这里只保留「页头/元信息/工具条/底部按钮固定，只有正文可滚」这条结构约定。 */}
           {/* 工具条**不滚动**（固定一条）。它与上方「元信息/定位块」之间的间距由那块的
               mt 组合出来；与下方输入框的 16px 由下面滚动容器的 pt-4 承担
               （工具条自己不设 padding —— 它必须固定，不能自己长高挤掉正文空间）。 */}

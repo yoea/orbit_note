@@ -1,33 +1,33 @@
 import { describe, expect, it } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { classAttrsIn, classTokens, projectRoot } from './class-attrs'
 
 // ============================================================================
 // 键盘适配守卫
 //
-// ── 历史（各版均被真机否掉，记录在此防重蹈）────────────────────────────────
-// ① 压整页（069c963）⇒ 键盘下方露出可滑出来的空白；
-// ② 只限正文区（v2.5.5）⇒ 没锁文档，body 仍满高可滚 ⇒ 页面照样滑；
-// ③ 压文档根（v2.5.6）⇒ 导航栏/保存按钮被顶上来；
-// ④ body fixed 锁 + scrollTo 补偿（v2.5.7）⇒ 闪（推上去又拽下来）；
-// ⑤ interactive-widget=overlays-content（v2.5.9）⇒ PWA 页面变可滚动；
-// ⑥ 只 body fixed / preventScroll / touch-action（v2.5.10~11）⇒ 仍可滚动。
+// ── 定稿（2026-10-30，用户选择「页面完全不动」）────────────────────────────
+// iOS 键盘弹起时可视区变矮、但 dvh 不变 ⇒ 文档比可视区高出一个键盘 ⇒ iOS 允许把整页
+// 拖走/推走（用户看到的「整个页面可滚动」）。这是系统行为，任何输入框都会触发。
 //
-// ── 定稿（2026-10-30，用户目标「打开键盘后整页不滚，只有输入区文字能滚」）──
-// 两件事**同时**做，缺一不可：
-//   1. **限高正文区**：键盘弹起时把正文区 maxHeight 压到「可视高度 − 上方固定部分」，
-//      让 textarea 底边完全落在键盘上方 ⇒ iOS 的 scroll-into-view 找不到理由 ⇒ 不平移整页。
-//   2. **锁文档**：给 <html> 打 data-qo-keyboard ⇒ html 不可滚 + body fixed，文档高度归零。
-// 实现：`useKeyboardEditorHeight()`（lib/client/use-viewport-height.ts），写页与详情页
-//   编辑态各调一次，返回 bodyRef + maxHeight。
+// 修法：**把文档层锁死**（html overflow:hidden + body fixed）⇒ document 滚动高度归零
+// ⇒ 键盘弹起时页面一寸不动，键盘直接盖在下半截。
+// 代价（用户明确接受）：输入时光标可能被键盘遮住（盲打）；保存按钮要收键盘才点得到。
+// 内部滚动照常：列表 / 正文 / 弹窗内容区各自 overflow-y-auto。
+//
+// ── 历史（全部真机否掉，别再回去）──────────────────────────────────────────
+// 压整列 / 只限正文区 / 压文档根（导航栏被顶上来）/ body fixed + scrollTo 补偿（闪）/
+// interactive-widget（PWA 变可滚）/ 只锁 body（仍可滚）/ 压内容列高度（布局会缩）。
+// 共同点：都在跟 iOS 的键盘行为讨价还价，结果不是布局变就是还能滚。
 // ============================================================================
 
-const HOOK = 'lib/client/use-viewport-height.ts'
 const EDITOR = 'components/DiaryEditor.tsx'
 const ENTRY = 'components/EntryView.tsx'
 const TOOLBAR = 'components/MarkdownToolbar.tsx'
 const AUTO = 'components/AutoTextarea.tsx'
+const GLOBALS = 'app/globals.css'
+// 2026-10-30 起删除：曾经按 visualViewport 压高度的 hook。不许再加回来。
+const OLD_HOOK = 'lib/client/use-viewport-height.ts'
 
 function code(rel: string): string {
   return readFileSync(join(projectRoot, rel), 'utf8')
@@ -35,78 +35,71 @@ function code(rel: string): string {
     .replace(/^\s*\/\/.*$/gm, '')
 }
 
-describe('K · 键盘弹出时的编辑区高度适配', () => {
-  const hook = code(HOOK)
+describe('K · 键盘弹起时页面完全不动', () => {
+  const css = code(GLOBALS)
 
-  it('K0 自检：hook 里确实读的是 visualViewport（否则后面全是空转）', () => {
-    expect(hook.length).toBeGreaterThan(500)
-    expect(hook, '没读 visualViewport —— 键盘高度根本没有来源').toContain('window.visualViewport')
-    expect(hook, '没有响应 resize，键盘弹出时不会重算').toContain("addEventListener('resize'")
+  it('K0 自检：globals.css 读得到、且确实是那份样式（否则后面全是空转）', () => {
+    expect(css.length).toBeGreaterThan(2000)
+    expect(css, '找不到 html 块').toMatch(/html\s*\{/)
+    expect(css, '找不到 .app-height').toContain('.app-height')
   })
 
-  it('K1 只认「键盘量级」的高度差，几十像素的小差值不触发', () => {
-    expect(hook, '缺少「键盘量级」常量').toMatch(/KEYBOARD_MIN_GAP\s*=\s*1\d\d/)
-    expect(hook, '判据里没用上该常量').toMatch(/gap\s*>\s*KEYBOARD_MIN_GAP/)
-  })
-
-  it('K2 双指缩放时不生效（缩放会让 visualViewport.height 变小，那不是键盘）', () => {
-    expect(hook, '没有排除缩放：放大网页会被误判成键盘弹出').toMatch(/scale\s*!==\s*1/)
-    // 判据必须在「算 gap / setHeight」之前——放在后面等于没拦
-    const guardAt = hook.indexOf('scale !== 1')
-    const setAt = hook.indexOf('setHeight(')
-    expect(guardAt, '找不到 scale 判据').toBeGreaterThan(-1)
-    expect(setAt, '找不到 setHeight 调用').toBeGreaterThan(-1)
-    expect(guardAt, 'scale 判据在 setHeight 之后，拦不住').toBeLessThan(setAt)
-  })
-
-  it('K3 不支持 visualViewport 的环境直接返回（行为退回 flex 布局）', () => {
-    expect(hook, '缺少 visualViewport 兜底').toMatch(/if\s*\(!vv\)\s*return/)
-  })
-
-  it('K4 布局视口高度取自 documentElement.clientHeight，而不是 innerHeight', () => {
-    expect(hook, '基准高度没取 clientHeight —— 会把 URL 栏变化误判成键盘').toMatch(
-      /root\.clientHeight|documentElement\.clientHeight/,
+  it('K1 html 层不可滚（锁死文档滚动的第一步）', () => {
+    expect(css, 'html 没有 overflow:hidden —— 文档仍可被键盘滚走').toMatch(
+      /html\s*\{[^}]*overflow:\s*hidden/,
     )
-    expect(hook, '不该用 window.innerHeight 当布局视口高度').not.toContain('window.innerHeight')
   })
 
-  it('K5 两个编辑面接入可视高度限高（内容列压到键盘上方，footer 贴底）', () => {
+  it('K2 body 脱离文档流 + 不可滚（document 滚动高度归零，iOS 无滚可滚）', () => {
+    const appHeight = css.match(/\.app-height\s*\{[^}]*\}/)
+    expect(appHeight, '找不到 .app-height 规则').not.toBeNull()
+    const rule = appHeight![0]
+    expect(rule, 'body 没有 position: fixed —— iOS 仍能把整页滚走').toMatch(/position:\s*fixed/)
+    expect(rule, 'body 没有 overflow: hidden').toMatch(/overflow:\s*hidden/)
+    // 高度必须仍是 100dvh（不能用 inset:0 之类，iOS 布局视口含浏览器工具栏那一截）
+    expect(rule, 'body 高度不再是 100dvh').toContain('100dvh')
+  })
+
+  it('K3 两个编辑面不许再自己算/压高度（页面完全不动，任何压缩都会让布局变）', () => {
     for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
       const src = code(rel)
-      // 必须接入新 hook（返回可视高度）
-      expect(src, `${name}没有接入 useVisibleViewportHeight`).toContain('useVisibleViewportHeight()')
-      // 必须把可视高度应用到内容列（style 上 height: visibleHeight）
-      expect(src, `${name}内容列没有应用 height 限高`).toMatch(
-        /\{\s*height:\s*visibleHeight\s*\}/,
-      )
-      // ★ 反向：不许再压整页（旧版 flex-basis 压高度写法）
-      expect(src, `${name}又出现了压整页写法`).not.toMatch(/flex:\s*`0 0 \$\{/)
-      expect(src, `${name}又出现了内联 flex 覆盖（压整页的痕迹）`).not.toMatch(/0 0 \$\{\w+\}px/)
+      // 反向：不许再引用按可视高度压布局的写法
+      expect(src, `${name}又引回了压高度的 hook`).not.toContain('useVisibleViewportHeight')
+      expect(src, `${name}又出现了按可视高度设内联高度`).not.toMatch(/height:\s*visibleHeight/)
+      expect(src, `${name}又出现了 maxHeight 限高`).not.toMatch(/maxHeight/)
+      expect(src, `${name}又出现了 flex-basis 压高度写法`).not.toMatch(/flex:\s*`0 0 \$\{/)
     }
-    // 写页 footer 必须 mt-auto 贴底（否则正文区被压矮后保存按钮跑到屏幕中间）
-    expect(code(EDITOR), '写页 footer 没有 mt-auto（保存按钮会跑到屏幕中间）').toMatch(
-      /<footer[^>]*mt-auto/,
-    )
   })
 
-  it('K6 页头/底部按钮必须固定，正文是唯一滚动容器（用户给的目标行为）', () => {
-    const editor = code(EDITOR)
-    // ★ 根容器带 overflow-hidden 是对的：键盘弹起时整列压到可视高度，溢出由 textarea 内部承担
-    expect(editor, '写页根容器缺少 overflow-hidden（内容列会自己滚）').toMatch(
-      /flex-col overflow-hidden px-5/,
-    )
-    expect(editor, '写页底部按钮必须 shrink-0（固定不动）').toMatch(
-      /<footer[^>]*shrink-0/,
-    )
+  it('K4 压高度的 hook 已删除，不许再加回来', () => {
+    expect(
+      existsSync(join(projectRoot, OLD_HOOK)),
+      `${OLD_HOOK} 又回来了 —— 它正是布局跳动的来源`,
+    ).toBe(false)
+    for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
+      expect(code(rel), `${name}又 import 了已删除的 hook`).not.toContain('use-viewport-height')
+    }
+  })
 
-    const entry = code(ENTRY)
-    expect(entry, '详情页 main 不该自己滚（页头与底部栏必须固定）').not.toMatch(
-      /flex-col overflow-y-auto px-5/,
-    )
-    const viewBody = classAttrsIn(ENTRY, entry).filter(
-      (a) => a.text.includes('mt-4') && a.text.includes('overflow-y-auto'),
-    )
-    expect(viewBody.length, '详情页查看态正文缺少滚动容器（签名 mt-4 + overflow-y-auto）').toBe(1)
+  it('K5 写页 footer 必须 mt-auto + shrink-0（贴列底、不参与压缩）', () => {
+    const editor = code(EDITOR)
+    expect(editor, '写页 footer 没有 mt-auto（短正文时按钮会浮到中间）').toMatch(/<footer[^>]*mt-auto/)
+    expect(editor, '写页 footer 没有 shrink-0').toMatch(/<footer[^>]*shrink-0/)
+  })
+
+  it('K6 每个页面都有自己的内部滚动容器（文档锁死后，内容必须能被滚到）', () => {
+    const pages: [string, string][] = [
+      ['日记列表', 'components/DiaryListView.tsx'],
+      ['归档列表', 'components/ArchiveListView.tsx'],
+      ['设置页', 'components/SettingsView.tsx'],
+      ['导入导出深链页', 'components/BackupRestoreView.tsx'],
+      ['登录页', 'app/login/page.tsx'],
+    ]
+    for (const [name, rel] of pages) {
+      expect(code(rel), `${name}没有内部滚动容器 —— 文档锁死后内容会被裁掉`).toMatch(
+        /overflow-y-auto|overflow-auto/,
+      )
+    }
   })
 
   it('K7 不得退回到「手工算像素高度」的老路', () => {
@@ -115,11 +108,11 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
     expect(auto, 'AutoTextarea 又出现了自己算高度的痕迹').not.toMatch(/fitHeight|getAvailableHeight/)
   })
 
-  it('K8 工具条没有被改成 sticky/fixed（治不了这个病，还多一个采样盒子）', () => {
+  it('K8 工具条没有被改成 sticky/fixed（顶边缘的 fixed/sticky 会被 iOS 顶栏合成）', () => {
     expect(classTokens(code(TOOLBAR)), `${TOOLBAR} 不该把工具条粘住`).not.toContain('sticky')
   })
 
-  it('K9 编辑区外层必须是 flex 列容器，且**不得**自己可滚（K11 的反面）', () => {
+  it('K9 编辑区外层必须是 flex 列容器，且不得自己可滚', () => {
     for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
       const attrs = classAttrsIn(rel, code(rel)).filter(
         (a) => a.text.includes('pt-4') && a.text.includes('pb-2'),
@@ -127,11 +120,27 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
       expect(attrs.length, `${name}找不到编辑区外层容器（签名 pt-4 + pb-2），或签名不再唯一`).toBe(1)
       const tk = classTokens(attrs[0].text)
       expect(tk, `${name}编辑区外层不是 flex 容器 ⇒ 内部 textarea 的 flex-1 失效`).toContain('flex')
-      expect(tk, `${name}编辑区外层缺 flex-col ⇒ 子项会被横向排`).toContain('flex-col')
-      expect(tk, `${name}编辑区外层缺 min-h-0 ⇒ 压不下去`).toContain('min-h-0')
-      expect(tk, `${name}编辑区外层缺 flex-1 ⇒ 不占满中间区域`).toContain('flex-1')
-      expect(tk, `${name}编辑区外层又变成滚动容器了`).not.toContain('overflow-y-auto')
+      expect(tk, `${name}编辑区外层缺 flex-col`).toContain('flex-col')
+      expect(tk, `${name}编辑区外层缺 min-h-0`).toContain('min-h-0')
+      expect(tk, `${name}编辑区外层缺 flex-1`).toContain('flex-1')
+      expect(tk, `${name}编辑区外层又变成滚动容器了（会吞手势）`).not.toContain('overflow-y-auto')
     }
+  })
+
+  it('K10 页眉必须在正文之前，且不得用 flex order 重排', () => {
+    for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
+      expect(code(rel), `${name}又用 flex order 重排视觉顺序了`).not.toMatch(
+        /\border-(?:\d+|first|last|none)\b/,
+      )
+    }
+    const entry = code(ENTRY)
+    const mainAt = entry.indexOf('max-w-md flex-1 flex-col px-5')
+    expect(mainAt, '找不到详情页的 main 渲染容器').toBeGreaterThan(-1)
+    const headerAt = entry.indexOf('page-header', mainAt)
+    const scrollerAt = entry.indexOf('overflow-y-auto', mainAt)
+    expect(headerAt, '找不到详情页页眉（.page-header）').toBeGreaterThan(-1)
+    expect(scrollerAt, '找不到详情页正文滚动容器').toBeGreaterThan(-1)
+    expect(headerAt, '页眉排在正文滚动容器之后').toBeLessThan(scrollerAt)
   })
 
   it('K11 正文区不得嵌套滚动容器：每个分支各自承担滚动', () => {
@@ -142,7 +151,7 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
       const m = src.slice(at, at + 140).match(/className="([^"]*)"/)
       expect(m, `${name}预览分支的元素上没有紧跟 className`).not.toBeNull()
       const ptk = classTokens(m![1])
-      expect(ptk, `${name}预览分支缺 overflow-y-auto ⇒ 预览内容一多就滚不动`).toContain('overflow-y-auto')
+      expect(ptk, `${name}预览分支缺 overflow-y-auto`).toContain('overflow-y-auto')
       expect(ptk, `${name}预览分支的滚动容器缺 min-h-0`).toContain('min-h-0')
       expect(ptk, `${name}预览分支的滚动容器缺 flex-1`).toContain('flex-1')
     }
@@ -150,24 +159,6 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
     expect(entryTa.length, '详情页找不到编辑 textarea（签名 resize-none）').toBe(1)
     expect(classTokens(entryTa[0].text), '详情页编辑 textarea 缺 overflow-y-auto').toContain('overflow-y-auto')
     expect(code(AUTO), 'AutoTextarea 丢了 overflow-y-auto').toContain('overflow-y-auto')
-  })
-
-  it('K10 页眉必须在正文之前，且不得用 flex order 重排', () => {
-    for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
-      const src = code(rel)
-      expect(src, `${name}又用 flex order 重排视觉顺序了`).not.toMatch(
-        /\border-(?:\d+|first|last|none)\b/,
-      )
-    }
-    const entry = code(ENTRY)
-    // main 现在带 style（编辑态限高），不能再用完整 className 串匹配，改找 class 片段
-    const mainAt = entry.indexOf('max-w-md flex-1 flex-col px-5')
-    expect(mainAt, '找不到详情页的 main 渲染容器').toBeGreaterThan(-1)
-    const headerAt = entry.indexOf('page-header', mainAt)
-    const scrollerAt = entry.indexOf('overflow-y-auto', mainAt)
-    expect(headerAt, '找不到详情页页眉（.page-header）').toBeGreaterThan(-1)
-    expect(scrollerAt, '找不到详情页正文滚动容器').toBeGreaterThan(-1)
-    expect(headerAt, '页眉排在正文滚动容器之后').toBeLessThan(scrollerAt)
   })
 
   it('K12 触屏设备不在挂载时程序化聚焦（否则 iOS 留下假输入会话，首次点击键盘要等）', () => {

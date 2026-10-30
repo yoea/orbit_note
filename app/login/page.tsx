@@ -109,7 +109,7 @@ export default function LoginPage() {
 
   if (loadError) {
     return (
-      <main className="flex min-h-0 flex-1 flex-col px-6 pb-safe">
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-safe">
         <div className="m-auto flex flex-col items-center gap-4">
           <p className="text-sm text-neutral-500 dark:text-neutral-400">连接失败，请检查网络后重试</p>
           <button onClick={() => window.location.reload()} className="rounded-xl bg-gradient-to-r from-orange-500 via-rose-400 to-violet-500 px-6 py-3 text-sm font-medium text-white">
@@ -122,7 +122,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-0 flex-1 flex-col px-6 pb-safe">
+    <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-safe">
       {/* m-auto：LOGO + 按钮整体在容器中完全垂直居中（比 justify-center 更稳健） */}
       <div className="m-auto flex w-full max-w-xs flex-col items-center gap-8">
         {/* 品牌标识：LOGO + 一句话说明。单独成块是为了让 tagline 与 LOGO 用 12px 间距，
