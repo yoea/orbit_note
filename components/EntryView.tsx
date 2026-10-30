@@ -23,6 +23,7 @@ import MarkdownToolbar from './MarkdownToolbar'
 import StarIcon from './StarIcon'
 import { countWords } from '@/lib/client/markdown'
 import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
+import { useKeyboardEditorHeight } from '@/lib/client/use-viewport-height'
 
 // 行结构 = 服务端整行（含密文）；与 EncryptedEntry 同构（wordCount 为明文计数字段，
 // 详情页虽不用，但列表缓存/离线兜底按整行存取）
@@ -121,6 +122,9 @@ export default function EntryView({ id }: { id: string }) {
     text: plain,
     applyText: setPlain,
   })
+
+  // 键盘弹起时：编辑态正文区限高到键盘上方 + 锁文档（页面不滚、只有正文文字滚）
+  const { bodyRef, maxHeight } = useKeyboardEditorHeight()
 
   // 复制坐标到剪贴板并提示；无地点名时顺带查询一次（已有地名不重复查询，失败静默保持坐标）
   async function copyCoords() {
@@ -827,7 +831,11 @@ export default function EntryView({ id }: { id: string }) {
               `pt-4` 提供与工具条的间距；`pb-2` 与改造前预览区一致。
               min-h-0 + flex + flex-col 三者都必须有：flex 子项默认 min-height:auto，不加压不下去；
                 而 `flex-1` 只在 flex 容器里才有意义（漏了 `flex` ⇒ 输入区塌成 2~3 行，守卫 K9）。 */}
-          <div className="flex min-h-0 flex-1 flex-col pt-4 pb-2">
+          <div
+            ref={bodyRef}
+            style={maxHeight != null ? { maxHeight } : undefined}
+            className="flex min-h-0 flex-1 flex-col pt-4 pb-2"
+          >
             {preview ? (
               <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto">
                 {plain.trim()

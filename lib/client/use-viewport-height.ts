@@ -1,71 +1,100 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 
-// 键盘弹出时「实际可见」的高度（px）；键盘没弹出时返回 null。
+// 键盘弹出时，为「正文编辑区」算出一个落在键盘上方的最大高度，并锁住文档。
 //
-// ── 为什么需要这个 hook（2026-10-06 用户反馈「输入长文本时 Markdown 工具条会隐藏」）──
+// ── 目标（用户原话，2026-10-30）──────────────────────────────────────────
+// 「打开键盘之后，整个页面不要滚动，只有输入区域的文字能滚动。」
 //
-// 根因：编辑页的高度来自 `100dvh`（.app-height），而 **iOS 的键盘不改变 dvh**。
-//   键盘弹起时布局视口仍是满屏（844），但可见区只剩约 500 ⇒ 输入框的下沿落在键盘底下。
-//   iOS 为了让光标可见，会**把可视视口（visual viewport）整体向上滚**。
-//   于是排版在「布局视口顶部」的那一条 —— 页头与 Markdown 工具条 —— 被顶出屏幕；
-//   写得越长、光标越往下，iOS 滚得越多，工具条就「一直看不到」。
-//   同一根因还让底部的「保存」按钮被键盘遮住。
+// 必须同时做两件事（之前几版都只做了一半，故失败）：
+//   1. **限高正文区**：键盘弹起时把正文区压到「可视高度 − 上方固定部分」，让 textarea 的
+//      底边完全落在键盘上方 ⇒ iOS 的 scroll-into-view 找不到理由（光标已在可视区）⇒ 不平移整页。
+//   2. **锁文档**：给 <html> 打 data-qo-keyboard ⇒ html 不可滚 + body fixed，文档高度归零
+//      ⇒ iOS 想滚文档也没得滚。
+//   · 只限高不锁（v2.5.5）⇒ body 满高可滚，iOS 仍平移 ⇒ 页面照样滑；
+//   · 只锁不限高（v2.5.7~11）⇒ textarea 底边仍在键盘下 ⇒ iOS 仍 scroll-into-view。
 //
-// ★ 这不是新问题：早期 AutoTextarea 里就有基于 visualViewport 的 fitHeight 实现，
-//   2026-08-26（f5090e4）为了「固定视口高度 + flex 弹性分配」把它删了，理由写的是
-//   「键盘弹出时 dvh 收缩自动压缩」——**这句话在 iOS 上不成立**（dvh 不理键盘）。
-//   本次把这条能力补回来，但只补「高度」这一件事，不再回到手工算像素的老路。
-//
-// 用法：把返回值当作编辑区容器的高度（`flex: 0 0 Npx`）。容器矮到可见区之内，
-//   光标就在可见区内 ⇒ iOS 没有任何理由再去滚可视视口 ⇒ 页头与工具条原地不动。
-//
-// 三个刻意的保守设计（宁可不生效，也不要算错把界面搞乱）：
-//   1. **双指缩放时不生效**：`visualViewport.height` 在缩放下也会变小，但那是缩放不是键盘；
-//      判据是 `scale !== 1` 直接跳过（此时退回 flex 布局，与改造前一致）。
-//   2. **只认「键盘量级」的高度差**：`布局视口高度 − 可见高度 ≤ 120px` 时一律返回 null。
-//      URL 栏收缩、分屏、软键盘没弹出等都会产生几十像素的小差值，不该触发。
-//   3. **不支持 visualViewport 的环境直接返回 null**（老浏览器），行为与改造前一模一样。
-//
-// 局限（说清楚）：这只能让「页面自己被键盘挤下去」不再发生。
-// 如果某个平台连 visualViewport 都不随键盘变化，那它本来就没有这个问题，也就无需修。
-export function useVisibleViewportHeight(): number | null {
-  const [height, setHeight] = useState<number | null>(null)
+// 用法：写页 DiaryEditor 与详情页编辑态 EntryView 各调用一次：
+//   const { bodyRef, maxHeight } = useKeyboardEditorHeight()
+//   把 bodyRef 挂到正文区容器、maxHeight 设为其 style.maxHeight。
+export function useKeyboardEditorHeight(): {
+  bodyRef: RefObject<HTMLDivElement | null>
+  maxHeight: number | null
+} {
+  const bodyRef = useRef<HTMLDivElement | null>(null)
+  const [maxHeight, setMaxHeight] = useState<number | null>(null)
+  // 正文区顶边到视口顶部的距离（= 上方固定部分 + 顶部安全区），键盘没弹时量一次
+  const topOffsetRef = useRef<number | null>(null)
 
   useEffect(() => {
     const vv = window.visualViewport
     if (!vv) return
 
-    // 键盘量级的最小差值：小于它一律认为「不是键盘」
+    const root = document.documentElement
+    const ATTR = 'data-qo-keyboard'
     const KEYBOARD_MIN_GAP = 120
     let raf = 0
 
+    const locked = () => root.hasAttribute(ATTR)
+    const lock = () => { if (!locked()) root.setAttribute(ATTR, '') }
+    const unlock = () => { if (locked()) root.removeAttribute(ATTR) }
+
+    const isEditable = (t: EventTarget | null): boolean => {
+      const el = t as HTMLElement | null
+      if (!el || !el.tagName) return false
+      return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable === true
+    }
+
     const apply = () => {
       raf = 0
-      if (vv.scale !== 1) return // 缩放过的不算
-      const layoutHeight = document.documentElement.clientHeight
+      if (vv.scale !== 1) { unlock(); setMaxHeight(null); return }
+      const layoutHeight = root.clientHeight
       const gap = layoutHeight - vv.height
-      setHeight(gap > KEYBOARD_MIN_GAP ? Math.round(vv.height) : null)
+      if (gap > KEYBOARD_MIN_GAP) {
+        lock()
+        // 键盘没弹时量一次「正文区顶边到视口顶部」的距离 = 上方固定部分
+        if (topOffsetRef.current == null && bodyRef.current) {
+          topOffsetRef.current = Math.round(bodyRef.current.getBoundingClientRect().top)
+        }
+        if (topOffsetRef.current != null) {
+          const h = vv.height - topOffsetRef.current
+          setMaxHeight(Math.max(80, Math.round(h)))
+        }
+      } else {
+        if (!isEditable(document.activeElement)) unlock()
+        setMaxHeight(null)
+        topOffsetRef.current = null // 键盘收起后，下次重新量（布局可能变了）
+      }
     }
-    // 合并同一帧内的多次触发（键盘动画期间 resize 会连发很多次）
-    const schedule = () => {
-      if (!raf) raf = requestAnimationFrame(apply)
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(apply) }
+
+    const onFocusIn = (e: FocusEvent) => { if (isEditable(e.target)) lock() }
+    const onTouchStart = (e: TouchEvent) => {
+      const t = e.target as HTMLElement | null
+      const editable = t && (t.closest('input, textarea') || t.closest('[contenteditable]')) as HTMLElement | null
+      if (!editable) return
+      lock()
+      try { editable.focus({ preventScroll: true }) } catch { /* 忽略 */ }
     }
 
     apply()
     vv.addEventListener('resize', schedule)
-    // 也监听 scroll：可视视口被滚走时高度不变但位置变了，重新算一次能回到正确高度
     vv.addEventListener('scroll', schedule)
-    // 方向变化会改布局视口高度，而 vv 的 resize 不一定会跟着来
     window.addEventListener('orientationchange', schedule)
+    document.addEventListener('focusin', onFocusIn, true)
+    document.addEventListener('touchstart', onTouchStart, true)
     return () => {
       if (raf) cancelAnimationFrame(raf)
       vv.removeEventListener('resize', schedule)
       vv.removeEventListener('scroll', schedule)
       window.removeEventListener('orientationchange', schedule)
+      document.removeEventListener('focusin', onFocusIn, true)
+      document.removeEventListener('touchstart', onTouchStart, true)
+      unlock()
+      setMaxHeight(null)
     }
   }, [])
 
-  return height
+  return { bodyRef, maxHeight }
 }

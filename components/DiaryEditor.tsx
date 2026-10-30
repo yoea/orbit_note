@@ -9,6 +9,7 @@ import Markdown from './Markdown'
 import MarkdownToolbar from './MarkdownToolbar'
 import { countWords, deriveTitlePreview, toPlainText } from '@/lib/client/markdown'
 import { useMarkdownEditor } from '@/lib/client/use-markdown-editor'
+import { useKeyboardEditorHeight } from '@/lib/client/use-viewport-height'
 import { getDek } from '@/lib/client/session'
 import { decryptText, encryptText } from '@/lib/client/crypto/encryption'
 import { getPosition } from '@/lib/client/location'
@@ -57,6 +58,8 @@ export default function DiaryEditor() {
   const isPromptVisible = isPromptEnabled()
   const textRef = useRef(editorSnapshot)
   const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // 键盘弹起时：正文区限高到键盘上方 + 锁文档（页面不滚、只有正文文字滚）
+  const { bodyRef, maxHeight } = useKeyboardEditorHeight()
   const pendingDraftRef = useRef<{ ciphertext: string; iv: string } | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // 草稿写回 epoch：save/discard 成功时递增，作废进行中的冲刷（防止"放弃/保存后草稿复活"的竞态）
@@ -546,7 +549,11 @@ export default function DiaryEditor() {
            `pt-4` 提供与工具条的 16px 间距；`pb-2` 与改造前预览区一致。
            min-h-0 + flex + flex-col 三者都必须有：flex 子项默认 min-height:auto，不加压不下去；
            而 `flex-1` 只在 flex 容器里才有意义（漏了 `flex` ⇒ 输入区塌成 2~3 行，守卫 K9）。 */}
-      <div className="flex min-h-0 flex-1 flex-col pt-4 pb-2">
+      <div
+        ref={bodyRef}
+        style={maxHeight != null ? { maxHeight } : undefined}
+        className="flex min-h-0 flex-1 flex-col pt-4 pb-2"
+      >
         {preview ? (
           <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto">
             {text.trim()

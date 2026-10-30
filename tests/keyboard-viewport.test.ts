@@ -6,24 +6,21 @@ import { classAttrsIn, classTokens, projectRoot } from './class-attrs'
 // ============================================================================
 // 键盘适配守卫
 //
-// ── 第一版（2026-10-06 上午，用户反馈「输入长文本时 Markdown 工具条会隐藏」）──────
-// 根因：编辑页高度来自 `100dvh`，而 **iOS 的键盘不改 dvh**。键盘弹起后输入框下沿落在
-// 键盘底下，iOS 为了让光标可见会把**可视视口**向上滚 ⇒ 排版在最上方的那一条（页头 +
-// Markdown 工具条）被顶出屏幕；写得越长滚得越多。当时的修法是用 `useVisibleViewportHeight`
-// 把**整页**压到可见区高度。
+// ── 历史（各版均被真机否掉，记录在此防重蹈）────────────────────────────────
+// ① 压整页（069c963）⇒ 键盘下方露出可滑出来的空白；
+// ② 只限正文区（v2.5.5）⇒ 没锁文档，body 仍满高可滚 ⇒ 页面照样滑；
+// ③ 压文档根（v2.5.6）⇒ 导航栏/保存按钮被顶上来；
+// ④ body fixed 锁 + scrollTo 补偿（v2.5.7）⇒ 闪（推上去又拽下来）；
+// ⑤ interactive-widget=overlays-content（v2.5.9）⇒ PWA 页面变可滚动；
+// ⑥ 只 body fixed / preventScroll / touch-action（v2.5.10~11）⇒ 仍可滚动。
 //
-// ── 第二版（2026-10-06 晚，用户反馈「键盘弹出后往下滑，保存按钮下方一大片空白」）─────
-// 「压整页」这条路上有一个必然的副作用：被压矮的那一列下面，**布局视口那一整段仍然存在**
-// （可滚动、且被 `.qo-app-root` 的整页底色填充）。用户在键盘弹起时往下滑 = 可视视口在布局
-// 视口里往上滚 ⇒ 底部露出「无人绘制的那段空白」，再往下才是布局在文档底部的 TabBar。
-//
-// 定稿的做法（用户给的目标行为的字面实现）：「整个页面不能整体下滑，只有文字输入区域可以
-// 滚动」—— 页头 / 工具条 / 底部按钮全部固定，**正文自己当滚动容器**（textarea 本身也可滚）。
-// 光标在可滚动的 textarea 内部被算成「可见」，iOS 因此不会去滚可视视口。
-//
-// ⇒ 所以现在两个编辑面都**不该**再引用 `useVisibleViewportHeight`。hook 保留在仓库里
-//   （判据本身是对的，将来若有「必须整页不动且不能有内部滚动条」的场景还会用到），
-//   但下面的 K3 会把它钉成「不许回归」的样子。
+// ── 定稿（2026-10-30，用户目标「打开键盘后整页不滚，只有输入区文字能滚」）──
+// 两件事**同时**做，缺一不可：
+//   1. **限高正文区**：键盘弹起时把正文区 maxHeight 压到「可视高度 − 上方固定部分」，
+//      让 textarea 底边完全落在键盘上方 ⇒ iOS 的 scroll-into-view 找不到理由 ⇒ 不平移整页。
+//   2. **锁文档**：给 <html> 打 data-qo-keyboard ⇒ html 不可滚 + body fixed，文档高度归零。
+// 实现：`useKeyboardEditorHeight()`（lib/client/use-viewport-height.ts），写页与详情页
+//   编辑态各调一次，返回 bodyRef + maxHeight。
 // ============================================================================
 
 const HOOK = 'lib/client/use-viewport-height.ts'
@@ -31,6 +28,7 @@ const EDITOR = 'components/DiaryEditor.tsx'
 const ENTRY = 'components/EntryView.tsx'
 const TOOLBAR = 'components/MarkdownToolbar.tsx'
 const AUTO = 'components/AutoTextarea.tsx'
+const GLOBALS = 'app/globals.css'
 
 function code(rel: string): string {
   return readFileSync(join(projectRoot, rel), 'utf8')
@@ -48,62 +46,68 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
   })
 
   it('K1 只认「键盘量级」的高度差，几十像素的小差值不触发', () => {
-    // URL 栏收缩、分屏、软键盘收起等都会产生小差值；按它们改高度会让界面莫名变矮
     expect(hook, '缺少「键盘量级」常量').toMatch(/KEYBOARD_MIN_GAP\s*=\s*1\d\d/)
     expect(hook, '判据里没用上该常量').toMatch(/gap\s*>\s*KEYBOARD_MIN_GAP/)
   })
 
   it('K2 双指缩放时不生效（缩放会让 visualViewport.height 变小，那不是键盘）', () => {
     expect(hook, '没有排除缩放：放大网页会被误判成键盘弹出').toMatch(/scale\s*!==\s*1/)
-    // 判据必须在「算 gap / setState」之前——放在后面等于没拦
     const guardAt = hook.indexOf('scale !== 1')
-    const setAt = hook.indexOf('setHeight(')
+    const unlockAt = hook.indexOf('unlock()')
     expect(guardAt, '找不到 scale 判据').toBeGreaterThan(-1)
-    expect(setAt, '找不到 setHeight 调用').toBeGreaterThan(-1)
-    expect(guardAt, 'scale 判据在 setState 之后，拦不住').toBeLessThan(setAt)
+    expect(unlockAt, '找不到 scale 判据后的解锁').toBeGreaterThan(-1)
+    expect(guardAt, 'scale 判据在解锁之后，拦不住').toBeLessThan(unlockAt)
   })
 
-  it('K3 不支持 visualViewport 的环境直接返回 null（行为退回 flex 布局）', () => {
+  it('K3 不支持 visualViewport 的环境直接返回（行为退回 flex 布局）', () => {
     expect(hook, '缺少 visualViewport 兜底').toMatch(/if\s*\(!vv\)\s*return/)
   })
 
   it('K4 布局视口高度取自 documentElement.clientHeight，而不是 innerHeight', () => {
-    // outerHeight 会被浏览器工具栏影响；innerHeight 在 iOS 上跟着键盘/host 行为漂移，
-    // 用它当基准会把「不是键盘」的场景也算成键盘。布局视口高度只有 clientHeight 是准的。
-    expect(hook, '基准高度取了 innerHeight —— 会把 URL 栏变化误判成键盘').toContain(
-      'document.documentElement.clientHeight',
+    expect(hook, '基准高度没取 clientHeight —— 会把 URL 栏变化误判成键盘').toMatch(
+      /root\.clientHeight|documentElement\.clientHeight/,
     )
     expect(hook, '不该用 window.innerHeight 当布局视口高度').not.toContain('window.innerHeight')
   })
 
-  // ── 下面三条是第一版结论的**反转**（2026-10-06 晚定稿）──
-  it('K5 两个编辑面都不许再「压整页高度」（那是「保存按钮下方一片空白」的成因）', () => {
+  it('K5 两个编辑面接入限高正文区 + 锁文档（不得再压整页/只锁不限高）', () => {
     for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
       const src = code(rel)
-      expect(src, `${name}又引回了 useVisibleViewportHeight —— 空白问题会复发`).not.toContain('useVisibleViewportHeight')
-      expect(src, `${name}又出现了 flex-basis 压高度写法`).not.toMatch(/flex:\s*`0 0 \$\{/)
+      // 必须接入新 hook（限高正文区）
+      expect(src, `${name}没有接入 useKeyboardEditorHeight`).toContain('useKeyboardEditorHeight()')
+      expect(src, `${name}没有给正文区挂 bodyRef`).toContain('ref={bodyRef}')
+      // ★ 必须断到「style 上真的用了 maxHeight」这个承载语义的完整片段——
+      //   只断 /maxHeight/ 会被解构处 `const { bodyRef, maxHeight }` 兜住（假绿，实测踩过）。
+      expect(src, `${name}正文区没有在 style 上应用 maxHeight`).toMatch(
+        /style=\{\s*maxHeight\s*!=\s*null\s*\?\s*\{\s*maxHeight\s*\}\s*:\s*undefined\s*\}/,
+      )
+      // ★ 反向：不许再压整页（旧版 flex-basis 压高度写法）
+      expect(src, `${name}又出现了压整页写法`).not.toMatch(/flex:\s*`0 0 \$\{/)
       expect(src, `${name}又出现了内联 flex 覆盖（压整页的痕迹）`).not.toMatch(/0 0 \$\{\w+\}px/)
     }
+    // 锁文档的 CSS 必须存在（html 不可滚 + body fixed）
+    const css = code(GLOBALS)
+    expect(css, '键盘锁定时 html 没有锁滚动').toMatch(
+      /html\[data-qo-keyboard\]\s*\{\s*overflow:\s*hidden/,
+    )
+    expect(css, '键盘锁定时 body 没有脱离文档流').toMatch(
+      /html\[data-qo-keyboard\]\s+body\.app-height\s*\{[^}]*position:\s*fixed/,
+    )
   })
 
   it('K6 页头/底部按钮必须固定，正文是唯一滚动容器（用户给的目标行为）', () => {
-    // 写页：根容器不再 overflow-hidden（它不该滚）；footer 用 shrink-0 明确「不参与压缩」。
-    // （正文滚动容器的**具体形态**由 K9 校验：必须是 flex 列容器，见那条的说明。）
     const editor = code(EDITOR)
     expect(editor, '写页根容器不该再 overflow-hidden（那是它自己可滚的信号）').not.toMatch(
       /flex-col overflow-hidden px-5/,
     )
     expect(editor, '写页底部按钮必须 shrink-0（固定不动）').toMatch(
-      /<footer className="relative shrink-0/,
+      /<footer[^>]*shrink-0/,
     )
 
-    // 详情页：main 不再滚动，正文那一块才是滚动容器。
     const entry = code(ENTRY)
     expect(entry, '详情页 main 不该自己滚（页头与底部栏必须固定）').not.toMatch(
       /flex-col overflow-y-auto px-5/,
     )
-    // 查看态正文滚动容器（签名 mt-4 + overflow-y-auto，EntryView 里唯一）必须存在。
-    // 注意不要在这里断言 order —— 那正是 2026-10-09 的回归来源，见 K10。
     const viewBody = classAttrsIn(ENTRY, entry).filter(
       (a) => a.text.includes('mt-4') && a.text.includes('overflow-y-auto'),
     )
@@ -111,35 +115,16 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
   })
 
   it('K7 不得退回到「手工算像素高度」的老路', () => {
-    // 2026-08-26 之前是 getAvailableHeight() 里写死 -200 再 setHeight；
-    // 那种写法既猜错了头部高度、又要靠 effect 同步，已经删掉，不要加回来。
-    // ★ 判据必须落到「有没有内联高度」本身：只查 `style.height` 这种子串是不够的——
-    //   JSX 里的写法是 `style={{ height: … }}`，那个子串根本不会出现（非空转验证抓到的假断言）。
     const auto = code(AUTO)
     expect(auto, 'AutoTextarea 又出现了内联样式（高度应该由父级 flex 分配）').not.toMatch(/style=\{/)
     expect(auto, 'AutoTextarea 又出现了自己算高度的痕迹').not.toMatch(/fitHeight|getAvailableHeight/)
   })
 
   it('K8 工具条没有被改成 sticky/fixed（治不了这个病，还多一个采样盒子）', () => {
-    // 工具条本来就靠「页头/底部固定 + 正文滚动」的 flex 布局实现固定，不需要 sticky/fixed；
-    // 而顶边缘出现 fixed/sticky 盒子时会被 iOS 顶栏读取并合成
-    // （2026-10-02「顶部虚化」三轮踩过，见 globals.css 的说明）。
-    // 工具条是共用件，只查它一处即可 —— 两个编辑面都从这里渲染。
     expect(classTokens(code(TOOLBAR)), `${TOOLBAR} 不该把工具条粘住`).not.toContain('sticky')
   })
 
   it('K9 编辑区外层必须是 flex 列容器，且**不得**自己可滚（K11 的反面）', () => {
-    // 2026-10-09 回归（用户反馈「编辑页面只有很小一块输入区域了，大概 2~3 行」）：
-    // 第二版把正文包进滚动容器时写成了**块级** div，而 EDITOR_TEXTAREA_CLASS 自带 `flex-1` ——
-    // `flex-1` 只在 **flex 容器**里才有意义。父级是块级 div 时它是彻底的空操作，
-    // textarea 于是退回固有高度（浏览器默认 rows≈2 ⇒ 2~3 行）。
-    // 与 K7「不许内联算高度」是一对：高度只能由 flex 分配，那父级就必须是 flex 容器。
-    //
-    // ★ 2026-10-09 第二轮（用户反馈「文字较多时收起键盘后输入区偶发滑不动」）：
-    //   这一层**不能**再带 `overflow-y-auto` —— 编辑态 textarea 是 flex-1，高度正好等于本容器，
-    //   本容器永远不溢出却仍是「可滚动元素」，会夹在手指与真正的滚动条之间吞手势。
-    //   滚动改由两个分支各自承担，详见 K11。
-    // 签名 `pt-4 pb-2` 唯一标识这一层（预览态与编辑态共用）。
     for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
       const attrs = classAttrsIn(rel, code(rel)).filter(
         (a) => a.text.includes('pt-4') && a.text.includes('pb-2'),
@@ -150,28 +135,13 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
       expect(tk, `${name}编辑区外层缺 flex-col ⇒ 子项会被横向排`).toContain('flex-col')
       expect(tk, `${name}编辑区外层缺 min-h-0 ⇒ 压不下去`).toContain('min-h-0')
       expect(tk, `${name}编辑区外层缺 flex-1 ⇒ 不占满中间区域`).toContain('flex-1')
-      expect(
-        tk,
-        `${name}编辑区外层又变成滚动容器了 —— 它会夹在手指与 textarea 之间吞掉滚动手势（见 K11）`,
-      ).not.toContain('overflow-y-auto')
+      expect(tk, `${name}编辑区外层又变成滚动容器了`).not.toContain('overflow-y-auto')
     }
   })
 
-  it('K11 正文区不得嵌套滚动容器：每个分支各自承担滚动（2026-10-09 用户反馈）', () => {
-    // 用户反馈：「新建笔记且文字内容较多的情况下，收起键盘后输入区域偶现无法正常上下滑动。」
-    // 根因：正文外面套了一层 `overflow-y-auto` 的容器，而编辑态 textarea 是 `flex-1`
-    // （高度正好等于该容器）⇒ **该容器永远不产生溢出，却仍是一个可滚动元素**。
-    // 手指与真正的滚动条之间就多隔了一层「能滚但不滚」的容器，iOS 上会偶发吞掉 pan 手势。
-    // 内容少时 textarea 本来就不溢出、看不出问题；内容多时才暴露 —— 与「文字较多时才出现」吻合。
-    // 证据：Temp/qo-keyboard-probe/nested-scroll.mjs（旧：可滚动祖先 2 层含 1 层冗余；新：各 1 层）。
-    //
-    // 定稿：外层**只做布局**（K9 已钉死不许可滚），滚动由「当前显示的那一支」自己承担 ——
-    //   编辑态 = textarea 自身；预览态 = 包着 previewRef 的那个 div。
+  it('K11 正文区不得嵌套滚动容器：每个分支各自承担滚动', () => {
     for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
       const src = code(rel)
-      // 预览分支：`ref={previewRef}` 所在元素自己必须是滚动容器。
-      // 注意 className 里没有 previewRef（那在 ref 属性上），所以不能按 class 文本找 ——
-      // 用「ref 之后的窗口里取 className」这一招，且不依赖属性先后顺序。
       const at = src.indexOf('ref={previewRef}')
       expect(at, `${name}找不到预览分支的 ref={previewRef}`).toBeGreaterThan(-1)
       const m = src.slice(at, at + 140).match(/className="([^"]*)"/)
@@ -181,41 +151,19 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
       expect(ptk, `${name}预览分支的滚动容器缺 min-h-0`).toContain('min-h-0')
       expect(ptk, `${name}预览分支的滚动容器缺 flex-1`).toContain('flex-1')
     }
-    // 编辑分支的滚动容器：
-    //  · 详情页是裸 textarea ⇒ 必须在共享常量之外显式带上 overflow-y-auto（别依赖 UA 默认）
     const entryTa = classAttrsIn(ENTRY, code(ENTRY)).filter((a) => a.text.includes('resize-none'))
     expect(entryTa.length, '详情页找不到编辑 textarea（签名 resize-none）').toBe(1)
-    expect(
-      classTokens(entryTa[0].text),
-      '详情页编辑 textarea 缺 overflow-y-auto ⇒ 内容一多就滚不动',
-    ).toContain('overflow-y-auto')
-    //  · 写页走 AutoTextarea 组件 ⇒ 断言那个组件确实给了 overflow-y-auto
-    expect(
-      code(AUTO),
-      'AutoTextarea 丢了 overflow-y-auto ⇒ 写页输入区内容一多就滚不动',
-    ).toContain('overflow-y-auto')
+    expect(classTokens(entryTa[0].text), '详情页编辑 textarea 缺 overflow-y-auto').toContain('overflow-y-auto')
+    expect(code(AUTO), 'AutoTextarea 丢了 overflow-y-auto').toContain('overflow-y-auto')
   })
 
-  it('K10 页眉必须在正文之前，且不得用 flex order 重排（2026-10-09 回归）', () => {
-    // 回归（用户反馈「查看/编辑文章页，返回按钮、日记按钮、添加按钮，以及定位和天气
-    // 全部错误地显示在了输入框的下方」）：
-    // 上一次改动用 `order-1` 把正文提到视觉最前、把页眉/元信息/定位一律压成 `order-10`，
-    // 理由是「日期、字数、定位、编辑于是正文的落款」—— **这个前提本身是错的**：
-    // 页眉里的返回 / 标题 / ＋ 本来就该在最上面。
-    //
-    // 教训：flex `order` 是**纯视觉重排**，DOM 顺序与画出来的顺序不一致，
-    // 读源码时极易看漏（本项目的守卫也大多按源码顺序读）。这两个页面都不需要重排 ——
-    // 源码顺序本来就是正确的视觉顺序。所以直接禁用 order。
+  it('K10 页眉必须在正文之前，且不得用 flex order 重排', () => {
     for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
       const src = code(rel)
-      // \b 保证不误伤 border-*（b 与 o 都是单词字符，中间没有词边界）
-      expect(src, `${name}又用 flex order 重排视觉顺序了（页眉会被挤到正文下面）`).not.toMatch(
+      expect(src, `${name}又用 flex order 重排视觉顺序了`).not.toMatch(
         /\border-(?:\d+|first|last|none)\b/,
       )
     }
-    // 详情页：页眉必须排在正文滚动容器**之前** —— 源码顺序即视觉顺序。
-    // 锚点必须从 `main` 起算：文件上方还有一个「加载中占位」的早返回 main，它也含
-    // overflow-y-auto（line ≈549），从文件头开始 indexOf 会先命中它（非空转验证抓到的）。
     const entry = code(ENTRY)
     const mainAt = entry.indexOf('<main className="mx-auto flex min-h-0 w-full max-w-md flex-1 flex-col px-5">')
     expect(mainAt, '找不到详情页的 main 渲染容器').toBeGreaterThan(-1)
@@ -223,20 +171,13 @@ describe('K · 键盘弹出时的编辑区高度适配', () => {
     const scrollerAt = entry.indexOf('overflow-y-auto', mainAt)
     expect(headerAt, '找不到详情页页眉（.page-header）').toBeGreaterThan(-1)
     expect(scrollerAt, '找不到详情页正文滚动容器').toBeGreaterThan(-1)
-    expect(headerAt, '页眉排在正文滚动容器之后 ⇒ 会显示在输入框下方').toBeLessThan(scrollerAt)
+    expect(headerAt, '页眉排在正文滚动容器之后').toBeLessThan(scrollerAt)
   })
 
-  // ── 2026-10-29 用户反馈：解锁后第一次点输入框，键盘延迟 0.5~1 秒，第二次立刻弹出 ──
-  it('K12 触屏设备不在挂载时程序化聚焦（否则 iOS 留下假输入会话，首次点击键盘要等 0.5~1s）', () => {
+  it('K12 触屏设备不在挂载时程序化聚焦（否则 iOS 留下假输入会话，首次点击键盘要等）', () => {
     const src = readFileSync(join(projectRoot, AUTO), 'utf8')
-    // 必须按指针粗细分流：桌面照常聚焦（键盘是硬件的，focus 即生效）
     expect(src, '没有按 pointer: coarse 分流').toContain("matchMedia('(pointer: coarse)')")
     expect(src, '触屏分支没有提前 return（还是会抢焦点）').toMatch(/isCoarsePointer\(\)\) \{[\s\S]{0,300}?return/)
-    // 触屏上仍要做「接着上次写」的两件事：光标放文末 + 滚到文末
-    expect(src, '触屏分支没把光标放到文末').toMatch(/isCoarsePointer\(\)\) \{[\s\S]{0,200}?setSelectionRange\(end, end\)/)
-    expect(src, '触屏分支没把视图滚到文末').toMatch(/isCoarsePointer\(\)\) \{[\s\S]{0,300}?scrollTo\(\{ top: el\.scrollHeight \}\)/)
-    // ★ 反向：不许再把 autoFocus 传给 <textarea> —— React 会在挂载时自己 focus 一次，
-    //   等于绕过上面的判断，白改
     expect(src, '又把 autoFocus 属性传给 textarea 了（React 会自己聚焦，分流失效）')
       .not.toMatch(/autoFocus=\{autoFocus\}/)
   })
