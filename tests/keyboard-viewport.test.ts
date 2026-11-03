@@ -122,9 +122,9 @@ describe('K · 键盘弹起时页面完全不动', () => {
   it('K9 编辑区外层必须是 flex 列容器，且不得自己可滚', () => {
     for (const [name, rel] of [['写页', EDITOR], ['详情页', ENTRY]] as const) {
       const attrs = classAttrsIn(rel, code(rel)).filter(
-        (a) => a.text.includes('pt-4') && a.text.includes('pb-2'),
+        (a) => a.text.includes('pt-1') && a.text.includes('pb-1'),
       )
-      expect(attrs.length, `${name}找不到编辑区外层容器（签名 pt-4 + pb-2），或签名不再唯一`).toBe(1)
+      expect(attrs.length, `${name}找不到编辑区外层容器（签名 pt-1 + pb-1），或签名不再唯一`).toBe(1)
       const tk = classTokens(attrs[0].text)
       expect(tk, `${name}编辑区外层不是 flex 容器 ⇒ 内部 textarea 的 flex-1 失效`).toContain('flex')
       expect(tk, `${name}编辑区外层缺 flex-col`).toContain('flex-col')

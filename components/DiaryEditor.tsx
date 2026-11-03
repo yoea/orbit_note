@@ -518,7 +518,7 @@ export default function DiaryEditor() {
       {/* Markdown 工具条：放在**编辑区顶部**（输入框之上）。
           原先在输入框下方——手机输入时键盘从底部弹出会把整条盖住，工具条等于不可用
           （2026-09-30 用户反馈）。横条本身与详情页编辑态共用 components/MarkdownToolbar.tsx。
-          与下方输入框之间隔开 16px：由**下面这个滚动容器的 pt-4** 承担。
+          与下方输入框之间隔开 4px：由**下面这个滚动容器的 pt-1** 承担。
           工具条**不设自己的 padding-top**：它必须和页头、底部按钮一样是「固定不动」的一条，
           自己长高会挤掉正文的空间；间距改由滚动区的上内边距提供，正文滚动时也就不会贴住它。 */}
       <MarkdownToolbar
@@ -536,13 +536,13 @@ export default function DiaryEditor() {
              内容少时不溢出、看不出问题；内容多时才暴露 —— 与用户描述的「文字内容较多时才出现」吻合。
              证据：`Temp/qo-keyboard-probe/nested-scroll.mjs`（旧：可滚动祖先 2 层、其中 1 层冗余；
              新：每个分支恰好 1 层）。守卫 K9/K11。
-           `pt-4` 提供与工具条的 16px 间距；`pb-2` 与改造前预览区一致。
+           `pt-1` 提供与工具条的 4px 间距；`pb-1` 与底部保持 4px。
            min-h-0 + flex + flex-col 三者都必须有：flex 子项默认 min-height:auto，不加压不下去；
            而 `flex-1` 只在 flex 容器里才有意义（漏了 `flex` ⇒ 输入区塌成 2~3 行，守卫 K9）。 */}
       <div
         ref={bodyRef}
         style={maxHeight != null ? { maxHeight } : undefined}
-        className="flex min-h-0 flex-1 flex-col pt-4 pb-2"
+        className="flex min-h-0 flex-1 flex-col pt-1 pb-1"
       >
         {preview ? (
           <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto">

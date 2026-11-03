@@ -812,7 +812,7 @@ export default function EntryView({ id }: { id: string }) {
               键盘弹起时页面完全不动、键盘盖在下半截（用户选择的「页面完全不动」）。
               这里只保留「页头/元信息/工具条/底部按钮固定，只有正文可滚」这条结构约定。 */}
           {/* 工具条**不滚动**（固定一条）。它与上方「元信息/定位块」之间的间距由那块的
-              mt 组合出来；与下方输入框的 16px 由下面滚动容器的 pt-4 承担
+              mt 组合出来；与下方输入框的 4px 由下面滚动容器的 pt-1 承担
               （工具条自己不设 padding —— 它必须固定，不能自己长高挤掉正文空间）。 */}
           <MarkdownToolbar
             preview={preview}
@@ -827,13 +827,13 @@ export default function EntryView({ id }: { id: string }) {
                 ⇒ **本容器永远不产生溢出，却仍是一个「可滚动元素」**，等于在手指与真正的滚动条
                 之间多隔了一层「能滚但不滚」的容器 —— iOS 上会偶发吞掉 pan 手势。
                 与写页同一根因、同一修法。守卫 K9/K11。
-              `pt-4` 提供与工具条的间距；`pb-2` 与改造前预览区一致。
+              `pt-1` 提供与工具条的 4px 间距；`pb-1` 与底部保持 4px。
               min-h-0 + flex + flex-col 三者都必须有：flex 子项默认 min-height:auto，不加压不下去；
                 而 `flex-1` 只在 flex 容器里才有意义（漏了 `flex` ⇒ 输入区塌成 2~3 行，守卫 K9）。 */}
           <div
             ref={bodyRef}
             style={maxHeight != null ? { maxHeight } : undefined}
-            className="flex min-h-0 flex-1 flex-col pt-4 pb-2"
+            className="flex min-h-0 flex-1 flex-col pt-1 pb-1"
           >
             {preview ? (
               <div ref={previewRef} className="min-h-0 flex-1 overflow-y-auto">
