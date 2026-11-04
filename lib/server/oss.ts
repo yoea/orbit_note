@@ -14,7 +14,7 @@ import OSS from 'ali-oss'
 //   orbit/avatar/current          头像（固定 key，覆盖写；无扩展名，靠 Content-Type 识别）
 //   orbit/entry/<entryId>/<uuid>  预留：笔记内嵌图片（本次不做）
 // ★ 全部资源都压在 `orbit/` 前缀下，这样 RAM 子账号的策略可以只授
-//   `acs:oss:*:*:ethan-orbit/orbit/*` —— 主账号下其他资源一概碰不到。
+//   `acs:oss:*:*:ethan-orbit 的 orbit 前缀` —— 主账号下其他资源一概碰不到。
 //
 // ── 为什么头像 key 不带扩展名 ────────────────────────────────────────────
 // 客户端统一输出 WebP，但老环境可能退回 JPEG。带扩展名就得为两种格式各留一个 key、
@@ -61,7 +61,17 @@ function getUploadClient(): OSS {
 /** 只用来签 URL（公网 endpoint，签出来的地址浏览器才打得开）。 */
 function getSignClient(): OSS {
   if (!signClient) {
-    signClient = new OSS({ region: REGION, endpoint: PUBLIC_ENDPOINT, bucket: BUCKET, ...credentials() })
+    signClient = new OSS({
+      region: REGION,
+      endpoint: PUBLIC_ENDPOINT,
+      bucket: BUCKET,
+      // ★ secure: true 不能省：ali-oss 默认生成 http 协议（非 https）的签名地址，
+      //   而本站是 HTTPS —— 浏览器会把混合内容（Mixed Content）直接拦掉，
+      //   `<img>` 一律 onError。命令行/服务端测出来是 200，只有浏览器会失败，
+      //   这个坑排查了一整轮（2026-11-04）。
+      secure: true,
+      ...credentials(),
+    })
   }
   return signClient
 }
@@ -87,9 +97,14 @@ export async function deleteObject(key: string): Promise<void> {
 /**
  * 生成带签名的临时访问 URL（默认 24 小时）。
  * 前端 `<img src>` 直接用它；过期后下一次 GET /api/profile 会重新签。
+ *
+ * ★ 强制 https：页面是 HTTPS，`http://` 的图片会被浏览器当混合内容拦掉。
+ *   client 已配 `secure: true`，这里再兜一次——协议退化成 http 的后果是「图片静默不显示」，
+ *   线上排查成本太高，不值得只靠一个配置项。
  */
 export function signedUrl(key: string, expiresSeconds = 86_400): string {
-  return getSignClient().signatureUrl(key, { expires: expiresSeconds, method: 'GET' })
+  const url = getSignClient().signatureUrl(key, { expires: expiresSeconds, method: 'GET' })
+  return url.replace(/^http:\/\//i, 'https://')
 }
 
 /**

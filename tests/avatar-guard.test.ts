@@ -70,6 +70,17 @@ describe('头像：存储与权限', () => {
       /getUploadClient\(\)\.signatureUrl/,
     )
   })
+
+  it('A4b 签名 URL 必须是 https（http 会被浏览器当混合内容拦掉）', () => {
+    const src = code(OSS)
+    // ★ 2026-11-04 事故：ali-oss 默认签出 http:// 地址，HTTPS 页面里 <img> 一律 onError。
+    //   命令行测都是 200，只有浏览器失败 —— 所以两条都要钉住。
+    const signAt = src.indexOf('function getSignClient')
+    const secureAt = src.indexOf('secure: true')
+    expect(signAt, '找不到 getSignClient').toBeGreaterThan(-1)
+    expect(secureAt, '签名 client 没配 secure: true —— ali-oss 会签出 http 地址').toBeGreaterThan(signAt)
+    expect(src, 'signedUrl 没有强制 https 兜底').toContain("replace(/^http:\\/\\//i, 'https://')")
+  })
 })
 
 describe('头像：接口与交互', () => {
