@@ -108,4 +108,26 @@ describe('头像：接口与交互', () => {
     // 取景区必须禁掉浏览器手势，否则拖动会和页面滚动打架（touch-none 落在 canvas 的 class 上）
     expect(src, '取景区没禁 touch-action').toContain('touch-none')
   })
+
+  it('A9 读图不得提前清空 input、不得依赖 blob URL（真机「图片读取失败」的根因）', () => {
+    const src = code(MANAGER)
+    // 2026-11-04 事故：在解码之前 `input.value = ''`，Safari 随之回收 FileList，
+    // 已拿到的 File 变成无效引用 ⇒ 解码必然失败（iOS PWA 与桌面浏览器同时复现）。
+    // 清空只能出现在 finally（= 文件读完之后）。
+    expect(src, '清空 input 不在 finally 里 —— 提前清空会让 Safari 回收 File').toMatch(
+      /finally\s*\{[\s\S]{0,400}?value = ''/,
+    )
+    // ★ 再加一道：从取 file 到真正解码之间，不许出现清空（否则 finally 里那句会掩盖问题，
+    //   实测「只断 finally 有清空」在把清空挪回前面时依然通过 = 假绿）。
+    const start = src.indexOf('files?.[0]')
+    const decodeAt = src.indexOf('buildSource(file)')
+    expect(start, '找不到 files?.[0]').toBeGreaterThan(-1)
+    expect(decodeAt, '找不到 buildSource(file)').toBeGreaterThan(-1)
+    expect(
+      src.slice(start, decodeAt),
+      '在解码之前清空了 input.value —— Safari 会回收 File，解码必然失败',
+    ).not.toContain("value = ''")
+    // 解码路径不许再用 blob URL：它的生命周期一旦出错，表现就是「图片读取失败」。
+    expect(src, '解码又用回 createObjectURL 了').not.toContain('createObjectURL')
+  })
 })

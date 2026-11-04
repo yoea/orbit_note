@@ -50,19 +50,44 @@ function drawCropRect(
   ctx.drawImage(src.canvas, cx - size / 2, cy - size / 2, size, size, 0, 0, dest, dest)
 }
 
-/** 解码选中的文件并缩到最长边 SOURCE_MAX_EDGE，返回离屏 canvas */
+/**
+ * 把选中的文件解码成可绘制的图像源。
+ *
+ * ★ 两条路都不用 blob URL —— 2026-11-04 真机事故：选择图片后必然报「图片读取失败」，
+ *   iOS PWA 与桌面浏览器都复现。根因是**在解码之前就清空了 input.value**：
+ *   Safari 会随之回收 FileList，先前拿到的 File 变成无效引用 ⇒ createObjectURL + 解码全失败。
+ *   现在：① 清空挪到读完之后（见 onFileChange 的 finally）；② 解码本身也不再依赖 URL。
+ */
+async function decodeImage(file: File): Promise<{ el: CanvasImageSource; width: number; height: number; release: () => void }> {
+  // ① 优先 createImageBitmap：直接从 File 解码，不创建任何 URL（iOS 15+ / 各桌面浏览器）
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bmp = await createImageBitmap(file)
+      return { el: bmp, width: bmp.width, height: bmp.height, release: () => bmp.close() }
+    } catch { /* 某些格式解不了，退回下一条 */ }
+  }
+  // ② 回退：FileReader → dataURL → <img>（dataURL 自包含，不受 URL 生命周期影响）
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(new Error('这张图片读不出来，换一张 JPG / PNG 试试'))
+    reader.readAsDataURL(file)
+  })
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image()
+    el.onload = () => resolve(el)
+    el.onerror = () => reject(new Error('这张图片浏览器解不了，换一张 JPG / PNG 试试'))
+    el.src = dataUrl
+  })
+  return { el: img, width: img.naturalWidth, height: img.naturalHeight, release: () => { /* img 无需释放 */ } }
+}
+
+/** 解码 + 缩到最长边 SOURCE_MAX_EDGE，返回离屏 canvas */
 async function buildSource(file: File): Promise<Source> {
-  const url = URL.createObjectURL(file)
+  const decoded = await decodeImage(file)
   try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image()
-      el.onload = () => resolve(el)
-      el.onerror = () => reject(new Error('图片读取失败，请换一张试试'))
-      el.src = url
-    })
-    const w = img.naturalWidth
-    const h = img.naturalHeight
-    if (!w || !h) throw new Error('图片读取失败，请换一张试试')
+    const { width: w, height: h } = decoded
+    if (!w || !h) throw new Error('这张图片是空的，换一张试试')
     const scale = Math.min(1, SOURCE_MAX_EDGE / Math.max(w, h))
     const width = Math.max(1, Math.round(w * scale))
     const height = Math.max(1, Math.round(h * scale))
@@ -72,10 +97,10 @@ async function buildSource(file: File): Promise<Source> {
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('浏览器不支持图片处理')
     ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(img, 0, 0, width, height)
+    ctx.drawImage(decoded.el, 0, 0, width, height)
     return { canvas, width, height }
   } finally {
-    URL.revokeObjectURL(url)
+    decoded.release() // ImageBitmap 占的是原生内存，用完立刻释放
   }
 }
 
@@ -150,9 +175,12 @@ export default function AvatarManager({ onClose, disabled = false }: {
   }
 
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    e.target.value = '' // 允许连续选同一张
+    // ★ 先抓住 input 引用：React 合成事件在 await 之后 currentTarget 会失效。
+    const input = e.currentTarget
+    const file = input.files?.[0]
     if (!file) return
+    // 类型 / 大小不对：直接报错返回。这里**不**清空 input —— 清空统一放到 finally，
+    // 免得"提前清空"这条坑以后再被抄进成功路径（见 finally 的注释）。
     if (!file.type.startsWith('image/')) { setError('请选择图片文件'); return }
     if (file.size > MAX_SOURCE_BYTES) { setError('图片太大（上限 20MB）'); return }
     setBusy(true)
@@ -167,6 +195,10 @@ export default function AvatarManager({ onClose, disabled = false }: {
     } catch (err) {
       setError(err instanceof Error ? err.message : '图片读取失败，请换一张试试')
     } finally {
+      // ★ 清空必须放在**读完文件之后**：提前清空会让 Safari 回收 FileList，
+      //   已经拿到的 File 变成无效引用，解码必然失败（真机事故，见 decodeImage 的注释）。
+      //   放在 finally 同样支持「连续选同一张图」再次触发 change。
+      input.value = ''
       setBusy(false)
     }
   }
