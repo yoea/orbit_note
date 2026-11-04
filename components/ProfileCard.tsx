@@ -18,18 +18,22 @@ import { USER_NAME_MAX, saveUserName } from '@/lib/client/profile'
 //   · **不提供「随机生成一个」**：默认名只属于 loadUserName 的懒创建（首次进需要名字的页面）。
 //     tests/name-edit-guard.test.ts 守着这条。
 //   · 离线（disabled）：点名字只弹提示，不进编辑态——改名是服务器写操作。
-export default function ProfileCard({ disabled = false, onBlocked }: {
+export default function ProfileCard({ disabled = false, onBlocked, onOpenAvatar }: {
   disabled?: boolean
   /** 离线时点了名字：上层用来弹「离线不可用」提示 */
   onBlocked?: () => void
+  /** 点头像：上层打开头像管理（看大图 / 换图 / 删除） */
+  onOpenAvatar?: () => void
 }) {
-  const { name } = useProfile()
+  const { name, avatarUrl, avatarVersion } = useProfile()
   const stats = useDiaryOverview()
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 签名 URL 过期 / 网络失败时 <img> 会空着，这时退回首字母，别留一个破图
+  const [imgFailed, setImgFailed] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // 进入编辑：聚焦并**全选**（改名绝大多数是整体替换），只操作 DOM、不 setState。
@@ -102,9 +106,28 @@ export default function ProfileCard({ disabled = false, onBlocked }: {
     <div
       className={`mt-2 flex w-full items-center gap-3 rounded-2xl bg-neutral-50/60 px-4 py-3.5 dark:bg-neutral-900/40 ${disabled ? 'opacity-50' : ''}`}
     >
-      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 via-rose-400 to-violet-500 text-lg font-semibold text-white">
-        {initial}
-      </span>
+      {/* 头像：可点 → 看大图 / 换图 / 删除（在 AvatarManager 里）。
+          有自定义头像就显示图（签名 URL + 版本号破缓存），否则首字母 + 品牌渐变。 */}
+      <button
+        type="button"
+        onClick={onOpenAvatar}
+        aria-label="查看或修改头像"
+        className="shrink-0 rounded-full active:opacity-60"
+      >
+        {avatarUrl && !imgFailed ? (
+          // eslint-disable-next-line @next/next/no-img-element -- 签名 URL 每次不同，next/image 无法优化
+          <img
+            src={`${avatarUrl}&v=${avatarVersion ?? 0}`}
+            alt=""
+            onError={() => setImgFailed(true)}
+            className="h-12 w-12 rounded-full object-cover"
+          />
+        ) : (
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 via-rose-400 to-violet-500 text-lg font-semibold text-white">
+            {initial}
+          </span>
+        )}
+      </button>
       <div className="min-w-0 flex-1">
         {editing ? (
           <>

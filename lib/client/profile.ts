@@ -21,6 +21,10 @@ export function generateDefaultName(): string {
 interface ProfileState {
   name: string
   createdAt: string | null
+  /** 头像的**签名 URL**（服务端签，24 小时过期）；null = 没设置头像，界面回退首字母 */
+  avatarUrl: string | null
+  /** 头像版本号（固定 key 覆盖写，前端拿它拼 ?v= 破缓存） */
+  avatarVersion: number | null
 }
 
 // 会话级缓存：解锁后读一次即可，避免每个页面重复「拉取 + 解密」。
@@ -30,7 +34,12 @@ let cached: ProfileState | null = null
 const listeners = new Set<() => void>()
 
 function setCached(next: ProfileState | null): void {
-  if (cached?.name === next?.name && cached?.createdAt === next?.createdAt) return
+  if (
+    cached?.name === next?.name &&
+    cached?.createdAt === next?.createdAt &&
+    cached?.avatarUrl === next?.avatarUrl &&
+    cached?.avatarVersion === next?.avatarVersion
+  ) return
   cached = next
   for (const listener of listeners) listener()
 }
@@ -42,6 +51,14 @@ export function getUserName(): string | null {
 
 export function getProfileCreatedAt(): string | null {
   return cached?.createdAt ?? null
+}
+
+export function getUserAvatarUrl(): string | null {
+  return cached?.avatarUrl ?? null
+}
+
+export function getUserAvatarVersion(): number | null {
+  return cached?.avatarVersion ?? null
 }
 
 export function subscribeProfile(listener: () => void): () => void {
@@ -79,7 +96,15 @@ export async function loadUserName(): Promise<string> {
       try {
         const name = await decryptText(dek, offlineProfile.nameCiphertext, offlineProfile.nameIv)
         if (name) {
-          setCached({ name, createdAt: offlineProfile.createdAt })
+          // 离线兜底：只有名字能解，头像的签名 URL 是联网时才签的。
+          // 保留内存里已有的（若本次会话先前在线加载过，24 小时内它还有效）。
+          setCached({
+            name,
+            createdAt: offlineProfile.createdAt,
+            // 用 getter 而不是直接读 `cached`：后者在这里会被 TS 收窄成 never
+            avatarUrl: getUserAvatarUrl(),
+            avatarVersion: getUserAvatarVersion(),
+          })
           return name
         }
       } catch { /* 缓存解密失败（换过 DEK）→ 视为无兜底 */ }
@@ -90,13 +115,18 @@ export async function loadUserName(): Promise<string> {
   const data = await res.json() as {
     profile: { nameCiphertext: string; nameIv: string } | null
     createdAt: string | null
+    avatar: { url: string; version: number } | null
   }
   const createdAt = data.createdAt ?? null
+  // 头像（签名 URL，24 小时过期）：每次加载这里都会重新签一次，故意**不**写进 IndexedDB 缓存
+  // —— 缓存下来的签名地址过期后就变成 403 的空图，反而更糟。
+  const avatarUrl = data.avatar?.url ?? null
+  const avatarVersion = data.avatar?.version ?? null
   if (data.profile) {
     try {
       const name = await decryptText(dek, data.profile.nameCiphertext, data.profile.nameIv)
       if (name) {
-        setCached({ name, createdAt })
+        setCached({ name, createdAt, avatarUrl, avatarVersion })
         // 在线成功顺手缓存密文（离线兜底用），异步不阻塞
         void cacheProfile({ nameCiphertext: data.profile.nameCiphertext, nameIv: data.profile.nameIv, createdAt })
         return name
@@ -105,12 +135,12 @@ export async function loadUserName(): Promise<string> {
   }
   const name = generateDefaultName()
   const { ciphertext, iv } = await putName(dek, name)
-  setCached({ name, createdAt })
+  setCached({ name, createdAt, avatarUrl, avatarVersion })
   void cacheProfile({ nameCiphertext: ciphertext, nameIv: iv, createdAt })
   return name
 }
 
-// 改名（设置页）。空名拒绝；超长按上限截断。createdAt 不受影响。
+// 改名（设置页）。空名拒绝；超长按上限截断。createdAt / 头像都不受影响。
 export async function saveUserName(name: string): Promise<void> {
   const dek = getDek()
   if (!dek) throw new Error('未解锁')
@@ -118,6 +148,18 @@ export async function saveUserName(name: string): Promise<void> {
   if (!trimmed) throw new Error('名字不能为空')
   const { ciphertext, iv } = await putName(dek, trimmed)
   const createdAt = cached?.createdAt ?? null
-  setCached({ name: trimmed, createdAt })
+  setCached({
+    name: trimmed,
+    createdAt,
+    avatarUrl: cached?.avatarUrl ?? null,
+    avatarVersion: cached?.avatarVersion ?? null,
+  })
   void cacheProfile({ nameCiphertext: ciphertext, nameIv: iv, createdAt })
+}
+
+// 上传/删除头像后立即更新缓存，让所有显示头像的地方（目前是设置页卡片）同步刷新，
+// 不必再打一次 /api/profile。
+export function setCachedAvatar(next: { url: string; version: number } | null): void {
+  if (!cached) return
+  setCached({ ...cached, avatarUrl: next?.url ?? null, avatarVersion: next?.version ?? null })
 }

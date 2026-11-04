@@ -99,6 +99,13 @@ export const userProfile = pgTable('user_profile', {
   id: text('id').primaryKey(),
   nameCiphertext: text('name_ciphertext'),
   nameIv: text('name_iv'),
+  // 头像在 OSS 里的对象 key（如 `orbit/avatar/current.webp`）；null = 不自定义头像，界面用首字母。
+  // ★ 明文存 key 而不是 URL：换域名 / 换 endpoint 时不用改数据；URL 由服务端每次签名生成
+  //   （bucket 是私有的，图片靠 24 小时有效的签名 URL 访问，不对公网匿名开放）。
+  avatarKey: text('avatar_key'),
+  // 头像最后更新时间：拼进 URL 的版本号（`?v=<毫秒>`）—— 固定 key 覆盖写，
+  // 不换版本号的话浏览器/代理会继续显示旧图。
+  avatarUpdatedAt: timestamp('avatar_updated_at', { withTimezone: true }),
   // 注册时间：仅「首次注册（即创建账号）」时由服务端写入，之后不再改动。
   // 可空——本功能上线之前注册的老用户没有这个值，界面回退为「第一篇日记」的日期。
   createdAt: timestamp('created_at', { withTimezone: true }),

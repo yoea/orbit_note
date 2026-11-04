@@ -48,6 +48,10 @@ const nextConfig: NextConfig = {
   // 注意：standalone **不会**自动带上 .next/static 与 public，必须由部署脚本复制进去
   // （scripts/deploy.sh 的 [5/8] 打包步骤负责，见那里的注释）。
   output: 'standalone',
+  // ali-oss 内部用 urllib → 会动态 require `proxy-agent` 这类可选依赖，打包器解析不到
+  // （构建直接失败在 module-not-found）。排除它，让运行时从 node_modules 直接加载；
+  // standalone 产物仍会把它按 package 追踪进来。
+  serverExternalPackages: ['ali-oss'],
   env: {
     NEXT_PUBLIC_VERSION: getVersion(),
   },

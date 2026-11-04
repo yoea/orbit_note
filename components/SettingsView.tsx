@@ -9,6 +9,7 @@ import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
 import RecoveryRegenerateDialog from '@/components/RecoveryRegenerateDialog'
 import BackupSheet from '@/components/BackupSheet'
 import ProfileCard from '@/components/ProfileCard'
+import AvatarManager from '@/components/AvatarManager'
 import Toast from '@/components/Toast'
 import { clearDek, fetchWrappers } from '@/lib/client/session'
 import { clearUserNameCache } from '@/lib/client/profile'
@@ -63,6 +64,7 @@ export default function SettingsView() {
   const [showRecovery, setShowRecovery] = useState(false)
   // 导入与导出改从底部弹出（2026-10-29 用户要求）——不再跳 /settings/backup 整页
   const [showBackup, setShowBackup] = useState(false)
+  const [showAvatar, setShowAvatar] = useState(false)
   // 离线禁用提示：offlineToastAt 是触发计数器（>0 即显示）。连点自增 →
   // 下面的 effect 重启 2s 计时器（toast 动画重放）；比手写 setTimeout+ref 简单且无 lint 争议
   const [offlineToastAt, setOfflineToastAt] = useState(0)
@@ -143,7 +145,7 @@ export default function SettingsView() {
       </header>
       {/* 个人信息卡片：生成式头像 + 名字 + 一行统计。**点名字就地改名**（不弹窗，
           与通行密钥改设备名同款）。不设分组标题——卡片本身已足够表意 */}
-      <ProfileCard disabled={offline} onBlocked={notifyOffline} />
+      <ProfileCard disabled={offline} onBlocked={notifyOffline} onOpenAvatar={() => setShowAvatar(true)} />
       <h2 className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">账号与安全</h2>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
@@ -272,6 +274,9 @@ export default function SettingsView() {
           onInfoChange={setRecoveryInfo}
         />
       )}
+
+      {/* 头像：看大图 / 换一张 / 删除。离线可以看，但不能换或删（服务器写操作） */}
+      {showAvatar && <AvatarManager onClose={() => setShowAvatar(false)} disabled={offline} />}
 
       {/* 离线禁用提示（点击被禁入口时短暂显示） */}
       {offlineToastAt > 0 && <Toast message="该功能离线模式暂不可用" />}
