@@ -260,12 +260,15 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
       drawCropRect(ctx, source, center.x, center.y, cropSize, OUTPUT_SIZE)
 
       const toBlob = (type: string) => new Promise<Blob | null>((resolve) => out.toBlob(resolve, type, 0.9))
-      // WebP 优先（约为 JPEG 的 60% 体积）。
-      // ★ iOS Safari 不支持 WebP 编码时不会返回 null，而是按规范**降级成 PNG** ——
-      //   所以不能假设拿到的一定是 webp，文件名跟实际类型走，服务端三种都收。
-      const blob = (await toBlob('image/webp')) ?? (await toBlob('image/jpeg'))
+      // ★ 统一用 JPEG，不赌 WebP（2026-11-04 真机事故）：
+      //   iOS Safari 不支持 WebP 编码时，`toBlob(cb, 'image/webp')` 会**按规范降级成 PNG**
+      //   （不是返回 null），于是后端拿到 image/png 被判为非法类型、每次上传都 415。
+      //   JPEG 是所有浏览器都支持的编码，256×256 约 20~40KB，比 WebP 只大十几 KB ——
+      //   为这点体积差去处理「有的机型给 webp、有的给 png」的矩阵不划算。
+      //   少数环境连 JPEG 都拿不到时，再退回 WebP。
+      const blob = (await toBlob('image/jpeg')) ?? (await toBlob('image/webp'))
       if (!blob) throw new Error('图片编码失败')
-      const ext = blob.type === 'image/webp' ? 'webp' : blob.type === 'image/jpeg' ? 'jpg' : 'png'
+      const ext = blob.type === 'image/webp' ? 'webp' : blob.type === 'image/png' ? 'png' : 'jpg'
 
       const form = new FormData()
       form.append('file', blob, `avatar.${ext}`)

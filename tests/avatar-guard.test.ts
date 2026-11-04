@@ -94,10 +94,17 @@ describe('头像：接口与交互', () => {
     expect(src, '缺可读名称').toContain('aria-label=')
   })
 
-  it('A7 客户端输出 256×256 的 WebP（体积换成本的关键）', () => {
+  it('A7 客户端输出 256×256 且用全兼容的 JPEG 编码', () => {
     const src = code(MANAGER)
     expect(src, '输出尺寸不是 256').toMatch(/OUTPUT_SIZE\s*=\s*256/)
-    expect(src, '没有编码成 WebP').toContain("'image/webp'")
+    // ★ 首选必须是 JPEG：iOS 不支持 WebP 编码时会把 canvas 输出降级成 PNG，
+    //   服务端若只认 webp/jpeg 就是 415（2026-11-04 真机事故）。JPEG 全平台都有编码器。
+    // ★ 断言顺序而不是「出现过」：两者都在的写法下，只断存在会被兜底那句命中（实测假绿）。
+    const jpegAt = src.indexOf("toBlob('image/jpeg')")
+    const webpAt = src.indexOf("toBlob('image/webp')")
+    expect(jpegAt, '没有用 JPEG 编码').toBeGreaterThan(-1)
+    expect(webpAt, '找不到 WebP 兜底（预期它排在 JPEG 之后）').toBeGreaterThan(-1)
+    expect(jpegAt, 'JPEG 不是首选编码 —— 顺序反了就会在 iOS 上踩 415').toBeLessThan(webpAt)
     expect(src, '没有走 canvas 裁剪就直接上传了原图').toContain('drawImage')
   })
 
