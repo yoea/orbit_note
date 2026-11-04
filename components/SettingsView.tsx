@@ -65,6 +65,8 @@ export default function SettingsView() {
   // 导入与导出改从底部弹出（2026-10-29 用户要求）——不再跳 /settings/backup 整页
   const [showBackup, setShowBackup] = useState(false)
   const [showAvatar, setShowAvatar] = useState(false)
+  // 头像上传/删除后的轻提示（2 秒自动消失）
+  const [avatarToast, setAvatarToast] = useState<string | null>(null)
   // 离线禁用提示：offlineToastAt 是触发计数器（>0 即显示）。连点自增 →
   // 下面的 effect 重启 2s 计时器（toast 动画重放）；比手写 setTimeout+ref 简单且无 lint 争议
   const [offlineToastAt, setOfflineToastAt] = useState(0)
@@ -74,6 +76,12 @@ export default function SettingsView() {
     const t = setTimeout(() => setOfflineToastAt(0), 2000)
     return () => clearTimeout(t)
   }, [offlineToastAt])
+
+  useEffect(() => {
+    if (!avatarToast) return
+    const t = setTimeout(() => setAvatarToast(null), 2000)
+    return () => clearTimeout(t)
+  }, [avatarToast])
 
   function notifyOffline() {
     setOfflineToastAt((n) => n + 1)
@@ -276,7 +284,14 @@ export default function SettingsView() {
       )}
 
       {/* 头像：看大图 / 换一张 / 删除。离线可以看，但不能换或删（服务器写操作） */}
-      {showAvatar && <AvatarManager onClose={() => setShowAvatar(false)} disabled={offline} />}
+      {showAvatar && (
+        <AvatarManager
+          onClose={() => setShowAvatar(false)}
+          onSaved={(msg) => setAvatarToast(msg)}
+          disabled={offline}
+        />
+      )}
+      {avatarToast && <Toast message={avatarToast} />}
 
       {/* 离线禁用提示（点击被禁入口时短暂显示） */}
       {offlineToastAt > 0 && <Toast message="该功能离线模式暂不可用" />}

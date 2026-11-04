@@ -84,8 +84,10 @@ async function putName(dek: CryptoKey, name: string): Promise<{ ciphertext: stri
 
 // 读取资料；库里没有名字则生成默认名并落库。需要 DEK（未解锁时抛错）。
 // 网络不可达时回退本地密文缓存（离线时设置页的名字靠它显示，而非永远「加载中」）。
-export async function loadUserName(): Promise<string> {
-  if (cached) return cached.name
+export async function loadUserName(opts?: { force?: boolean }): Promise<string> {
+  // ★ 默认缓存命中就返回；`force` 用于「头像刚改完，必须和服务端对一次」——
+  //   之前没有这个参数，导致上传成功后调用它也被短路，界面拿不到新的签名 URL（真机事故）。
+  if (cached && !opts?.force) return cached.name
   const dek = getDek()
   if (!dek) throw new Error('未解锁')
   const res = await fetch('/api/profile').catch(() => null)
@@ -157,9 +159,14 @@ export async function saveUserName(name: string): Promise<void> {
   void cacheProfile({ nameCiphertext: ciphertext, nameIv: iv, createdAt })
 }
 
-// 上传/删除头像后立即更新缓存，让所有显示头像的地方（目前是设置页卡片）同步刷新，
-// 不必再打一次 /api/profile。
+// 上传/删除头像后立即更新缓存，让所有显示头像的地方（目前是设置页卡片）同步刷新。
+// ★ 缓存还没建立时（名字仍在加载）也要能写入：之前这里是 `if (!cached) return`，
+//   于是在名字没加载完的情况下换了头像，界面永远等不到更新（真机事故）。
 export function setCachedAvatar(next: { url: string; version: number } | null): void {
-  if (!cached) return
-  setCached({ ...cached, avatarUrl: next?.url ?? null, avatarVersion: next?.version ?? null })
+  const base: ProfileState = cached ?? { name: '', createdAt: null, avatarUrl: null, avatarVersion: null }
+  setCached({
+    ...base,
+    avatarUrl: next?.url ?? null,
+    avatarVersion: next?.version ?? null,
+  })
 }

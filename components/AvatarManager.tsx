@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useDialogBehavior } from '@/lib/client/dialog'
-import { setCachedAvatar } from '@/lib/client/profile'
+import { loadUserName, setCachedAvatar } from '@/lib/client/profile'
 import { useProfile } from '@/lib/client/use-user-name'
 
 // 头像管理弹窗：看大图 → 换一张（选图 → 拖动/缩放 → 上传）→ 删除。
@@ -104,8 +104,10 @@ async function buildSource(file: File): Promise<Source> {
   }
 }
 
-export default function AvatarManager({ onClose, disabled = false }: {
+export default function AvatarManager({ onClose, onSaved, disabled = false }: {
   onClose: () => void
+  /** 上传/删除成功后回调（上层用来弹提示） */
+  onSaved?: (message: string) => void
   /** 离线：可以看大图，但换/删都要联网，按钮禁用 */
   disabled?: boolean
 }) {
@@ -266,8 +268,11 @@ export default function AvatarManager({ onClose, disabled = false }: {
         throw new Error(data?.error === 'too_large' ? '图片太大，请重新选择' : '上传失败，请重试')
       }
       const data = await res.json() as { avatarUrl: string; avatarVersion: number }
-      // 直接写回缓存：设置页卡片立刻换新图，不用再打一次 /api/profile
+      // 先乐观写缓存（立刻换图），再强制与服务端对一次 ——
+      // ★ force 不能省：loadUserName 缓存命中会直接返回，不 force 的话这次「校准」等于没做。
       setCachedAvatar({ url: data.avatarUrl, version: data.avatarVersion })
+      void loadUserName({ force: true }).catch(() => { /* 校准失败无妨，本地缓存已是新值 */ })
+      onSaved?.('头像已更新')
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : '上传失败，请重试')
@@ -283,6 +288,8 @@ export default function AvatarManager({ onClose, disabled = false }: {
       const res = await fetch('/api/avatar', { method: 'DELETE' })
       if (!res.ok) throw new Error('删除失败，请重试')
       setCachedAvatar(null)
+      void loadUserName({ force: true }).catch(() => {})
+      onSaved?.('头像已删除')
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : '删除失败，请重试')

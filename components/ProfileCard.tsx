@@ -32,8 +32,10 @@ export default function ProfileCard({ disabled = false, onBlocked, onOpenAvatar 
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // 签名 URL 过期 / 网络失败时 <img> 会空着，这时退回首字母，别留一个破图
-  const [imgFailed, setImgFailed] = useState(false)
+  // 签名 URL 过期 / 网络失败时 <img> 会空着，这时退回首字母，别留一个破图。
+  // ★ 记的是「哪个 URL 失败了」而不是布尔：avatarUrl 一变，imgFailed 自动失效、
+  //   新头像不会被上一次的失败挡住（用 effect 复位会被 react-hooks/set-state-in-effect 拦下）。
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // 进入编辑：聚焦并**全选**（改名绝大多数是整体替换），只操作 DOM、不 setState。
@@ -55,6 +57,7 @@ export default function ProfileCard({ disabled = false, onBlocked, onOpenAvatar 
   const subtitle = parts.join(' · ')
   // 生成式头像：名字首字符（[...name] 展开，避免 emoji / 代理对被截成半个字符）
   const initial = name ? ([...name][0] ?? '·') : '·'
+  const imgFailed = avatarUrl != null && failedUrl === avatarUrl
 
   function startEdit() {
     if (disabled) { onBlocked?.(); return }
@@ -119,7 +122,7 @@ export default function ProfileCard({ disabled = false, onBlocked, onOpenAvatar 
           <img
             src={`${avatarUrl}&v=${avatarVersion ?? 0}`}
             alt=""
-            onError={() => setImgFailed(true)}
+            onError={() => setFailedUrl(avatarUrl)}
             className="h-12 w-12 rounded-full object-cover"
           />
         ) : (
@@ -193,7 +196,7 @@ export default function ProfileCard({ disabled = false, onBlocked, onOpenAvatar 
               aria-label={`修改名字：${name ?? ''}`}
               className="-mx-1 block max-w-full truncate rounded-md px-1 text-left text-base font-medium text-neutral-800 active:opacity-60 dark:text-neutral-100"
             >
-              {name ?? '加载中…'}
+              {name || '加载中…'}
             </button>
             {subtitle && (
               <span className="mt-0.5 block truncate text-xs tabular-nums text-neutral-500 dark:text-neutral-400">

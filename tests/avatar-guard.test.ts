@@ -23,6 +23,7 @@ const OSS = 'lib/server/oss.ts'
 const API = 'app/api/avatar/route.ts'
 const MIGRATION = 'drizzle/0016_add_avatar.sql'
 const MANAGER = 'components/AvatarManager.tsx'
+const PROFILE = 'lib/client/profile.ts'
 
 function code(rel: string): string {
   return stripComments(readFileSync(join(projectRoot, rel), 'utf8'))
@@ -129,5 +130,22 @@ describe('头像：接口与交互', () => {
     ).not.toContain("value = ''")
     // 解码路径不许再用 blob URL：它的生命周期一旦出错，表现就是「图片读取失败」。
     expect(src, '解码又用回 createObjectURL 了').not.toContain('createObjectURL')
+  })
+
+  it('A10 改完头像必须强制与服务端校准并给提示（缓存短路那个坑）', () => {
+    const src = code(MANAGER)
+    // 2026-11-04 事故：上传成功了但界面不更新、也无任何提示。
+    // 根因一：loadUserName 命中缓存就 return，所谓的「校准」等于没做 ⇒ 必须带 force。
+    // ★ 断言次数而不是「出现过」：上传与删除两条路径各要一次，只断存在会被另一条兜住（实测假绿）。
+    const forced = src.match(/loadUserName\(\{ force: true \}\)/g) ?? []
+    expect(forced.length, '上传 / 删除成功后都要强制校准（各一次）').toBeGreaterThanOrEqual(2)
+    // 根因二：成功后没有任何反馈（用户不知道成没成）
+    expect(src, '上传/删除成功后没有回调提示').toContain('onSaved?.(')
+
+    const prof = code(PROFILE)
+    expect(prof, 'loadUserName 不支持 force 参数').toMatch(/loadUserName\(opts\?:\s*\{\s*force\?:\s*boolean\s*\}/)
+    expect(prof, 'loadUserName 的 force 判据没生效').toMatch(/if\s*\(cached\s*&&\s*!opts\?\.force\)/)
+    // setCachedAvatar 不许在缓存还没建立时直接 return（那样换了头像界面也不会动）
+    expect(prof, 'setCachedAvatar 在 cached 为空时短路了').toMatch(/const base: ProfileState = cached \?\?/)
   })
 })
