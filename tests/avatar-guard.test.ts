@@ -94,7 +94,18 @@ describe('头像：接口与交互', () => {
     const src = code(MANAGER)
     expect(src, '输出尺寸不是 256').toMatch(/OUTPUT_SIZE\s*=\s*256/)
     expect(src, '没有编码成 WebP').toContain("'image/webp'")
-    // 反向：不许把原图直接传上去（那就白白多传几百 KB）
     expect(src, '没有走 canvas 裁剪就直接上传了原图').toContain('drawImage')
+  })
+
+  it('A8 裁剪自己画 canvas，不依赖第三方裁剪库（真机上黑屏那次）', () => {
+    const src = code(MANAGER)
+    // 2026-11-04：react-easy-crop 在真机上「取景框全黑、拖不动、滑块无反应」，
+    // 样式确认已打包（9 个类都在产物里），问题在库内部的媒体加载时序，此处无法定位 ⇒ 自绘。
+    expect(src, '又引回第三方裁剪库了').not.toContain('react-easy-crop')
+    // ★ 断言必须钉到 JSX 上的**实际绑定**：只查 /onPointerDown/ 会被函数定义本身兜住（假绿，实测）。
+    expect(src, 'canvas 没绑定 pointerdown 拖动').toContain('onPointerDown={onPointerDown}')
+    expect(src, 'canvas 没绑定 pointermove').toContain('onPointerMove={onPointerMove}')
+    // 取景区必须禁掉浏览器手势，否则拖动会和页面滚动打架（touch-none 落在 canvas 的 class 上）
+    expect(src, '取景区没禁 touch-action').toContain('touch-none')
   })
 })

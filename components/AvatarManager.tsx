@@ -1,66 +1,82 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import Cropper, { type Area } from 'react-easy-crop'
-import 'react-easy-crop/react-easy-crop.css'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useDialogBehavior } from '@/lib/client/dialog'
 import { setCachedAvatar } from '@/lib/client/profile'
 import { useProfile } from '@/lib/client/use-user-name'
 
-// 头像管理弹窗：看大图 → 换一张（选图 → 裁剪缩放 → 上传）→ 或删除。
+// 头像管理弹窗：看大图 → 换一张（选图 → 拖动/缩放 → 上传）→ 删除。
 //
-// ── 为什么合并成一个组件 ────────────────────────────────────────────────
-// 「看大图」和「换头像」是同一个入口的两步（点开头像，先看，再决定换不换），
-// 拆成两个弹窗会多一次开关、还要在两处同步头像状态。这里用 view 切换。
+// ── 裁剪为什么自己画 canvas，不用裁剪库 ─────────────────────────────────
+// 2026-11-04 第一版用 react-easy-crop，真机上是「取景框一片黑、拖不动、滑块没反应」——
+// 图片根本没被渲染出来（样式确认已打进产物，问题出在库内部的媒体加载时序，无法在此环境定位）。
+// 改成自绘：**预览用的 canvas 就是最终要上传的那块图**，不存在「库坐标 ↔ 导出坐标」的换算，
+// 这一类 bug 从根上消失。代价是多几十行，但每一行行为都可见、可验证。
 //
-// ── 裁剪 ───────────────────────────────────────────────────────────────
-// react-easy-crop 负责取景（拖动 + 双指/滚轮缩放 + 圆形遮罩），导出靠 canvas：
-// 按它给的 croppedAreaPixels 从原图裁一块，画到 256×256 画布上，再编码成 WebP。
-// 256 是**刻意小**的：头像最大只会显示到 96px（3x 屏 = 288），256 够清晰，
-// 而一张约 20KB —— 上传、存储、下行全都便宜到可忽略。
+// ── 坐标模型（只有一个）─────────────────────────────────────────────────
+// 选图后先把原图缩到最长边 ≤1024 画进离屏 canvas（source），此后一切操作都在**源图像素**里：
+//   baseSize = min(源宽, 源高)     ← zoom=1 时取景正方形的边长
+//   size     = baseSize / zoom    ← zoom∈[1,3]，越大取景越小 = 画面放得越大
+//   center   = (cx, cy)           ← 取景框中心在源图上的位置，受边界约束
+// 预览与导出都调同一个 drawCropRect：源图 (cx-size/2, cy-size/2, size, size) → 目标方形。
 //
-// ── 上传为什么走自家 API ────────────────────────────────────────────────
-// 图已经压到 20KB，过一遍 ECS 是毫秒级；换来「零 CORS、AK 只留在服务器」。
-// 详见 app/api/avatar/route.ts 的注释。
-//
-// ★ 弹窗行为（Esc / Tab 循环 / 焦点归还）由 useDialogBehavior 统一管，Esc = 关闭。
+// ── 交互 ────────────────────────────────────────────────────────────────
+// 单指/鼠标拖动 = 移动取景，滑块 = 缩放。用 Pointer Events（iOS 13+ 支持），
+// 不用 touch 事件拼手势，避免和页面滚动打架。
 
+/** 源图最长边：足够 256 输出，又不会让拖动时每帧重采样几千万像素 */
+const SOURCE_MAX_EDGE = 1024
+/** 最终输出边长（px） */
 const OUTPUT_SIZE = 256
-/** 原图上限：再大也没意义（最终只输出 256×256），只是白白占内存 */
+/** 取景框显示边长上限（CSS px） */
+const VIEW_MAX = 288
+/** 原图上限：再大也没意义，只占内存 */
 const MAX_SOURCE_BYTES = 20 * 1024 * 1024
 
 type View = 'preview' | 'crop'
+type Source = { canvas: HTMLCanvasElement; width: number; height: number }
 
-/** 把 objectURL 读成 HTMLImageElement（canvas 绘制需要已解码的图片） */
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error('图片读取失败'))
-    img.src = src
-  })
+/** 从源 canvas 按 (cx, cy, size) 裁一块，画到目标 ctx 的 (0,0,dest,dest) */
+function drawCropRect(
+  ctx: CanvasRenderingContext2D,
+  src: Source,
+  cx: number,
+  cy: number,
+  size: number,
+  dest: number,
+) {
+  ctx.clearRect(0, 0, dest, dest)
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(src.canvas, cx - size / 2, cy - size / 2, size, size, 0, 0, dest, dest)
 }
 
-/** 按裁剪区域导出 256×256 的图片 */
-async function cropToBlob(src: string, area: Area): Promise<Blob> {
-  const img = await loadImage(src)
-  const canvas = document.createElement('canvas')
-  canvas.width = OUTPUT_SIZE
-  canvas.height = OUTPUT_SIZE
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('浏览器不支持图片处理')
-  // 头像统一圆形显示，把裁剪区外的内容也带上（圆形遮罩由 CSS 负责），
-  // 这里不画透明圆——万一以后改用方形头像，图还是完整的。
-  ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(img, area.x, area.y, area.width, area.height, 0, 0, OUTPUT_SIZE, OUTPUT_SIZE)
-
-  const toBlob = (type: string) => new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.9))
-  // WebP 优先（体积约为 JPEG 的 60%）；个别老环境编码不支持时退回 JPEG
-  const webp = await toBlob('image/webp')
-  if (webp) return webp
-  const jpeg = await toBlob('image/jpeg')
-  if (jpeg) return jpeg
-  throw new Error('图片编码失败')
+/** 解码选中的文件并缩到最长边 SOURCE_MAX_EDGE，返回离屏 canvas */
+async function buildSource(file: File): Promise<Source> {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error('图片读取失败，请换一张试试'))
+      el.src = url
+    })
+    const w = img.naturalWidth
+    const h = img.naturalHeight
+    if (!w || !h) throw new Error('图片读取失败，请换一张试试')
+    const scale = Math.min(1, SOURCE_MAX_EDGE / Math.max(w, h))
+    const width = Math.max(1, Math.round(w * scale))
+    const height = Math.max(1, Math.round(h * scale))
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('浏览器不支持图片处理')
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, 0, 0, width, height)
+    return { canvas, width, height }
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 export default function AvatarManager({ onClose, disabled = false }: {
@@ -70,25 +86,62 @@ export default function AvatarManager({ onClose, disabled = false }: {
 }) {
   const { name, avatarUrl, avatarVersion } = useProfile()
   const [view, setView] = useState<View>('preview')
-  const [source, setSource] = useState<string | null>(null)
-  const [crop, setCrop] = useState({ x: 0, y: 0 })
+  const [source, setSource] = useState<Source | null>(null)
   const [zoom, setZoom] = useState(1)
-  const [area, setArea] = useState<Area | null>(null)
+  const [center, setCenter] = useState({ x: 0, y: 0 })
+  const [viewSize, setViewSize] = useState(VIEW_MAX)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const cardRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const boxRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  // 拖拽会话不放进 state：每次 pointermove 都 setState 会多一轮重渲染
+  const dragRef = useRef<{ pointerId: number; lastX: number; lastY: number } | null>(null)
   useDialogBehavior(cardRef, onClose)
 
-  // objectURL 用完必须撤销，否则整张原图会一直留在内存里
+  // 取景框尺寸随屏幕变化（窄屏上 w-full 会小于 288）
   useEffect(() => {
-    return () => { if (source) URL.revokeObjectURL(source) }
-  }, [source])
+    const el = boxRef.current
+    if (!el || view !== 'crop') return
+    const update = () => setViewSize(Math.min(VIEW_MAX, el.clientWidth || VIEW_MAX))
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [view])
 
-  /** 签名的 URL 自带 query（Expires / Signature），追加版本号要用 & 而不是 ? */
+  /** 签名 URL 自带 query（Expires / Signature），追加版本号要用 & */
   const bigUrl = avatarUrl ? `${avatarUrl}&v=${avatarVersion ?? 0}` : null
   const initial = name ? ([...name][0] ?? '·') : '·'
+
+  const baseSize = source ? Math.min(source.width, source.height) : 0
+  const cropSize = baseSize > 0 ? baseSize / zoom : 0
+
+  /** 把取景中心夹在合法范围内（取景框不能超出源图） */
+  const clampCenter = useCallback((x: number, y: number, size: number, src: Source) => {
+    const half = size / 2
+    return {
+      x: Math.min(Math.max(x, half), Math.max(half, src.width - half)),
+      y: Math.min(Math.max(y, half), Math.max(half, src.height - half)),
+    }
+  }, [])
+
+  // 重绘预览：crop / zoom / 尺寸变化都走这里
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !source || cropSize <= 0) return
+    const dpr = Math.min(window.devicePixelRatio || 1, 3)
+    const px = Math.max(1, Math.round(viewSize * dpr))
+    if (canvas.width !== px || canvas.height !== px) {
+      canvas.width = px
+      canvas.height = px
+    }
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    drawCropRect(ctx, source, center.x, center.y, cropSize, px)
+  }, [source, center, cropSize, viewSize])
 
   function pickFile() {
     if (disabled || busy) return
@@ -96,34 +149,83 @@ export default function AvatarManager({ onClose, disabled = false }: {
     fileRef.current?.click()
   }
 
-  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     e.target.value = '' // 允许连续选同一张
     if (!file) return
     if (!file.type.startsWith('image/')) { setError('请选择图片文件'); return }
     if (file.size > MAX_SOURCE_BYTES) { setError('图片太大（上限 20MB）'); return }
-    if (source) URL.revokeObjectURL(source)
-    setSource(URL.createObjectURL(file))
-    setCrop({ x: 0, y: 0 })
-    setZoom(1)
-    setArea(null)
-    setView('crop')
+    setBusy(true)
+    setError(null)
+    try {
+      const built = await buildSource(file)
+      const size = Math.min(built.width, built.height)
+      setSource(built)
+      setZoom(1)
+      setCenter(clampCenter(built.width / 2, built.height / 2, size, built))
+      setView('crop')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '图片读取失败，请换一张试试')
+    } finally {
+      setBusy(false)
+    }
   }
 
   function backToPreview() {
     if (busy) return
-    if (source) URL.revokeObjectURL(source)
     setSource(null)
     setError(null)
     setView('preview')
   }
 
+  /** 拖动：显示像素 → 源图像素（比例 = cropSize / viewSize） */
+  function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (busy || !source) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragRef.current = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY }
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== e.pointerId || !source) return
+    const k = cropSize / viewSize
+    const dx = (e.clientX - drag.lastX) * k
+    const dy = (e.clientY - drag.lastY) * k
+    drag.lastX = e.clientX
+    drag.lastY = e.clientY
+    // 手指往右拖 ⇒ 取景框在源图上往左移（画面跟着手指走）
+    setCenter((prev) => clampCenter(prev.x - dx, prev.y - dy, cropSize, source))
+  }
+
+  function onPointerUp(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null
+  }
+
+  function onZoomChange(next: number) {
+    if (!source) return
+    setZoom(next)
+    const size = baseSize / next
+    setCenter((prev) => clampCenter(prev.x, prev.y, size, source))
+  }
+
   async function upload() {
-    if (!source || !area || busy) return
+    if (!source || busy) return
     setBusy(true)
     setError(null)
     try {
-      const blob = await cropToBlob(source, area)
+      // 直接从源图裁 256×256 —— 预览画的就是这块，无坐标换算
+      const out = document.createElement('canvas')
+      out.width = OUTPUT_SIZE
+      out.height = OUTPUT_SIZE
+      const ctx = out.getContext('2d')
+      if (!ctx) throw new Error('浏览器不支持图片处理')
+      drawCropRect(ctx, source, center.x, center.y, cropSize, OUTPUT_SIZE)
+
+      const toBlob = (type: string) => new Promise<Blob | null>((resolve) => out.toBlob(resolve, type, 0.9))
+      // WebP 优先（约为 JPEG 的 60% 体积）；个别环境不支持编码时退回 JPEG
+      const blob = (await toBlob('image/webp')) ?? (await toBlob('image/jpeg'))
+      if (!blob) throw new Error('图片编码失败')
+
       const form = new FormData()
       form.append('file', blob, 'avatar.webp')
       const res = await fetch('/api/avatar', { method: 'POST', body: form })
@@ -132,7 +234,7 @@ export default function AvatarManager({ onClose, disabled = false }: {
         throw new Error(data?.error === 'too_large' ? '图片太大，请重新选择' : '上传失败，请重试')
       }
       const data = await res.json() as { avatarUrl: string; avatarVersion: number }
-      // 直接写回缓存：设置页卡片立刻换成新图，不用再打一次 /api/profile
+      // 直接写回缓存：设置页卡片立刻换新图，不用再打一次 /api/profile
       setCachedAvatar({ url: data.avatarUrl, version: data.avatarVersion })
       onClose()
     } catch (err) {
@@ -172,13 +274,8 @@ export default function AvatarManager({ onClose, disabled = false }: {
               <p className="text-center text-base font-semibold text-neutral-900 dark:text-neutral-100">头像</p>
               <div className="mt-4 flex justify-center">
                 {bigUrl ? (
-                  /* 大图：object-cover + 圆形，与卡片上的小头像同一张图 */
-                  // eslint-disable-next-line @next/next/no-img-element -- 签名 URL 是动态的，无需 next/image 优化
-                  <img
-                    src={bigUrl}
-                    alt="当前头像"
-                    className="h-40 w-40 rounded-full object-cover"
-                  />
+                  // eslint-disable-next-line @next/next/no-img-element -- 签名 URL 每次不同，无需 next/image
+                  <img src={bigUrl} alt="当前头像" className="h-40 w-40 rounded-full object-cover" />
                 ) : (
                   <span
                     aria-hidden
@@ -195,68 +292,71 @@ export default function AvatarManager({ onClose, disabled = false }: {
               )}
               {error && <p role="alert" className="mt-3 text-center text-xs text-red-500">{error}</p>}
             </div>
-            {bigUrl ? (
-              <div className="flex border-t border-neutral-200 dark:border-neutral-700">
-                <button
-                  onClick={pickFile}
-                  disabled={disabled || busy}
-                  className="w-1/2 border-r border-neutral-200 py-3.5 text-base font-semibold text-blue-500 active:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:active:bg-neutral-700"
-                >
-                  换一张
-                </button>
-                <button
-                  onClick={() => void remove()}
-                  disabled={disabled || busy}
-                  className="w-1/2 py-3.5 text-base text-red-500 active:bg-neutral-100 disabled:opacity-40 dark:active:bg-neutral-700"
-                >
-                  {busy ? '处理中…' : '删除'}
-                </button>
-              </div>
-            ) : (
-              <div className="flex border-t border-neutral-200 dark:border-neutral-700">
-                <button
-                  onClick={pickFile}
-                  disabled={disabled || busy}
-                  className="w-full py-3.5 text-base font-semibold text-blue-500 active:bg-neutral-100 disabled:opacity-40 dark:active:bg-neutral-700"
-                >
-                  选择图片
-                </button>
-              </div>
-            )}
+            <div className="flex border-t border-neutral-200 dark:border-neutral-700">
+              <button
+                onClick={pickFile}
+                disabled={disabled || busy}
+                className="w-1/2 border-r border-neutral-200 py-3.5 text-base font-semibold text-blue-500 active:bg-neutral-100 disabled:opacity-40 dark:border-neutral-700 dark:active:bg-neutral-700"
+              >
+                {bigUrl ? '换一张' : '选择图片'}
+              </button>
+              <button
+                onClick={bigUrl ? () => void remove() : onClose}
+                disabled={disabled || busy}
+                className={`w-1/2 py-3.5 text-base active:bg-neutral-100 disabled:opacity-40 dark:active:bg-neutral-700 ${
+                  bigUrl ? 'text-red-500' : 'text-neutral-700 dark:text-neutral-300'
+                }`}
+              >
+                {busy ? '处理中…' : bigUrl ? '删除' : '完成'}
+              </button>
+            </div>
           </>
         ) : (
           <>
             <div className="px-5 pb-3 pt-5">
-              <p className="text-center text-base font-semibold text-neutral-900 dark:text-neutral-100">裁剪头像</p>
+              <p className="text-center text-base font-semibold text-neutral-900 dark:text-neutral-100">调整头像</p>
               <p className="mt-1 text-center text-xs text-neutral-500 dark:text-neutral-400">
-                拖动调整位置，双指或滑块缩放
+                拖动图片调整位置，用滑块缩放
               </p>
             </div>
-            {/* 取景区：固定高度，圆形遮罩；cropper 自己接管触摸手势 */}
-            <div className="relative h-72 w-full bg-neutral-900">
-              {source && (
-                <Cropper
-                  image={source}
-                  crop={crop}
-                  zoom={zoom}
-                  aspect={1}
-                  cropShape="round"
-                  showGrid={false}
-                  onCropChange={setCrop}
-                  onZoomChange={setZoom}
-                  onCropComplete={(_, pixels) => setArea(pixels)}
+            {/* 取景区：方形 canvas，圆形提示用 box-shadow 挖洞（pointer-events-none 不挡拖动） */}
+            <div className="px-5">
+              <div
+                ref={boxRef}
+                className="relative mx-auto w-full overflow-hidden rounded-2xl bg-neutral-900"
+                style={{ maxWidth: VIEW_MAX, aspectRatio: '1 / 1', touchAction: 'none' }}
+              >
+                <canvas
+                  ref={canvasRef}
+                  onPointerDown={onPointerDown}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={onPointerUp}
+                  onPointerCancel={onPointerUp}
+                  aria-label="头像预览，拖动可调整位置"
+                  className="h-full w-full cursor-move touch-none select-none"
                 />
-              )}
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute rounded-full shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
+                  style={{
+                    width: '92%',
+                    height: '92%',
+                    left: '4%',
+                    top: '4%',
+                    outline: '2px solid rgba(255,255,255,0.55)',
+                    outlineOffset: '-2px',
+                  }}
+                />
+              </div>
             </div>
             <div className="px-5 py-3">
-              {/* 滑块缩放：双指手势不是所有人都知道，给一个明确的兜底 */}
               <input
                 type="range"
                 min={1}
                 max={3}
                 step={0.01}
                 value={zoom}
-                onChange={(e) => setZoom(Number(e.target.value))}
+                onChange={(e) => onZoomChange(Number(e.target.value))}
                 aria-label="缩放"
                 className="w-full accent-violet-500"
               />
@@ -272,7 +372,7 @@ export default function AvatarManager({ onClose, disabled = false }: {
               </button>
               <button
                 onClick={() => void upload()}
-                disabled={busy || !area}
+                disabled={busy || !source}
                 className="w-1/2 py-3.5 text-base font-semibold text-blue-500 active:bg-neutral-100 disabled:opacity-40 dark:active:bg-neutral-700"
               >
                 {busy ? '上传中…' : '使用这张'}
@@ -280,14 +380,8 @@ export default function AvatarManager({ onClose, disabled = false }: {
             </div>
           </>
         )}
-        {/* 文件选择：不显示，点按钮触发。accept 让 iOS 直接给「照片图库 / 拍照」选择 */}
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          onChange={onFileChange}
-          className="hidden"
-        />
+        {/* 文件选择：accept 让 iOS 直接给「照片图库 / 拍照」选择 */}
+        <input ref={fileRef} type="file" accept="image/*" onChange={onFileChange} className="hidden" />
       </div>
     </div>
   )
