@@ -30,7 +30,6 @@ const ESC_DIALOGS = [
   'components/AboutDialog.tsx',
   'components/HiddenPanel.tsx',
   'components/PasskeysDialog.tsx',
-  'components/NameEditDialog.tsx',
   'components/RecoveryRegenerateDialog.tsx',
   'components/PrefsDialog.tsx',
   'components/SearchDialog.tsx',
@@ -142,7 +141,6 @@ describe('桌面端无障碍基线', () => {
       ['components/AutoTextarea.tsx', 'aria-label="日记正文"'],
       ['components/EntryView.tsx', 'aria-label="日记正文"'],
       ['components/SearchDialog.tsx', 'aria-label="搜索日记内容"'],
-      ['components/NameEditDialog.tsx', 'aria-label="新名字"'],
       ['components/RecoveryRegenerateDialog.tsx', 'aria-label="当前恢复密钥"'],
       ['components/ExportView.tsx', 'aria-label="恢复密钥"'],
       ['components/InputConfirmDialog.tsx', 'aria-label={`输入「${expected}」确认`}'],
@@ -163,7 +161,6 @@ describe('桌面端无障碍基线', () => {
       ['components/AddPasskeyPanel.tsx', '{error && <p role="alert" className="text-center text-sm text-red-500">{error}</p>}'],
       ['components/ExportView.tsx', '{error && <p role="alert" className="text-center text-sm text-red-500">{error}</p>}'],
       ['components/EntryView.tsx', '{error && <p role="alert" className="mt-3 text-sm text-red-500">{error}</p>}'],
-      ['components/NameEditDialog.tsx', '{error && <p role="alert" className="mt-2 text-xs text-red-500">{error}</p>}'],
       ['components/RecoveryRegenerateDialog.tsx', '{error && <p role="alert" className="mt-3 text-center text-sm text-red-500">{error}</p>}'],
     ]
     for (const [rel, needle] of cases) {

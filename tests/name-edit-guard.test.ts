@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { collectSourceFiles, projectRoot, stripComments } from './class-attrs'
 
-const DIALOG = 'components/NameEditDialog.tsx'
+const CARD = 'components/ProfileCard.tsx'
 const PROFILE = 'lib/client/profile.ts'
 const SETUP = 'app/setup/page.tsx'
 
@@ -35,23 +35,41 @@ function allSources(): { file: string; src: string }[] {
     }))
 }
 
-describe('改名弹窗：不再提供「随机生成一个」', () => {
-  it('N0 解析自检：能读到弹窗源码（防空转）', () => {
-    const src = code(DIALOG)
+describe('就地改名（个人资料卡片）：不再提供「随机生成一个」', () => {
+  it('N0 解析自检：能读到卡片源码（防空转）', () => {
+    const src = code(CARD)
     expect(src.length).toBeGreaterThan(500)
     expect(src).toContain('修改名字')
     expect(src).toContain('USER_NAME_MAX')
   })
 
-  it('N1 弹窗内没有随机生成按钮，也不引用 generateDefaultName', () => {
-    const src = code(DIALOG)
-    expect(src, '「随机生成一个」按钮不得回到改名弹窗').not.toContain('随机生成')
-    expect(src, '改名弹窗不该能直接生成默认名（那是懒创建的职责）').not.toContain('generateDefaultName')
+  it('N1 就地改名里没有随机生成按钮，也不引用 generateDefaultName', () => {
+    const src = code(CARD)
+    expect(src, '「随机生成一个」按钮不得回到改名入口').not.toContain('随机生成')
+    expect(src, '改名入口不该能直接生成默认名（那是懒创建的职责）').not.toContain('generateDefaultName')
   })
 
-  it('N2 移除按钮不等于砍掉字数计数', () => {
-    // 用户只要求移除按钮；「n/20」的字数统计必须保留（改名时判断长度上限要靠它）
-    expect(code(DIALOG)).toMatch(/\{trimmed\.length\}\/\{USER_NAME_MAX\}/)
+  it('N2 移除按钮不等于砍掉字数计数（就地编辑也要看得见长度上限）', () => {
+    // 用户只要求移除按钮；「n/20」的字数统计必须保留。
+    // 2026-11-04 从弹窗改成就地编辑后，计数从"输入框内右侧"移到"输入框下方右对齐"，
+    // 但断言的内容不变：必须把「当前长度/上限」渲染出来。
+    expect(code(CARD)).toMatch(/\{draft\.trim\(\)\.length\}\/\{USER_NAME_MAX\}/)
+  })
+
+  it('N6 就地改名的交互契约：回车/✓ 保存、✕/Esc 取消、按钮点得动', () => {
+    const src = code(CARD)
+    expect(src, '没有回车保存').toMatch(/e\.key === 'Enter'/)
+    expect(src, '没有 Esc 取消').toMatch(/e\.key === 'Escape'/)
+    // Esc 必须拦冒泡：只放弃改名，别惊动外层
+    expect(src, 'Esc 没有 stopPropagation').toMatch(/e\.stopPropagation\(\)/)
+    // ★ ✓/✕ 必须 onMouseDown preventDefault：否则 mousedown 先让输入框失焦 ⇒ onBlur 已把
+    //   编辑态关掉 ⇒ click 落不到按钮上（「勾点不动」）。与通行密钥改名同款。
+    expect(src, '✓/✕ 缺 onMouseDown preventDefault（会先失焦、点不动）').toMatch(
+      /onMouseDown=\{\(e\) => e\.preventDefault\(\)\}/,
+    )
+    // 反向：不许退回弹窗形态
+    expect(src, '又变回弹窗了（useDialogBehavior）').not.toContain('useDialogBehavior')
+    expect(src, '又变回弹窗了（aria-modal）').not.toContain('aria-modal')
   })
 })
 

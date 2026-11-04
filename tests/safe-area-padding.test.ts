@@ -88,7 +88,6 @@ describe('底部留白与安全区', () => {
       'components/PrefsDialog.tsx',
       'components/ConfirmDialog.tsx',
       'components/InputConfirmDialog.tsx',
-      'components/NameEditDialog.tsx',
     ]
     const missing = targets.filter((rel) => !tokensOf(rel).includes('py-3.5'))
     expect(missing).toEqual([])

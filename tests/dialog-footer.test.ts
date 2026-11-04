@@ -27,7 +27,6 @@ import { DIALOG_FOOTER_BUTTON_CLASS } from '@/lib/client/ui'
 const DIALOGS = [
   'components/ConfirmDialog.tsx',
   'components/InputConfirmDialog.tsx',
-  'components/NameEditDialog.tsx',
   'components/PrefsDialog.tsx',
   'components/AboutDialog.tsx',
   'components/PasskeysDialog.tsx',

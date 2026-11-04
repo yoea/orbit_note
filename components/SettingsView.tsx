@@ -8,7 +8,6 @@ import PrefsDialog from '@/components/PrefsDialog'
 import PasskeysDialog, { type PasskeyInfo } from '@/components/PasskeysDialog'
 import RecoveryRegenerateDialog from '@/components/RecoveryRegenerateDialog'
 import BackupSheet from '@/components/BackupSheet'
-import NameEditDialog from '@/components/NameEditDialog'
 import ProfileCard from '@/components/ProfileCard'
 import Toast from '@/components/Toast'
 import { clearDek, fetchWrappers } from '@/lib/client/session'
@@ -62,7 +61,6 @@ export default function SettingsView() {
   const [showPrefs, setShowPrefs] = useState(false)
   const [showPasskeys, setShowPasskeys] = useState(false)
   const [showRecovery, setShowRecovery] = useState(false)
-  const [showNameEdit, setShowNameEdit] = useState(false)
   // 导入与导出改从底部弹出（2026-10-29 用户要求）——不再跳 /settings/backup 整页
   const [showBackup, setShowBackup] = useState(false)
   // 离线禁用提示：offlineToastAt 是触发计数器（>0 即显示）。连点自增 →
@@ -143,9 +141,9 @@ export default function SettingsView() {
         <h1 className="absolute left-1/2 -translate-x-1/2 text-lg font-semibold">设置</h1>
         <span className="w-8" aria-hidden />
       </header>
-      {/* 个人信息卡片：生成式头像 + 名字 + 一行统计；点开改名。
-          不设分组标题——卡片本身已足够表意，省掉一个只配一行的标题 */}
-      <ProfileCard onEditName={guard(() => setShowNameEdit(true))} disabled={offline} />
+      {/* 个人信息卡片：生成式头像 + 名字 + 一行统计。**点名字就地改名**（不弹窗，
+          与通行密钥改设备名同款）。不设分组标题——卡片本身已足够表意 */}
+      <ProfileCard disabled={offline} onBlocked={notifyOffline} />
       <h2 className="px-1 pb-2 pt-5 text-xs font-medium text-neutral-500 dark:text-neutral-400">账号与安全</h2>
       <ul className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-neutral-50/60 dark:divide-neutral-800 dark:bg-neutral-900/40">
         <li>
@@ -274,9 +272,7 @@ export default function SettingsView() {
           onInfoChange={setRecoveryInfo}
         />
       )}
-      {showNameEdit && userName && (
-        <NameEditDialog current={userName} onSaved={() => setShowNameEdit(false)} onClose={() => setShowNameEdit(false)} />
-      )}
+
       {/* 离线禁用提示（点击被禁入口时短暂显示） */}
       {offlineToastAt > 0 && <Toast message="该功能离线模式暂不可用" />}
     </main>
