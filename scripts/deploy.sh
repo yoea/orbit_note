@@ -234,7 +234,16 @@ if [ ! -f .next/standalone/server.js ]; then
 fi
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
-cp -a .next/standalone/. "$STAGE"/
+# cp -a 保留符号链接；但 Windows 上创建符号链接需要额外权限，而 Next 的 standalone 会把
+# serverExternalPackages 里的包（如 ali-oss）在 .next/node_modules/ 下做成符号链接 ⇒
+# cp -a 直接报 "cannot create symbolic link ... Operation not permitted"。
+# 失败就清空重来，用 -L 把符号链接解引用成实体目录（包略大一点，但产物必须完整）。
+if ! cp -a .next/standalone/. "$STAGE"/ 2>/dev/null; then
+  echo "   （本机无法创建符号链接，改用 -L 解引用重拷）"
+  rm -rf "$STAGE"
+  mkdir -p "$STAGE"
+  cp -rL .next/standalone/. "$STAGE"/
+fi
 # 先删再拷：standalone 原产物里可能已存在同名目录（内容不全或陈旧），必须整体替换
 rm -rf "$STAGE/.next/static" "$STAGE/public"
 cp -a .next/static "$STAGE/.next/static"
