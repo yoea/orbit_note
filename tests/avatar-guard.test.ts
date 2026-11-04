@@ -153,6 +153,19 @@ describe('头像：接口与交互', () => {
     expect(src, '解码又用回 createObjectURL 了').not.toContain('createObjectURL')
   })
 
+  it('A12 上传成功后必须关闭弹窗（停在预览态会让按钮卡在「处理中…」）', () => {
+    const src = code(MANAGER)
+    const from = src.indexOf('async function upload(')
+    const to = src.indexOf('async function remove(')
+    expect(from, '找不到 upload 函数').toBeGreaterThan(-1)
+    expect(to, '找不到 remove 函数').toBeGreaterThan(from)
+    const body = src.slice(from, to)
+    // 用户要求：更新完成后把弹窗关掉
+    expect(body, '上传成功后没有关闭弹窗').toContain('onClose()')
+    // 反向：不许停在预览态 —— 之前那样做忘了复位 busy，按钮永远显示「处理中…」且禁用
+    expect(body, '上传成功后不该停在预览态').not.toContain("setView('preview')")
+  })
+
   it('A11 CSP 的 img-src 必须放行 OSS 域名（否则图片被浏览器直接拦掉）', () => {
     const src = code('lib/server/security-headers.ts')
     // ★ 2026-11-04 事故真凶：img-src 只有 `'self' data:`，OSS 域名不在白名单 ⇒

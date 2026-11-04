@@ -287,10 +287,10 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
       setCachedAvatar({ url: data.avatarUrl, version: data.avatarVersion })
       void loadUserName({ force: true }).catch(() => { /* 校准失败无妨，本地缓存已是新值 */ })
       onSaved?.('头像已更新')
-      // 回到预览态而不是直接关掉：用户当场就能看见新头像（有问题也能立刻发现），
-      // 「完成」由他自己点。
-      setSource(null)
-      setView('preview')
+      // ★ 上传成功后直接关掉弹窗（用户明确要求）。注意这里**不能**再走 finally 复位 busy：
+      //   之前留在预览态但忘了清 busy，按钮就一直卡在「处理中…」并禁用（真机反馈）。
+      //   成功路径马上卸载，busy 无需复位；失败才需要复位以便重试。
+      onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : '上传失败，请重试')
       setBusy(false)
