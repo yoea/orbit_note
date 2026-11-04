@@ -153,6 +153,20 @@ describe('头像：接口与交互', () => {
     expect(src, '解码又用回 createObjectURL 了').not.toContain('createObjectURL')
   })
 
+  it('A11 CSP 的 img-src 必须放行 OSS 域名（否则图片被浏览器直接拦掉）', () => {
+    const src = code('lib/server/security-headers.ts')
+    // ★ 2026-11-04 事故真凶：img-src 只有 `'self' data:`，OSS 域名不在白名单 ⇒
+    //   浏览器直接拒绝加载 <img>，界面显示「头像加载失败」。
+    //   上传走同源 /api/avatar 一直是通的，命令行测签名 URL 也都 200 —— 只有浏览器静默失败。
+    expect(src, 'CSP 里没有 OSS 图片域名变量').toContain('OSS_IMG_SRC')
+    expect(src, 'img-src 没有拼上 OSS 域名').toContain("img-src 'self' data:${OSS_IMG_SRC}")
+    // dev 与 prod 两条 CSP 都要用同一个 CSP_IMG，不许有一条漏掉
+    const uses = (src.match(/\$\{CSP_IMG\}/g) ?? []).length
+    expect(uses, 'dev 与 prod 两条 CSP 都必须引用 CSP_IMG').toBe(2)
+    // 反向：不许再出现写死的、不含 OSS 的 img-src
+    expect(src, '又写回了不含 OSS 的 img-src').not.toMatch(/img-src 'self' data:;/)
+  })
+
   it('A10 改完头像必须强制与服务端校准并给提示（缓存短路那个坑）', () => {
     const src = code(MANAGER)
     // 2026-11-04 事故：上传成功了但界面不更新、也无任何提示。
