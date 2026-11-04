@@ -16,10 +16,15 @@ import { assetKey, deleteObject, putObject, signedUrl } from '@/lib/server/oss'
 // （如果以后要传几 MB 的原图，那时再改直传。）
 //
 // ── 校验 ────────────────────────────────────────────────────────────────
-// 只收 WebP / JPEG，≤200KB。客户端已经压过一次，这里再兜一道：
+// 收 WebP / JPEG / PNG。客户端已经压过一次，这里再兜一道：
 // 前端可以被绕过，别让它变成「往 bucket 里塞任意大文件」的入口。
-const MAX_BYTES = 200 * 1024
-const ALLOWED_TYPES = ['image/webp', 'image/jpeg']
+//
+// ★ 为什么必须收 PNG（2026-11-04 真机事故：上传永远失败）：
+//   iOS Safari 在**不支持 WebP 编码**时，`canvas.toBlob(cb, 'image/webp')` 不会返回 null，
+//   而是按 HTML 规范**降级成 PNG**。只放行 webp/jpeg ⇒ 每次上传都 415。
+//   PNG 比 WebP 大，所以上限从 200KB 提到 400KB（256×256 的照片 PNG 约 100~250KB）。
+const MAX_BYTES = 400 * 1024
+const ALLOWED_TYPES = ['image/webp', 'image/jpeg', 'image/png']
 
 export async function POST(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })

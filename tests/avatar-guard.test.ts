@@ -78,8 +78,11 @@ describe('头像：接口与交互', () => {
     expect(src, '缺 requireAuth').toContain('requireAuth(req)')
     expect(src, '缺同源校验').toContain('assertSameOrigin(req)')
     expect(src, '缺限流').toMatch(/rateLimit\('avatar'/)
-    expect(src, '缺大小上限').toMatch(/MAX_BYTES\s*=\s*200\s*\*\s*1024/)
+    expect(src, '缺大小上限').toMatch(/MAX_BYTES\s*=\s*400\s*\*\s*1024/)
     expect(src, '缺类型白名单').toMatch(/'image\/webp'/)
+    // ★ 必须收 PNG：iOS Safari 不支持 WebP 编码时会把 canvas 输出降级成 PNG（不是返回 null），
+    //   只放行 webp/jpeg 会导致每次上传都 415（2026-11-04 真机事故）。
+    expect(src, '白名单没有 image/png —— iOS 会把 WebP 降级成 PNG，上传必 415').toContain("'image/png'")
     expect(src, '没有拒绝超限文件').toContain('too_large')
     expect(src, '没有拒绝非法类型').toContain('unsupported_type')
   })

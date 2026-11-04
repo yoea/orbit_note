@@ -120,6 +120,9 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // 大图加载失败记「哪个 URL 失败」（同 ProfileCard）：avatarUrl 一变自动失效
+  const [failedBigUrl, setFailedBigUrl] = useState<string | null>(null)
+
   const cardRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const boxRef = useRef<HTMLDivElement>(null)
@@ -141,6 +144,7 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
 
   /** 签名 URL 自带 query（Expires / Signature），追加版本号要用 & */
   const bigUrl = avatarUrl ? `${avatarUrl}&v=${avatarVersion ?? 0}` : null
+  const bigFailed = bigUrl != null && failedBigUrl === bigUrl
   const initial = name ? ([...name][0] ?? '·') : '·'
 
   const baseSize = source ? Math.min(source.width, source.height) : 0
@@ -256,16 +260,23 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
       drawCropRect(ctx, source, center.x, center.y, cropSize, OUTPUT_SIZE)
 
       const toBlob = (type: string) => new Promise<Blob | null>((resolve) => out.toBlob(resolve, type, 0.9))
-      // WebP 优先（约为 JPEG 的 60% 体积）；个别环境不支持编码时退回 JPEG
+      // WebP 优先（约为 JPEG 的 60% 体积）。
+      // ★ iOS Safari 不支持 WebP 编码时不会返回 null，而是按规范**降级成 PNG** ——
+      //   所以不能假设拿到的一定是 webp，文件名跟实际类型走，服务端三种都收。
       const blob = (await toBlob('image/webp')) ?? (await toBlob('image/jpeg'))
       if (!blob) throw new Error('图片编码失败')
+      const ext = blob.type === 'image/webp' ? 'webp' : blob.type === 'image/jpeg' ? 'jpg' : 'png'
 
       const form = new FormData()
-      form.append('file', blob, 'avatar.webp')
+      form.append('file', blob, `avatar.${ext}`)
       const res = await fetch('/api/avatar', { method: 'POST', body: form })
       if (!res.ok) {
-        const data = await res.json().catch(() => null) as { error?: string } | null
-        throw new Error(data?.error === 'too_large' ? '图片太大，请重新选择' : '上传失败，请重试')
+        // 状态码要带出来：笼统的「上传失败」在真机上等于没有信息（上次就是这样白跑一轮）
+        if (res.status === 413) throw new Error('图片太大，请重新选择')
+        if (res.status === 415) throw new Error('图片格式不支持，请换一张 JPG / PNG')
+        if (res.status === 429) throw new Error('操作太频繁，请稍后再试')
+        if (res.status === 401) throw new Error('登录状态已失效，请重新解锁')
+        throw new Error(`上传失败（${res.status}），请重试`)
       }
       const data = await res.json() as { avatarUrl: string; avatarVersion: number }
       // 先乐观写缓存（立刻换图），再强制与服务端对一次 ——
@@ -273,7 +284,10 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
       setCachedAvatar({ url: data.avatarUrl, version: data.avatarVersion })
       void loadUserName({ force: true }).catch(() => { /* 校准失败无妨，本地缓存已是新值 */ })
       onSaved?.('头像已更新')
-      onClose()
+      // 回到预览态而不是直接关掉：用户当场就能看见新头像（有问题也能立刻发现），
+      // 「完成」由他自己点。
+      setSource(null)
+      setView('preview')
     } catch (err) {
       setError(err instanceof Error ? err.message : '上传失败，请重试')
       setBusy(false)
@@ -312,9 +326,14 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
             <div className="px-5 pb-4 pt-5">
               <p className="text-center text-base font-semibold text-neutral-900 dark:text-neutral-100">头像</p>
               <div className="mt-4 flex justify-center">
-                {bigUrl ? (
+                {bigUrl && !bigFailed ? (
                   // eslint-disable-next-line @next/next/no-img-element -- 签名 URL 每次不同，无需 next/image
-                  <img src={bigUrl} alt="当前头像" className="h-40 w-40 rounded-full object-cover" />
+                  <img
+                    src={bigUrl}
+                    alt="当前头像"
+                    onError={() => setFailedBigUrl(bigUrl)}
+                    className="h-40 w-40 rounded-full object-cover"
+                  />
                 ) : (
                   <span
                     aria-hidden
@@ -324,11 +343,15 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
                   </span>
                 )}
               </div>
-              {!bigUrl && (
+              {bigFailed ? (
+                <p className="mt-3 text-center text-xs text-red-500">
+                  头像图片加载失败（签名地址可能已过期），点「换一张」重新上传即可
+                </p>
+              ) : !bigUrl ? (
                 <p className="mt-3 text-center text-xs text-neutral-500 dark:text-neutral-400">
                   还没有自定义头像，现在用的是名字首字母
                 </p>
-              )}
+              ) : null}
               {error && <p role="alert" className="mt-3 text-center text-xs text-red-500">{error}</p>}
             </div>
             <div className="flex border-t border-neutral-200 dark:border-neutral-700">
