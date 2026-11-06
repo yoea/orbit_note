@@ -25,17 +25,17 @@ export default function ProfileCard({ disabled = false, onBlocked, onOpenAvatar 
   /** 点头像：上层打开头像管理（看大图 / 换图 / 删除） */
   onOpenAvatar?: () => void
 }) {
-  const { name, avatarUrl, avatarVersion } = useProfile()
+  const { name, avatarSrc } = useProfile()
   const stats = useDiaryOverview()
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // 签名 URL 过期 / 网络失败时 <img> 会空着，这时退回首字母，别留一个破图。
-  // ★ 记的是「哪个 URL 失败了」而不是布尔：avatarUrl 一变，imgFailed 自动失效、
+  // 图片加载失败时退回首字母，别留一个破图。
+  // ★ 记的是「哪个 src 失败了」而不是布尔：换图后 avatarSrc 一变，失败标记自动失效、
   //   新头像不会被上一次的失败挡住（用 effect 复位会被 react-hooks/set-state-in-effect 拦下）。
-  const [failedUrl, setFailedUrl] = useState<string | null>(null)
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // 进入编辑：聚焦并**全选**（改名绝大多数是整体替换），只操作 DOM、不 setState。
@@ -57,7 +57,7 @@ export default function ProfileCard({ disabled = false, onBlocked, onOpenAvatar 
   const subtitle = parts.join(' · ')
   // 生成式头像：名字首字符（[...name] 展开，避免 emoji / 代理对被截成半个字符）
   const initial = name ? ([...name][0] ?? '·') : '·'
-  const imgFailed = avatarUrl != null && failedUrl === avatarUrl
+  const imgFailed = avatarSrc != null && failedSrc === avatarSrc
 
   function startEdit() {
     if (disabled) { onBlocked?.(); return }
@@ -110,19 +110,19 @@ export default function ProfileCard({ disabled = false, onBlocked, onOpenAvatar 
       className={`mt-2 flex w-full items-center gap-3 rounded-2xl bg-neutral-50/60 px-4 py-3.5 dark:bg-neutral-900/40 ${disabled ? 'opacity-50' : ''}`}
     >
       {/* 头像：可点 → 看大图 / 换图 / 删除（在 AvatarManager 里）。
-          有自定义头像就显示图（签名 URL + 版本号破缓存），否则首字母 + 品牌渐变。 */}
+          avatarSrc 是稳定同源 URL，只有换图才变；浏览器按 immutable 头缓存，刷新不闪。 */}
       <button
         type="button"
         onClick={onOpenAvatar}
         aria-label="查看或修改头像"
         className="shrink-0 rounded-full active:opacity-60"
       >
-        {avatarUrl && !imgFailed ? (
-          // eslint-disable-next-line @next/next/no-img-element -- 签名 URL 每次不同，next/image 无法优化
+        {avatarSrc && !imgFailed ? (
+          // eslint-disable-next-line @next/next/no-img-element -- 图片走同源 API 代理，next/image 的优化层反而会破坏 immutable 缓存
           <img
-            src={`${avatarUrl}&v=${avatarVersion ?? 0}`}
+            src={avatarSrc}
             alt=""
-            onError={() => setFailedUrl(avatarUrl)}
+            onError={() => setFailedSrc(avatarSrc)}
             className="h-12 w-12 rounded-full object-cover"
           />
         ) : (

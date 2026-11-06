@@ -16,6 +16,10 @@ import { projectRoot, stripComments } from './class-attrs'
 //   4. **上传走内网、签名走公网** —— 内网域名（*-internal）在公网解析不了，
 //      签出来的 URL 浏览器打不开；反过来上传走公网就白付流量费。
 //   5. **API 三道闸 + 大小/类型白名单** —— 否则就成了免费图床。
+//   6. **头像 URL 必须稳定 + immutable 缓存**（2026-11-06）—— 每次刷新的「闪一下」
+//      根因是服务端现签 OSS 地址：URL 里的 Expires/Signature 每次都变，浏览器 HTTP
+//      缓存按完整 URL 做键，永远命中不了；首帧还要等 /api/profile 才知道有没有头像。
+//      解法 = 同源 GET /api/avatar?v=<version> + 同步持久化的版本号。
 // ============================================================================
 
 const SCHEMA = 'lib/server/db/schema.ts'
@@ -195,5 +199,55 @@ describe('头像：接口与交互', () => {
     expect(prof, 'loadUserName 的 force 判据没生效').toMatch(/if\s*\(cached\s*&&\s*!opts\?\.force\)/)
     // setCachedAvatar 不许在缓存还没建立时直接 return（那样换了头像界面也不会动）
     expect(prof, 'setCachedAvatar 在 cached 为空时短路了').toMatch(/const base: ProfileState = cached \?\?/)
+  })
+})
+
+// ── 刷新不闪：稳定 URL + 浏览器不可变缓存（2026-11-06）──────────────────────
+// 两条缺一不可：① 服务端 URL 不随请求变化，且带 immutable；② 客户端首帧同步拿得到
+// version。只做 ① 仍会先渲染首字母再等 /api/profile；只做 ② 仍会每次重新下载图片。
+describe('头像：刷新不闪（稳定 URL + 浏览器缓存）', () => {
+  const PROFILE_API = 'app/api/profile/route.ts'
+  const CARD = 'components/ProfileCard.tsx'
+  const HOOK = 'lib/client/use-user-name.ts'
+
+  it('A13 服务端 GET 返回图片本体，且带 immutable 长缓存头', () => {
+    const src = code(API)
+    expect(src, '缺头像图片 GET').toMatch(/export async function GET\(/)
+    expect(src, 'GET 没鉴权').toContain('requireAuth(req)')
+    expect(src, '没走同源对象读取（内网 client）').toContain('getObject(row.key)')
+    expect(src, '缺不可变缓存头').toMatch(/Cache-Control[^\n]*immutable/)
+    expect(src, '缓存头没有长 max-age').toContain('max-age=31536000')
+    // 反向：链路里不许再签发临时 URL —— 每次不同的地址会让 HTTP 缓存永远失效
+    expect(src, '又回签名 URL 了').not.toContain('signedUrl(')
+  })
+
+  it('A14 /api/profile 只回版本号，不签临时 URL', () => {
+    const src = code(PROFILE_API)
+    expect(src, '头像结构里没有 version').toMatch(/\{\s*version:/)
+    expect(src, '又签临时 URL 了').not.toContain('signedUrl')
+  })
+
+  it('A15 版本号同步持久化，首帧就能拼出稳定 URL', () => {
+    const prof = code(PROFILE)
+    expect(prof, '没有把版本号写进 localStorage').toContain('window.localStorage.setItem(AVATAR_VERSION_KEY')
+    expect(prof, '登出没清持久化版本号（会显示上一任的头像）').toContain('writePersistedAvatarVersion(null)')
+    expect(prof, '没有统一的稳定 URL 拼装').toMatch(/getAvatarSrc[\s\S]{0,300}?\/api\/avatar\?v=/)
+    // setCached 必须顺手写持久化，否则刷新后首帧还是 null（又要等网络）
+    expect(prof, 'setCached 没同步写版本号').toMatch(/function setCached[\s\S]{0,500}?writePersistedAvatarVersion/)
+
+    const hook = code(HOOK)
+    // ★ 第三参固定 null：hydration 用服务端 HTML（里面没有头像），客户端若在这时
+    //   读出 localStorage 的版本号，React 会判定 hydration 不一致。
+    expect(hook, 'avatarSrc 缺服务端快照').toMatch(/useSyncExternalStore\(subscribeProfile, getAvatarSrc, noAvatarSrc\)/)
+    expect(hook, '服务端快照不是固定 null').toMatch(/const noAvatarSrc = \(\) => null/)
+  })
+
+  it('A16 组件只渲染稳定 URL，不再二次拼版本号', () => {
+    for (const rel of [CARD, MANAGER]) {
+      const src = code(rel)
+      expect(src, `${rel} 没有用 avatarSrc`).toContain('avatarSrc')
+      expect(src, `${rel} 又拼了 &v=（版本号已由 getAvatarSrc 统一拼）`).not.toContain('&v=')
+      expect(src, `${rel} 还在用签名 URL 变量`).not.toContain('avatarUrl')
+    }
   })
 })

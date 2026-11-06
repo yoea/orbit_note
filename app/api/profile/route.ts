@@ -5,7 +5,6 @@ import { userProfile } from '@/lib/server/db/schema'
 import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { rateLimit } from '@/lib/server/ratelimit'
 import { PROFILE_OWNER_ID, profilePutSchema } from '@/lib/server/validation'
-import { signedUrl } from '@/lib/server/oss'
 
 // 用户名读写。名字是可识别身份的信息，由客户端用 DEK 加密后上传，
 // 服务器只存密文——与日记正文同等级别保护，数据库泄露也不会暴露「这本日记属于谁」。
@@ -20,18 +19,13 @@ export async function GET(req: Request) {
   // 注册时间（明文时间戳，不含身份信息）：仅首次注册时写入；
   // 老用户为 null，界面回退为「第一篇日记」的日期
   //
-  // 头像：bucket 是私有的，这里每次现签一个 24 小时有效的 URL 给前端 <img>。
-  // ★ 包在 try 里：OSS 没配 / 短暂不可用时，**名字照样要能读**（头像只是锦上添花）。
-  let avatar: { url: string; version: number } | null = null
-  if (row?.avatarKey) {
-    try {
-      avatar = {
-        url: signedUrl(row.avatarKey),
-        // 版本号：固定 key 覆盖写，前端拿它拼 ?v= 破缓存
-        version: (row.avatarUpdatedAt ?? row.updatedAt).getTime(),
-      }
-    } catch { /* 未配置 OSS：当作没有头像 */ }
-  }
+  // 头像只回版本号（毫秒时间戳）：图片本体走同源 GET /api/avatar?v=<version>。
+  // ★ 这里刻意不碰 OSS：① 现签的 URL 每次都不同，浏览器 HTTP 缓存按完整 URL 做键，
+  //   永远命中不了，刷新就必然重新下载 ⇒ 头像闪一下；② OSS 没配/抖动时名字照样能读。
+  // 客户端把 version 同步存进 localStorage，首帧就能拼出稳定 URL，不必等这个请求。
+  const avatar = row?.avatarKey
+    ? { version: (row.avatarUpdatedAt ?? row.updatedAt).getTime() }
+    : null
   return NextResponse.json({ profile, createdAt: row?.createdAt ?? null, avatar })
 }
 

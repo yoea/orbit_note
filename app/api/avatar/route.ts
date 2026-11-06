@@ -5,15 +5,22 @@ import { userProfile } from '@/lib/server/db/schema'
 import { assertSameOrigin, requireAuth } from '@/lib/server/auth'
 import { rateLimit } from '@/lib/server/ratelimit'
 import { PROFILE_OWNER_ID } from '@/lib/server/validation'
-import { assetKey, deleteObject, putObject, signedUrl } from '@/lib/server/oss'
+import { assetKey, deleteObject, getObject, putObject } from '@/lib/server/oss'
 
-// 头像：上传 / 删除。
+// 头像：读（同源图片代理）/ 上传 / 删除。
 //
 // ── 为什么走服务端中转，而不是浏览器直传 OSS ──────────────────────────────
-// 客户端已经把图裁到 256×256、压成 WebP（约 20KB），过一遍 ECS 是毫秒级；
+// 客户端已经把图裁到 256×256、压成 JPEG（约 20~40KB），过一遍 ECS 是毫秒级；
 // 而直传要多付两笔代价：配 CORS、把 AccessKeyId 暴露到前端去签 policy。
 // 20KB 的量级上，中转换来「零 CORS + AK 只留在服务器」，明显更划算。
 // （如果以后要传几 MB 的原图，那时再改直传。）
+//
+// ── 为什么读也走同源，而不是给 <img> 一个签名 URL（2026-11-06）──────────
+// 之前每次 GET /api/profile 都现签一个 24h URL：URL 里的 Expires / Signature
+// 每次都变 ⇒ 浏览器 HTTP 缓存按完整 URL 做键，永远命中不了 ⇒ 每次刷新/进设置页
+// 都要重新下载图片，加上首帧还要等 /api/profile 返回，表现就是「头像闪一下」。
+// 现在：URL 恒为 `/api/avatar?v=<avatarUpdatedAt>`，只有换图才变；响应带
+// immutable 缓存头，浏览器在刷新时直接读磁盘缓存，连条件请求都不发。
 //
 // ── 校验 ────────────────────────────────────────────────────────────────
 // 收 WebP / JPEG / PNG。客户端已经压过一次，这里再兜一道：
@@ -25,6 +32,42 @@ import { assetKey, deleteObject, putObject, signedUrl } from '@/lib/server/oss'
 //   PNG 比 WebP 大，所以上限从 200KB 提到 400KB（256×256 的照片 PNG 约 100~250KB）。
 const MAX_BYTES = 400 * 1024
 const ALLOWED_TYPES = ['image/webp', 'image/jpeg', 'image/png']
+
+/**
+ * 头像图片本体（同源 GET）。URL 恒为 `/api/avatar?v=<version>`：
+ * 只有换图时 version 才变，URL 一变浏览器自然重新取；没换图时靠 immutable 头
+ * 直接读磁盘缓存，连协商请求都不发。SW 对 /api/ 一律不介入（见 public/sw.js）。
+ */
+export async function GET(req: Request) {
+  if (!(await requireAuth(req))) return new Response(null, { status: 401 })
+  if (!assertSameOrigin(req)) return new Response(null, { status: 403 })
+  // 缓存命中后极少真的打到服务器；60/min 只是防有人拿它刷 OSS 读取
+  if (!rateLimit('avatar-image', 60, 60_000)) return new Response(null, { status: 429 })
+
+  const [row] = await db.select({
+    key: userProfile.avatarKey,
+    updatedAt: userProfile.avatarUpdatedAt,
+  }).from(userProfile).where(eq(userProfile.id, PROFILE_OWNER_ID))
+  if (!row?.key) return new Response(null, { status: 404 })
+
+  let asset: { body: Buffer; contentType: string }
+  try {
+    asset = await getObject(row.key)
+  } catch {
+    // 不把 OSS 的原始错误回给前端（可能带 endpoint / bucket 等内部信息）
+    return new Response(null, { status: 502 })
+  }
+  const version = (row.updatedAt ?? new Date(0)).getTime()
+  return new Response(new Uint8Array(asset.body), {
+    headers: {
+      'Content-Type': asset.contentType,
+      // ★ immutable 是「刷新不闪」的关键：普通刷新直接用缓存，不等网络。
+      //   private 保证不进共享代理；内容变化靠 v= 换 URL，不会读到旧图。
+      'Cache-Control': 'private, max-age=31536000, immutable',
+      ETag: `"${version}"`,
+    },
+  })
+}
 
 export async function POST(req: Request) {
   if (!(await requireAuth(req))) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
@@ -56,11 +99,9 @@ export async function POST(req: Request) {
       set: { avatarKey: key, avatarUpdatedAt: updatedAt, updatedAt },
     })
 
-  // 直接回签名 URL：客户端拿到就能显示，不用再打一次 /api/profile
-  return NextResponse.json({
-    avatarUrl: signedUrl(key),
-    avatarVersion: updatedAt.getTime(),
-  })
+  // 只回版本号：客户端拿它拼稳定 URL 并同步持久化，不必再打一次 /api/profile。
+  // ★ 不再回签名 URL —— 每次不同的地址会让浏览器 HTTP 缓存永远失效。
+  return NextResponse.json({ avatarVersion: updatedAt.getTime() })
 }
 
 export async function DELETE(req: Request) {

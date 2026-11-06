@@ -111,7 +111,7 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
   /** 离线：可以看大图，但换/删都要联网，按钮禁用 */
   disabled?: boolean
 }) {
-  const { name, avatarUrl, avatarVersion } = useProfile()
+  const { name, avatarSrc } = useProfile()
   const [view, setView] = useState<View>('preview')
   const [source, setSource] = useState<Source | null>(null)
   const [zoom, setZoom] = useState(1)
@@ -120,7 +120,7 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // 大图加载失败记「哪个 URL 失败」（同 ProfileCard）：avatarUrl 一变自动失效
+  // 大图加载失败记「哪个 src 失败」（同 ProfileCard）：换图后 avatarSrc 一变自动失效
   const [failedBigUrl, setFailedBigUrl] = useState<string | null>(null)
 
   const cardRef = useRef<HTMLDivElement>(null)
@@ -142,8 +142,9 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
     return () => ro.disconnect()
   }, [view])
 
-  /** 签名 URL 自带 query（Expires / Signature），追加版本号要用 & */
-  const bigUrl = avatarUrl ? `${avatarUrl}&v=${avatarVersion ?? 0}` : null
+  // 大图与小图用**同一个**稳定同源 URL：共享同一份浏览器缓存，不重复下载。
+  // ★ 不要在这里再拼 &v= —— 版本号已经由 getAvatarSrc() 统一拼进 URL。
+  const bigUrl = avatarSrc
   const bigFailed = bigUrl != null && failedBigUrl === bigUrl
   const initial = name ? ([...name][0] ?? '·') : '·'
 
@@ -281,10 +282,10 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
         if (res.status === 401) throw new Error('登录状态已失效，请重新解锁')
         throw new Error(`上传失败（${res.status}），请重试`)
       }
-      const data = await res.json() as { avatarUrl: string; avatarVersion: number }
-      // 先乐观写缓存（立刻换图），再强制与服务端对一次 ——
+      const data = await res.json() as { avatarVersion: number }
+      // 先乐观写版本号（URL 立刻变 ⇒ 请求新图），再强制与服务端对一次 ——
       // ★ force 不能省：loadUserName 缓存命中会直接返回，不 force 的话这次「校准」等于没做。
-      setCachedAvatar({ url: data.avatarUrl, version: data.avatarVersion })
+      setCachedAvatar(data.avatarVersion)
       void loadUserName({ force: true }).catch(() => { /* 校准失败无妨，本地缓存已是新值 */ })
       onSaved?.('头像已更新')
       // ★ 上传成功后直接关掉弹窗（用户明确要求）。注意这里**不能**再走 finally 复位 busy：
@@ -330,7 +331,7 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
               <p className="text-center text-base font-semibold text-neutral-900 dark:text-neutral-100">头像</p>
               <div className="mt-4 flex justify-center">
                 {bigUrl && !bigFailed ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- 签名 URL 每次不同，无需 next/image
+                  // eslint-disable-next-line @next/next/no-img-element -- 同源 API 图片，next/image 优化层会破坏 immutable 缓存
                   <img
                     src={bigUrl}
                     alt="当前头像"
@@ -348,7 +349,7 @@ export default function AvatarManager({ onClose, onSaved, disabled = false }: {
               </div>
               {bigFailed ? (
                 <p className="mt-3 text-center text-xs text-red-500">
-                  头像图片加载失败（签名地址可能已过期），点「换一张」重新上传即可
+                  头像图片加载失败，点「换一张」重新上传即可
                 </p>
               ) : !bigUrl ? (
                 <p className="mt-3 text-center text-xs text-neutral-500 dark:text-neutral-400">

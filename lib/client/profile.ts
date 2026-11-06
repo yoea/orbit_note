@@ -21,15 +21,44 @@ export function generateDefaultName(): string {
 interface ProfileState {
   name: string
   createdAt: string | null
-  /** 头像的**签名 URL**（服务端签，24 小时过期）；null = 没设置头像，界面回退首字母 */
-  avatarUrl: string | null
-  /** 头像版本号（固定 key 覆盖写，前端拿它拼 ?v= 破缓存） */
+  /** 头像版本号（= avatarUpdatedAt 毫秒）；null = 没设置头像，界面回退首字母 */
   avatarVersion: number | null
 }
 
+// ── 头像版本号的同步持久化（2026-11-06：修「刷新 / 首次进设置页头像闪一下」）────
+// 只存一个毫秒时间戳：不存图片，更不存任何签名 URL（签名地址会过期，落盘就是死链）。
+// 目的：React 首帧**同步**就知道「有没有头像、该用哪个稳定 URL」，不必等 /api/profile。
+// 图片本体由浏览器按 immutable 头缓存（GET /api/avatar?v=<version>）。
+// 两层配合才成立：URL 稳定 ⇒ 缓存命中；version 同步可得 ⇒ 首帧就有 <img>。
+const AVATAR_VERSION_KEY = 'qo-avatar-version'
+let persistedAvatarVersion: number | null | undefined // undefined = 本次还没读过
+
+function readPersistedAvatarVersion(): number | null {
+  if (persistedAvatarVersion !== undefined) return persistedAvatarVersion
+  // SSR 不读、也不缓存：服务端没有 localStorage，客户端 hydration 后要重新读。
+  if (typeof window === 'undefined') return null
+  let value: number | null = null
+  try {
+    const raw = window.localStorage.getItem(AVATAR_VERSION_KEY)
+    const n = raw === null ? NaN : Number(raw)
+    if (Number.isFinite(n) && n > 0) value = n
+  } catch { /* 隐私模式 / 存储被禁：当作没有头像，纯走网络也能用 */ }
+  persistedAvatarVersion = value
+  return value
+}
+
+function writePersistedAvatarVersion(version: number | null): void {
+  persistedAvatarVersion = version
+  if (typeof window === 'undefined') return
+  try {
+    if (version === null) window.localStorage.removeItem(AVATAR_VERSION_KEY)
+    else window.localStorage.setItem(AVATAR_VERSION_KEY, String(version))
+  } catch { /* 写不进去只影响下次冷启动的首帧，功能照常 */ }
+}
+
 // 会话级缓存：解锁后读一次即可，避免每个页面重复「拉取 + 解密」。
-// 同时作为极简订阅源——改名后所有正在显示名字的组件都要跟着更新，
-// 否则设置页改完名字，别的页面（以及它自己）还显示旧值。
+// 同时作为极简订阅源——改名 / 换头像后所有正在显示的组件都要跟着更新，
+// 否则设置页改完，别的页面（以及它自己）还显示旧值。
 let cached: ProfileState | null = null
 const listeners = new Set<() => void>()
 
@@ -37,9 +66,10 @@ function setCached(next: ProfileState | null): void {
   if (
     cached?.name === next?.name &&
     cached?.createdAt === next?.createdAt &&
-    cached?.avatarUrl === next?.avatarUrl &&
     cached?.avatarVersion === next?.avatarVersion
   ) return
+  // 每次资料变化都顺手同步版本号：换图、删图、/api/profile 校准都走这里
+  writePersistedAvatarVersion(next?.avatarVersion ?? null)
   cached = next
   for (const listener of listeners) listener()
 }
@@ -53,12 +83,19 @@ export function getProfileCreatedAt(): string | null {
   return cached?.createdAt ?? null
 }
 
-export function getUserAvatarUrl(): string | null {
-  return cached?.avatarUrl ?? null
+/** 会话缓存是权威；首帧（缓存还没建立）用同步持久化的版本号。 */
+export function getUserAvatarVersion(): number | null {
+  if (cached) return cached.avatarVersion
+  return readPersistedAvatarVersion()
 }
 
-export function getUserAvatarVersion(): number | null {
-  return cached?.avatarVersion ?? null
+/**
+ * 头像的**稳定同源 URL**。字符串按值比较，可安全用作 useSyncExternalStore 快照。
+ * ★ 只有换图才变 ⇒ 平时浏览器 immutable 缓存命中、刷新零请求；换图才重新加载。
+ */
+export function getAvatarSrc(): string | null {
+  const version = getUserAvatarVersion()
+  return version === null ? null : `/api/avatar?v=${version}`
 }
 
 export function subscribeProfile(listener: () => void): () => void {
@@ -66,8 +103,11 @@ export function subscribeProfile(listener: () => void): () => void {
   return () => { listeners.delete(listener) }
 }
 
-// 退出登录 / 清空 DEK 时调用，避免下一个人看到上一个人的名字
+// 退出登录 / 清空 DEK 时调用，避免下一个人看到上一个人的名字。
+// ★ 显式清持久化版本号：不能只靠 setCached(null) —— 名字还没加载时 cached 本来就是 null，
+//   相等检查会短路，localStorage 里就留着上一任的头像版本。
 export function clearUserNameCache(): void {
+  writePersistedAvatarVersion(null)
   setCached(null)
 }
 
@@ -98,13 +138,12 @@ export async function loadUserName(opts?: { force?: boolean }): Promise<string> 
       try {
         const name = await decryptText(dek, offlineProfile.nameCiphertext, offlineProfile.nameIv)
         if (name) {
-          // 离线兜底：只有名字能解，头像的签名 URL 是联网时才签的。
-          // 保留内存里已有的（若本次会话先前在线加载过，24 小时内它还有效）。
+          // 离线兜底：只有名字能解。头像版本号取同步持久化的那份（本次会话在线加载过就是新值），
+          // 图片本身走浏览器 HTTP 缓存，离线也能显示。
+          // ★ 用 getter 而不是直接读 `cached`：后者在这里会被 TS 收窄成 never。
           setCached({
             name,
             createdAt: offlineProfile.createdAt,
-            // 用 getter 而不是直接读 `cached`：后者在这里会被 TS 收窄成 never
-            avatarUrl: getUserAvatarUrl(),
             avatarVersion: getUserAvatarVersion(),
           })
           return name
@@ -117,18 +156,18 @@ export async function loadUserName(opts?: { force?: boolean }): Promise<string> 
   const data = await res.json() as {
     profile: { nameCiphertext: string; nameIv: string } | null
     createdAt: string | null
-    avatar: { url: string; version: number } | null
+    avatar: { version: number } | null
   }
   const createdAt = data.createdAt ?? null
-  // 头像（签名 URL，24 小时过期）：每次加载这里都会重新签一次，故意**不**写进 IndexedDB 缓存
-  // —— 缓存下来的签名地址过期后就变成 403 的空图，反而更糟。
-  const avatarUrl = data.avatar?.url ?? null
+  // 头像版本号：进会话缓存的同时由 setCached 同步写进 localStorage，
+  // 让下一轮冷启动的首帧就能拼出稳定 URL。图片本体不进 IndexedDB —— 交给浏览器
+  // 按 immutable 头缓存，只有 version 变化才重新取。
   const avatarVersion = data.avatar?.version ?? null
   if (data.profile) {
     try {
       const name = await decryptText(dek, data.profile.nameCiphertext, data.profile.nameIv)
       if (name) {
-        setCached({ name, createdAt, avatarUrl, avatarVersion })
+        setCached({ name, createdAt, avatarVersion })
         // 在线成功顺手缓存密文（离线兜底用），异步不阻塞
         void cacheProfile({ nameCiphertext: data.profile.nameCiphertext, nameIv: data.profile.nameIv, createdAt })
         return name
@@ -137,7 +176,7 @@ export async function loadUserName(opts?: { force?: boolean }): Promise<string> 
   }
   const name = generateDefaultName()
   const { ciphertext, iv } = await putName(dek, name)
-  setCached({ name, createdAt, avatarUrl, avatarVersion })
+  setCached({ name, createdAt, avatarVersion })
   void cacheProfile({ nameCiphertext: ciphertext, nameIv: iv, createdAt })
   return name
 }
@@ -153,20 +192,16 @@ export async function saveUserName(name: string): Promise<void> {
   setCached({
     name: trimmed,
     createdAt,
-    avatarUrl: cached?.avatarUrl ?? null,
     avatarVersion: cached?.avatarVersion ?? null,
   })
   void cacheProfile({ nameCiphertext: ciphertext, nameIv: iv, createdAt })
 }
 
-// 上传/删除头像后立即更新缓存，让所有显示头像的地方（目前是设置页卡片）同步刷新。
+// 上传/删除头像后立即更新版本号，让所有显示头像的地方（设置页卡片、大图弹窗）同步刷新。
 // ★ 缓存还没建立时（名字仍在加载）也要能写入：之前这里是 `if (!cached) return`，
 //   于是在名字没加载完的情况下换了头像，界面永远等不到更新（真机事故）。
-export function setCachedAvatar(next: { url: string; version: number } | null): void {
-  const base: ProfileState = cached ?? { name: '', createdAt: null, avatarUrl: null, avatarVersion: null }
-  setCached({
-    ...base,
-    avatarUrl: next?.url ?? null,
-    avatarVersion: next?.version ?? null,
-  })
+// ★ 只传版本号：URL 由 getAvatarSrc() 统一拼，杜绝任何「临时签名地址」回到客户端。
+export function setCachedAvatar(version: number | null): void {
+  const base: ProfileState = cached ?? { name: '', createdAt: null, avatarVersion: null }
+  setCached({ ...base, avatarVersion: version })
 }

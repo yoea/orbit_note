@@ -6,9 +6,9 @@ import OSS from 'ali-oss'
 // ── 两个 client，各干一件事 ──────────────────────────────────────────────
 // ECS 与 bucket 同在 cn-shanghai ⇒ 服务端**读写走内网 endpoint**：不计公网流量费、
 // 延迟更低（同地域部署最实在的一项省钱）。
-// 但浏览器在公网，**签名 URL 必须用公网 endpoint 生成** —— 内网域名
-// （*-internal.aliyuncs.com）在公网根本解析不了，签出来的地址打不开。
-// 所以：上传用内网 client，签名用公网 client。
+// 浏览器**不直连 OSS**：头像由同源 /api/avatar 取对象后转发，所以读也走内网 client。
+// 公网 client 只为 signedUrl 准备（签名 URL 的域名必须公网可解析），当前头像链路不用它，
+// 保留这个能力供以后确需直连的场景。
 //
 // ── key 规范（2026-11-04 建立，为以后的笔记图片预留）──────────────────────
 //   orbit/avatar/current          头像（固定 key，覆盖写；无扩展名，靠 Content-Type 识别）
@@ -21,8 +21,9 @@ import OSS from 'ali-oss'
 // 并在换格式时删旧文件；不带扩展名 + 上传时指定 Content-Type，一个 key 通吃。
 //
 // ── 私有 bucket ──────────────────────────────────────────────────────────
-// bucket 开了「阻止公共访问」，头像靠**签名 URL** 读（默认 24 小时）。
-// 这是刻意的：日记应用不该有匿名可读的资源路径。
+// bucket 开了「阻止公共访问」，日记应用不该有匿名可读的资源路径。
+// 头像改由同源 /api/avatar 转发（2026-11-06）：URL 稳定才能挂 immutable 缓存头，
+// 也顺带消掉签名地址过期、CORS、CSP 三类老问题。
 
 const BUCKET = process.env.OSS_BUCKET?.trim() || 'ethan-orbit'
 const REGION = process.env.OSS_REGION?.trim() || 'oss-cn-shanghai'
@@ -81,7 +82,7 @@ export function ossConfigured(): boolean {
   return Boolean(process.env.OSS_ACCESS_KEY_ID?.trim() && process.env.OSS_ACCESS_KEY_SECRET?.trim())
 }
 
-/** 上传一个 Buffer，返回可选公共读 URL（私有 bucket 下不用它，只用 key）。 */
+/** 上传一个 Buffer（私有 bucket 下只存 key，不用返回任何 URL）。 */
 export async function putObject(key: string, body: Buffer, contentType: string): Promise<void> {
   await getUploadClient().put(key, body, {
     mime: contentType,
@@ -95,8 +96,20 @@ export async function deleteObject(key: string): Promise<void> {
 }
 
 /**
- * 生成带签名的临时访问 URL（默认 24 小时）。
- * 前端 `<img src>` 直接用它；过期后下一次 GET /api/profile 会重新签。
+ * 读取对象（同源图片代理用）。走内网 client：ECS 与 bucket 同地域，不计公网流量费。
+ * Content-Type 由上传时的 mime 决定，取不到就按 JPEG 兜底（客户端统一输出 JPEG）。
+ */
+export async function getObject(key: string): Promise<{ body: Buffer; contentType: string }> {
+  const { content, res } = await getUploadClient().get(key)
+  if (!Buffer.isBuffer(content)) throw new Error('OSS 返回的对象内容不是 Buffer')
+  const headers = res.headers as Record<string, unknown> | undefined
+  const raw = headers?.['content-type']
+  const contentType = typeof raw === 'string' && raw.startsWith('image/') ? raw : 'image/jpeg'
+  return { body: content, contentType }
+}
+
+/**
+ * 生成带签名的临时访问 URL（默认 24 小时）。当前头像链路不用它，保留为底层能力。
  *
  * ★ 强制 https：页面是 HTTPS，`http://` 的图片会被浏览器当混合内容拦掉。
  *   client 已配 `secure: true`，这里再兜一次——协议退化成 http 的后果是「图片静默不显示」，

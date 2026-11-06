@@ -6,20 +6,20 @@
 // 两个域名都必须放行）。天气经服务器代理，无需放行外部域名。
 const CSP_CONNECT = "connect-src 'self' https://api.bigdatacloud.net https://api-bdc.io"
 
-// ★ img-src 必须放行 OSS 域名（2026-11-04 事故，排查了一整轮）。
-//   头像存在阿里云 OSS 的**私有 bucket**，页面用服务端签发的临时 URL 直接 <img> 显示。
-//   而 img-src 原先只有 `'self' data:` —— OSS 域名不在白名单，浏览器**直接拒绝加载**，
-//   表现是 <img> 一律 onError、界面显示「头像加载失败」。
-//   最迷惑的地方：上传走同源 /api/avatar（受 connect-src 管，一直是通的），
-//   命令行/服务端测签名 URL 也全是 200 —— 只有浏览器会因为 CSP 静默失败。
-//   域名从 env 拼：换 bucket / region 时这里自动跟着变，不用改代码。
+// ★ img-src 放行 OSS 域名（2026-11-04 事故，排查了一整轮）：
+//   当时头像用服务端签发的临时 URL 直连私有 bucket，而 img-src 只有 `'self' data:`，
+//   OSS 域名不在白名单 ⇒ 浏览器**直接拒绝加载**，<img> 一律 onError。最迷惑的是
+//   命令行/服务端测那个 URL 全是 200，只有浏览器会因为 CSP 静默失败。
+//   2026-11-06 起头像改走同源 /api/avatar 代理，这条白名单对当前链路已非必需，
+//   但保留给以后笔记图片确需直连的场景（守卫 A11 钉着，别顺手删）。
+//   域名从 env 拼：换 bucket / region 时自动跟着变。
 const OSS_BUCKET_NAME = process.env.OSS_BUCKET?.trim()
 const OSS_REGION_NAME = process.env.OSS_REGION?.trim()
 const OSS_IMG_SRC =
   OSS_BUCKET_NAME && OSS_REGION_NAME
     ? ` https://${OSS_BUCKET_NAME}.${OSS_REGION_NAME}.aliyuncs.com`
     : ''
-// 图片源：本站 + data:（内联图标）+ OSS（头像）
+// 图片源：本站（含同源头像代理）+ data:（内联图标）+ OSS（备用）
 const CSP_IMG = `img-src 'self' data:${OSS_IMG_SRC}`
 
 export function securityHeaders(): Record<string, string> {
